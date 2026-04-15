@@ -7,6 +7,7 @@ class ProjectsApiTest < ActiveSupport::TestCase
   include TestHelpers::AuthHelper
   include TestHelpers::JsonHelper
   include TestHelpers::TestFileHelper
+  include ActiveSupport::Testing::TimeHelpers
 
   def app
     Rails.application
@@ -191,5 +192,191 @@ class ProjectsApiTest < ActiveSupport::TestCase
     unit.destroy!
   ensure
     FileUtils.rm_f(project.portfolio_path)
+  end
+
+  def test_engagement_heatmap_success_and_contract
+    travel_to Time.zone.parse('2026-04-15 12:00') do
+      unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+      project = unit.active_projects.first
+      task = project.task_for_task_definition(unit.task_definitions.first)
+
+      TaskEngagement.create!(
+        task: task,
+        engagement_time: Time.zone.parse('2026-04-15 09:00'),
+        engagement: TaskStatus.ready_for_feedback.name
+      )
+      TaskEngagement.create!(
+        task: task,
+        engagement_time: Time.zone.parse('2026-04-14 11:00'),
+        engagement: TaskStatus.complete.name
+      )
+
+      add_auth_header_for(user: project.student)
+      get "/api/projects/#{project.id}/engagement_heatmap"
+
+      assert_equal 200, last_response.status, last_response.body
+      body = last_response_body
+
+      assert_equal %w[days project_id range summary unit_id], body.keys.sort
+      assert_equal project.id, body['project_id']
+      assert_equal unit.id, body['unit_id']
+
+      end_d = Time.zone.today
+      start_d = end_d - (EngagementHeatmapService::WINDOW_DAYS - 1).days
+      assert_equal start_d.strftime('%Y-%m-%d'), body['range']['start_date']
+      assert_equal end_d.strftime('%Y-%m-%d'), body['range']['end_date']
+      assert_equal EngagementHeatmapService::WINDOW_DAYS, body['range']['days']
+
+      assert_equal EngagementHeatmapService::WINDOW_DAYS, body['days'].length
+      body['days'].each do |day|
+        assert_equal %w[activity_count date], day.keys.sort
+      end
+
+      assert_equal 1, body['days'].find { |d| d['date'] == '2026-04-15' }['activity_count']
+      assert_equal 1, body['days'].find { |d| d['date'] == '2026-04-14' }['activity_count']
+
+      assert_equal 1, body['summary']['tasks_completed']
+      assert_equal 2, body['summary']['active_days']
+      assert_equal 2, body['summary']['current_streak']
+    end
+  end
+
+  def test_engagement_heatmap_unauthorized
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 1)
+    project = unit.active_projects.first
+    other = FactoryBot.create(:user, :student)
+
+    add_auth_header_for(user: other)
+    get "/api/projects/#{project.id}/engagement_heatmap"
+
+    assert_equal 403, last_response.status
+  end
+
+  def test_engagement_heatmap_scoped_to_project_no_cross_unit_leakage
+    travel_to Time.zone.parse('2026-05-01 10:00') do
+      unit_a = FactoryBot.create(:unit, student_count: 1, task_count: 1)
+      unit_b = FactoryBot.create(:unit, student_count: 1, task_count: 1)
+      project_a = unit_a.active_projects.first
+      project_b = unit_b.active_projects.first
+      task_a = project_a.task_for_task_definition(unit_a.task_definitions.first)
+
+      5.times do |i|
+        TaskEngagement.create!(
+          task: task_a,
+          engagement_time: Time.zone.parse("2026-05-01 #{9 + i}:00"),
+          engagement: TaskStatus.working_on_it.name
+        )
+      end
+
+      add_auth_header_for(user: project_b.student)
+      get "/api/projects/#{project_b.id}/engagement_heatmap"
+
+      assert_equal 200, last_response.status, last_response.body
+      body = last_response_body
+
+      assert_equal 0, body['summary']['active_days']
+      assert_equal 0, body['summary']['tasks_completed']
+      assert_equal 0, body['summary']['current_streak']
+      assert body['days'].all? { |d| d['activity_count'].zero? }
+    end
+  end
+
+  def test_engagement_heatmap_no_activity_all_zeros
+    travel_to Time.zone.parse('2026-06-10 08:00') do
+      unit = FactoryBot.create(:unit, student_count: 1, task_count: 1)
+      project = unit.active_projects.first
+
+      add_auth_header_for(user: project.student)
+      get "/api/projects/#{project.id}/engagement_heatmap"
+
+      assert_equal 200, last_response.status, last_response.body
+      body = last_response_body
+
+      assert body['days'].all? { |d| d['activity_count'].zero? }
+      assert_equal 0, body['summary']['active_days']
+      assert_equal 0, body['summary']['tasks_completed']
+      assert_equal 0, body['summary']['current_streak']
+    end
+  end
+
+  def test_engagement_heatmap_sparse_activity_and_tasks_completed_distinct
+    travel_to Time.zone.parse('2026-07-20 15:00') do
+      unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+      project = unit.active_projects.first
+      td1 = unit.task_definitions.first
+      td2 = unit.task_definitions.second
+      task1 = project.task_for_task_definition(td1)
+      task2 = project.task_for_task_definition(td2)
+
+      TaskEngagement.create!(
+        task: task1,
+        engagement_time: Time.zone.parse('2026-07-20 10:00'),
+        engagement: TaskStatus.need_help.name
+      )
+      TaskEngagement.create!(
+        task: task1,
+        engagement_time: Time.zone.parse('2026-07-20 14:00'),
+        engagement: TaskStatus.working_on_it.name
+      )
+      TaskEngagement.create!(
+        task: task2,
+        engagement_time: Time.zone.parse('2026-07-18 09:00'),
+        engagement: TaskStatus.complete.name
+      )
+      TaskEngagement.create!(
+        task: task1,
+        engagement_time: Time.zone.parse('2026-07-10 12:00'),
+        engagement: TaskStatus.complete.name
+      )
+
+      add_auth_header_for(user: project.student)
+      get "/api/projects/#{project.id}/engagement_heatmap"
+
+      body = last_response_body
+
+      assert_equal 2, body['days'].find { |d| d['date'] == '2026-07-20' }['activity_count']
+      assert_equal 1, body['days'].find { |d| d['date'] == '2026-07-18' }['activity_count']
+      assert_equal 1, body['days'].find { |d| d['date'] == '2026-07-10' }['activity_count']
+
+      assert_equal 2, body['summary']['tasks_completed']
+      assert_equal 3, body['summary']['active_days']
+    end
+  end
+
+  def test_engagement_heatmap_streak_ends_yesterday_when_today_empty
+    travel_to Time.zone.parse('2026-08-05 12:00') do
+      unit = FactoryBot.create(:unit, student_count: 1, task_count: 1)
+      project = unit.active_projects.first
+      task = project.task_for_task_definition(unit.task_definitions.first)
+
+      TaskEngagement.create!(
+        task: task,
+        engagement_time: Time.zone.parse('2026-08-04 10:00'),
+        engagement: TaskStatus.ready_for_feedback.name
+      )
+      TaskEngagement.create!(
+        task: task,
+        engagement_time: Time.zone.parse('2026-08-03 10:00'),
+        engagement: TaskStatus.ready_for_feedback.name
+      )
+
+      add_auth_header_for(user: project.student)
+      get "/api/projects/#{project.id}/engagement_heatmap"
+
+      body = last_response_body
+
+      assert_equal 0, body['days'].find { |d| d['date'] == '2026-08-05' }['activity_count']
+      assert_equal 2, body['summary']['current_streak']
+    end
+  end
+
+  def test_engagement_heatmap_unknown_project_returns_404
+    user = FactoryBot.create(:user, :student, enrol_in: 1)
+    missing_id = Project.maximum(:id).to_i + 999_999
+
+    add_auth_header_for(user: user)
+    get "/api/projects/#{missing_id}/engagement_heatmap"
+
+    assert_equal 404, last_response.status
   end
 end
