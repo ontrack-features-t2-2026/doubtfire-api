@@ -105,6 +105,7 @@ class ApiRoot < Grape::API
   mount MarkingSessionsApi
   mount DiscussionPromptsApi
   mount OverseerStepsApi
+  mount TaskPrioritizationApi
 
   mount Feedback::FeedbackChipApi
 
