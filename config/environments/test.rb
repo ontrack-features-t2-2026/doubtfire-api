@@ -37,6 +37,12 @@ Doubtfire::Application.configure do
   # Logging level (:debug, :info, :warn, :error, :fatal)
   config.log_level = :warn
 
+  # Rack::Test uses Host: example.org by default. HostAuthorization must not block API tests.
+  # Allow the default host and also bypass checks so Spring/bootsnap or branch drift cannot
+  # leave the suite stuck on 403 + HTML when integration tests parse JSON.
+  config.hosts << "example.org"
+  config.host_authorization = { exclude: ->(_request) { true } }
+
   config.active_record.encryption.key_derivation_salt = ENV['DF_ENCRYPTION_KEY_DERIVATION_SALT'] || 'U9jurHMfZbMpzlbDTMe5OSAhUJYHla9Z'
   config.active_record.encryption.deterministic_key = ENV['DF_ENCRYPTION_KEY_DERIVATION_SALT'] || 'zYtzYUlLFaWdvdUO5eIINRT6ZKDddcgx'
   config.active_record.encryption.primary_key = ENV['DF_ENCRYPTION_KEY_DERIVATION_SALT'] || '92zoF7RJaQ01JEExOgHbP9bRWldNQUz5'

@@ -215,4 +215,18 @@ class ProjectsApi < Grape::API
     present portfolio_tasks.map(&:id)
   end
 
+  desc 'Engagement heatmap for this project (unit-specific task activity, last 84 days)'
+  params do
+    requires :id, type: Integer, desc: 'The project id'
+  end
+  get '/projects/:id/engagement_heatmap' do
+    project = Project.eager_load(:unit, :user).find(params[:id])
+
+    unless authorise? current_user, project, :get
+      error!({ error: "Couldn't find Project with id=#{params[:id]}" }, 403)
+    end
+
+    present EngagementHeatmapService.build(project: project), with: Grape::Presenters::Presenter
+  end
+
 end
