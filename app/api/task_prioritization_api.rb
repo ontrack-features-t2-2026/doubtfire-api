@@ -12,14 +12,34 @@ class TaskPrioritizationApi < Grape::API
   desc 'Get prioritized task recommendations for a student',
        detail: 'Returns a ranked list of tasks across all active enrolled units based on deadline, effort, and workload scoring.'
 
+  params do
+    optional :page, type: Integer, default: 1
+    optional :per_page, type: Integer, default: 10, values: 1..50
+  end
+
   get '/tasks/recommended' do
+    page = params[:page]
+    per_page = params[:per_page]
+
     tasks = fetch_active_tasks
     workload_score = calculate_workload_score(tasks)
 
     results = tasks.map { |task| build_task_response(task, workload_score) }
-
     sorted = results.sort_by { |t| -t[:priority_score] }
-    present sorted
+
+    # Pagination after sorting
+    offset = (page - 1) * per_page
+    paginated = sorted.slice(offset, per_page) || []
+
+    {
+      data: paginated,
+      meta: {
+        page: page,
+        per_page: per_page,
+        total_count: sorted.size,
+        total_pages: (sorted.size / per_page.to_f).ceil
+      }
+    }
   rescue StandardError => e
     Rails.logger.error "TaskPrioritizationApi Error: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
