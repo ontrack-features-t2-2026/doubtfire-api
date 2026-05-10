@@ -20,6 +20,62 @@ class ProjectsApi < Grape::API
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, user: current_user
   end
 
+  desc "Fetches all of the current user's projects with the tasks for crossunit dashboard"
+  get "/projects/crossunit" do
+    projects = Project.eager_load(:unit).for_user(current_user, false)
+
+    result = projects.map do |project|
+      unit = project.unit
+
+      # Index existing task records by their task_definition_id for quick lookup
+      existing_tasks = project.tasks.eager_load(:task_definition).index_by(&:task_definition_id)
+
+      tasks = unit.task_definitions.map do |td|
+        task = existing_tasks[td.id]
+        {
+          id: task&.id,
+          task_definition_id: td.id,
+          abbreviation: td.abbreviation,
+          name: td.name,
+          description: td.description,
+          status: task ? TaskStatus.id_to_key(task.task_status_id) : 'not_started',
+          target_date: td.target_date,
+          due_date: td.due_date,
+          start_date: td.start_date,
+          submission_date: task&.submission_date,
+          completion_date: task&.completion_date,
+          target_grade: td.target_grade,
+          weighting: td.weighting,
+          upload_requirements: td.upload_requirements,
+          is_graded: td.is_graded,
+          max_quality_pts: td.max_quality_pts
+        }
+      end
+
+      {
+        id: project.id,
+        campus_id: project.campus_id,
+        user_id: project.user_id,
+        target_grade: project.target_grade,
+        spec_con_days: project.spec_con_days,
+        portfolio_available: project.portfolio_available,
+        escalation_attempts_remaining: project.escalation_attempts_remaining,
+        unit: {
+          code: unit.code,
+          id: unit.id,
+          name: unit.name,
+          my_role: project.student == current_user ? 'Student' : 'Staff',
+          start_date: unit.start_date,
+          end_date: unit.end_date,
+          active: unit.active
+        },
+        tasks: tasks
+      }
+    end
+
+    present result, with: Grape::Presenters::Presenter
+  end
+
   desc 'Get project'
   params do
     requires :id, type: Integer, desc: 'The id of the project to get'
