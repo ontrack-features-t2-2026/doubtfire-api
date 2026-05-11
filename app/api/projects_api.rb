@@ -23,14 +23,8 @@ class ProjectsApi < Grape::API
     else
       Project.eager_load(:unit, :user).for_user(current_user, include_inactive)
     end
-
-    present projects,
-      with: Entities::ProjectEntity,
-      for_student: true,
-      # Disable summary_only so tasks are exposed for request
-      summary_only: !include_task_definitions,
-      include_task_definitions: include_task_definitions,
-      user: current_user
+    # Disable summary_only so tasks are exposed for request
+    present projects, with: Entities::ProjectEntity, for_student: true, summary_only: !include_task_definitions, include_task_definitions: include_task_definitions, user: current_user
   end
 
   desc 'Get project'
