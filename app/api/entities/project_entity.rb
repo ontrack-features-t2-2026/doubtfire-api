@@ -23,10 +23,6 @@ module Entities
     expose :tasks, using: TaskEntity, unless: :summary_only do |project, options|
       project.task_details_for_shallow_serializer(options[:user])
     end
-    # changed here
-    expose :task_definitions, using: TaskDefinitionEntity, if: :include_task_definitions do |project, options|
-      project.unit.task_definitions
-    end
 
     expose :tutorial_enrolments, using: TutorialEnrolmentEntity, unless: :summary_only
     expose :groups, using: GroupEntity, unless: :summary_only
