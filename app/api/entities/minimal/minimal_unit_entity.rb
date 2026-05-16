@@ -20,6 +20,7 @@ module Entities
       end
 
       expose :active
+      expose :task_definitions, if: :include_task_definitions
     end
   end
 end
