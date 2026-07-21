@@ -66,9 +66,12 @@ class UsersApi < Grape::API
   put '/users/:id' do
     change_self = (params[:id] == current_user.id)
 
-    params[:receive_portfolio_notifications] = true if params.key?(:receive_portfolio_notifications) && params[:receive_portfolio_notifications].nil?
-    params[:receive_portfolio_notifications] = true if params.key?(:receive_feedback_notifications) && params[:receive_feedback_notifications].nil?
-    params[:receive_portfolio_notifications] = true if params.key?(:receive_task_notifications) && params[:receive_task_notifications].nil?
+    # Default notification preferences to true when explicitly sent as null.
+    # (Previously this wrote the portfolio key three times and read the
+    # top-level params instead of the nested :user hash, so it never applied.)
+    %i[receive_task_notifications receive_portfolio_notifications receive_feedback_notifications].each do |pref|
+      params[:user][pref] = true if params[:user].key?(pref) && params[:user][pref].nil?
+    end
 
     # can only modify if current_user.id is same as :id provided
     # (i.e., user wants to update their own data) or if update_user token
