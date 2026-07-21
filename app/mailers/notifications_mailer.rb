@@ -5,6 +5,25 @@ class NotificationsMailer < ApplicationMailer
     @unsubscribe_url = "#{@doubtfire_host}/edit_profile"
   end
 
+  # Sends a single in-system notification as an email. Called by
+  # NotificationService, which rescues delivery errors so the in-app
+  # notification is never blocked by a mail problem.
+  def single_notification(notification)
+    add_general
+
+    @notification = notification
+    @user = notification.user
+
+    # No global default sender is configured, so pass one explicitly. Set
+    # institution[:email_sender] in config for the real address (open decision).
+    from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
+
+    email_with_name = %("#{@user.name}" <#{@user.email}>)
+    subject = "#{@doubtfire_product_name}: New notification"
+
+    mail(to: email_with_name, from: from_address, subject: subject)
+  end
+
   def weekly_staff_summary(unit_role, summary_stats)
     return nil if unit_role.nil?
 

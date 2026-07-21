@@ -111,6 +111,9 @@ class ApiRoot < Grape::API
 
   mount Feedback::FeedbackChipApi
 
+  # Notifications feature
+  mount NotificationsApi
+
   #
   # Add auth details to all end points
   #
@@ -161,6 +164,9 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to DiscussionPromptsApi
   AuthenticationHelpers.add_auth_to OverseerStepsApi
   AuthenticationHelpers.add_auth_to TutorNotesApi
+
+  # Notifications feature
+  AuthenticationHelpers.add_auth_to NotificationsApi
 
   add_swagger_documentation \
     base_path: nil,

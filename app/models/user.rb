@@ -164,6 +164,9 @@ class User < ApplicationRecord
 
   has_many    :marking_sessions, dependent: :destroy
 
+  # Notifications feature
+  has_many    :notifications, dependent: :destroy, inverse_of: :user
+
   # Model validations/constraints
   validates :first_name,  presence: true
   validates :last_name,   presence: true
