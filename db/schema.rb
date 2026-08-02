@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_02_000002) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_02_000003) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -487,6 +487,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_02_000002) do
     t.index ["unit_id", "user_id"], name: "index_projects_on_unit_id_and_user_id", unique: true
     t.index ["unit_id"], name: "index_projects_on_unit_id"
     t.index ["user_id"], name: "index_projects_on_user_id"
+  end
+
+  create_table "push_subscriptions", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "endpoint", limit: 500, null: false
+    t.string "p256dh", null: false
+    t.string "auth", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["endpoint"], name: "index_push_subscriptions_on_endpoint", unique: true
+    t.index ["user_id"], name: "index_push_subscriptions_on_user_id"
   end
 
   create_table "roles", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -1006,6 +1017,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_02_000002) do
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "source_id"
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "target_id"
   add_foreign_key "notifications", "users"
+  add_foreign_key "push_subscriptions", "users"
   add_foreign_key "user_oauth_states", "users"
   add_foreign_key "user_oauth_tokens", "users"
 end
