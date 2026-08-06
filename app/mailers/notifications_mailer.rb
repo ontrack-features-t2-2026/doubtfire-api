@@ -21,7 +21,27 @@ class NotificationsMailer < ApplicationMailer
     email_with_name = %("#{@user.name}" <#{@user.email}>)
     subject = "#{@doubtfire_product_name}: New notification"
 
-    mail(to: email_with_name, from: from_address, subject: subject)
+    # An event may ship its own pair of templates named after it, for example
+    # task_comment_created.html.erb and task_comment_created.text.erb. Events
+    # without them fall back to the generic single_notification pair.
+    #
+    # This is why a new event ticket only ever adds files and never edits this
+    # method: eight event tickets can run in parallel without touching each
+    # other's work.
+    mail(
+      to: email_with_name,
+      from: from_address,
+      subject: subject,
+      template_name: event_template_name(notification.event)
+    )
+  end
+
+  # The event's own template if it exists, otherwise the generic one.
+  def event_template_name(event)
+    return 'single_notification' if event.blank?
+    return 'single_notification' unless lookup_context.exists?(event, [self.class.mailer_name], false)
+
+    event
   end
 
   def weekly_staff_summary(unit_role, summary_stats)

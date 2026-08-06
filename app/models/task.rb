@@ -946,7 +946,37 @@ class Task < ApplicationRecord
     comment.reply_to_id = reply_to_id
     comment.save!
 
+    notify_comment_recipient(comment)
+
     comment
+  end
+
+  # Tell the other party that a comment arrived.
+  #
+  # comment.recipient is already worked out above: the tutor when a student
+  # commented, the student when a tutor commented. Do not recalculate it.
+  #
+  # A project with no tutor for this task definition has no recipient, so the
+  # guard is required and not defensive padding.
+  #
+  # The comment text is deliberately not put in the notification. The email is a
+  # prompt to come back to OnTrack, not a copy of the conversation.
+  #
+  # Raising a notification must never stop a comment being posted, so failures
+  # are logged and swallowed. NotificationService already rescues mail errors;
+  # this catches the record write and anything else unexpected.
+  def notify_comment_recipient(comment)
+    return if comment.recipient.blank?
+
+    NotificationService.notify(
+      user: comment.recipient,
+      type: 'feedback',
+      event: 'task_comment_created',
+      message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise task_comment_created notification for task #{id}: #{e.message}"
   end
 
   def individual_task_or_submitter_of_group_task?
