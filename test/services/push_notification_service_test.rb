@@ -7,14 +7,14 @@ require 'test_helper'
 # part most likely to be wired up wrong is the gem call and the payload, and a
 # stub of WebPush.payload_send would prove neither.
 class PushNotificationServiceTest < ActiveSupport::TestCase
-  # A throwaway VAPID pair and a throwaway browser key pair, generated for these
-  # tests. The p256dh has to be a real prime256v1 public key or the gem cannot
-  # encrypt the payload, so it cannot be a made up string.
+  # A throwaway VAPID pair, generated for these tests. The matching browser key
+  # pair lives in the push_subscription factory, which is where the real
+  # prime256v1 public key the gem needs to encrypt against now comes from.
   VAPID_PUBLIC = 'BOs-KbIoHK7gUIX3i2_uEuDoouj-GKxB-mY9CRmLNmd4Wn-SSl254E1g6jR1ukL3e37p8uCpaMjOvfAB0BwzvSI='.freeze
   VAPID_PRIVATE = '_NFIWSUTdCdLJJFh87pf4ekQLmNYqsweZ4288NpVZaY='.freeze
-  BROWSER_P256DH = 'BJy8RpjMkwOPDIIXSu-FTe7OosAwY9G86_evhrn0jJbPnoxXjBYpn7aPHEIaRh3GxCzFvwYXjKWvtu3FEMaBQMY='.freeze
-  BROWSER_AUTH = 'CUkmaYqq8eINt1HTnFY65w=='.freeze
 
+  # Fixed rather than sequenced, because every test here has to stub the exact
+  # URL the gem will post to.
   ENDPOINT = 'https://fcm.googleapis.com/fcm/send/test-browser'.freeze
 
   setup do
@@ -51,11 +51,7 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
   end
 
   def create_subscription(endpoint: ENDPOINT)
-    @user.push_subscriptions.create!(
-      endpoint: endpoint,
-      p256dh: BROWSER_P256DH,
-      auth: BROWSER_AUTH
-    )
+    FactoryBot.create(:push_subscription, user: @user, endpoint: endpoint)
   end
 
   def test_nothing_is_sent_when_the_vapid_keys_are_missing
