@@ -13,6 +13,11 @@ class PushSubscriptionsApi < Grape::API
     present current_user.push_subscriptions.order(:id), with: Entities::PushSubscriptionEntity
   end
 
+  # The endpoint posted here is later used as the target of an outbound request
+  # by PushNotificationService, so it is not accepted as free text.
+  # PushSubscription validates it against PUSH_SERVICE_HOSTS, and a URL that is
+  # not an https push service URL fails with a 400 from the handler in
+  # api_root.rb. PushNotificationService checks again before it sends.
   desc 'Register this browser to receive push notifications'
   params do
     requires :endpoint, type: String, desc: 'The push service URL, from PushSubscription.endpoint'

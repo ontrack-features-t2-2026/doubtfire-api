@@ -18,6 +18,19 @@ class PushNotificationService
   # task titles, so it is trimmed rather than trusted.
   MAX_BODY_LENGTH = 400
 
+  # Seconds. web-push sets no timeouts of its own, so without these a push
+  # service that accepts a connection and then never answers holds the request
+  # thread open until the app server kills it. NotificationService calls this
+  # inline from the request path, so that stall is a stall for the person who
+  # posted the comment.
+  #
+  # Both are passed together on purpose. web-push 3.0.0 guards read_timeout on
+  # open_timeout being present (lib/web_push/request.rb line 15), so passing
+  # read_timeout alone silently does nothing.
+  OPEN_TIMEOUT = 5
+  READ_TIMEOUT = 5
+  SSL_TIMEOUT = 5
+
   def self.deliver(notification)
     return unless configured?
 
@@ -49,12 +62,24 @@ class PushNotificationService
   end
 
   def self.deliver_to(subscription, payload)
+    # Checked again here rather than trusted from the row. PushSubscription
+    # validates this on write, but rows created before that validation existed
+    # were never checked, and this is the line that actually makes the outbound
+    # request. Refusing here is what stops a stored bad endpoint being used.
+    unless PushSubscription.push_service_endpoint?(subscription.endpoint)
+      Rails.logger.error "Refusing to push to subscription #{subscription.id}: endpoint is not a recognised push service"
+      return
+    end
+
     WebPush.payload_send(
       message: payload,
       endpoint: subscription.endpoint,
       p256dh: subscription.p256dh,
       auth: subscription.auth,
-      vapid: vapid_details
+      vapid: vapid_details,
+      open_timeout: OPEN_TIMEOUT,
+      read_timeout: READ_TIMEOUT,
+      ssl_timeout: SSL_TIMEOUT
     )
   rescue WebPush::ExpiredSubscription, WebPush::InvalidSubscription => e
     # 410 or 404. The browser has thrown this registration away, or it was never

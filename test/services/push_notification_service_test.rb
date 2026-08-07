@@ -173,4 +173,53 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
 
     assert_requested request
   end
+
+  # Rows written before PushSubscription validated the endpoint were never
+  # checked, so the service refuses at send time as well. This is the line that
+  # actually stops a stored bad endpoint being used, so it is tested by writing
+  # a row that skips validation, the way an old row would look.
+  def test_a_stored_endpoint_that_is_not_a_push_service_is_never_requested
+    subscription = FactoryBot.build(:push_subscription, user: @user, endpoint: 'https://169.254.169.254/latest/meta-data/')
+    subscription.save!(validate: false)
+
+    # No WebMock stub is registered for that host, so an outbound request would
+    # raise rather than pass silently.
+    with_keys { PushNotificationService.deliver(@notification) }
+
+    assert_not_requested :post, 'https://169.254.169.254/latest/meta-data/'
+    assert subscription.reload.persisted?, 'a refused endpoint should be left alone, not treated as dead'
+  end
+
+  def test_a_refused_endpoint_does_not_stop_the_other_browsers
+    FactoryBot
+      .build(:push_subscription, user: @user, endpoint: 'https://10.0.0.5/internal')
+      .save!(validate: false)
+    create_subscription
+    good = stub_request(:post, ENDPOINT).to_return(status: 201)
+
+    with_keys { PushNotificationService.deliver(@notification) }
+
+    assert_requested good
+  end
+
+  # Timeouts are Net::HTTP settings rather than anything visible on the wire, so
+  # WebMock cannot see them. This one test stubs the gem instead of the HTTP
+  # call, which is the opposite of what the rest of this file does on purpose.
+  #
+  # It is worth the exception because web-push sets no timeouts of its own, and
+  # because the gem only applies read_timeout when open_timeout is also present
+  # (lib/web_push/request.rb line 15), so passing one without the other silently
+  # does nothing.
+  def test_both_timeouts_are_passed_to_the_gem
+    create_subscription
+    captured = nil
+
+    WebPush.stub(:payload_send, ->(**args) { captured = args }) do
+      with_keys { PushNotificationService.deliver(@notification) }
+    end
+
+    assert_equal PushNotificationService::OPEN_TIMEOUT, captured[:open_timeout]
+    assert_equal PushNotificationService::READ_TIMEOUT, captured[:read_timeout]
+    assert_equal PushNotificationService::SSL_TIMEOUT, captured[:ssl_timeout]
+  end
 end
