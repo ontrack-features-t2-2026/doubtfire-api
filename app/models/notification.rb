@@ -6,6 +6,12 @@ class Notification < ApplicationRecord
   # single category toggle gates every delivery channel (in-app, email, push).
   TYPES = %w[task feedback portfolio extension general].freeze
 
+  # `notification_type` is the category the user's preferences switch on.
+  # `event` is the specific thing that happened within that category, e.g.
+  # 'task_comment_created'. It is free text so a new event ticket does not have
+  # to edit this model, but it is required so every notification can be traced
+  # back to the code that raised it.
+
   # Maps a notification type to the user preference column that gates it.
   # Types without an entry here are always delivered.
   PREFERENCE_FOR_TYPE = {
@@ -15,6 +21,7 @@ class Notification < ApplicationRecord
   }.freeze
 
   validates :notification_type, presence: true, inclusion: { in: TYPES }
+  validates :event, presence: true, length: { maximum: 255 }
   validates :message, presence: true, length: { maximum: 500 }
 
   scope :unread, -> { where(read_at: nil) }

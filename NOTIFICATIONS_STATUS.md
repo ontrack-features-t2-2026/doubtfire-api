@@ -25,7 +25,7 @@ in-app. Per-channel granularity (a type x channel matrix) is deferred to v2.
 
 New files:
 - `app/models/notification.rb` - hub model. Types task/feedback/portfolio/extension/general. `unread` and `recent_first` scopes, `mark_read!`.
-- `db/migrate/20260722000001_create_notifications.rb` - notifications table (user_id, notification_type, message, link, read_at, timestamps).
+- `db/migrate/20260722000001_create_notifications.rb` - notifications table (user_id, notification_type, message, link, read_at, timestamps). Ticket EN-F01 later added `event` and widened `message` to text.
 - `app/services/notification_service.rb` - the fan-out entry point. Respects the category preference, creates the in-app record, sends email, calls push.
 - `app/services/push_notification_service.rb` - push channel stub. No-op until VAPID keys exist, so it is safe to call today.
 - `app/api/notifications_api.rb` - REST endpoints (list, unread_count, mark read, mark all read, delete). All scoped to `current_user`, so no IDOR.
@@ -63,9 +63,13 @@ Changed files:
     NotificationService.notify(
       user: project.student,
       type: 'feedback',
+      event: 'task_comment_created',
       message: "New feedback is ready for #{task_definition.name}.",
       link: "/#/projects/#{project.id}"
     )
+
+`event:` is required. It is the specific thing that happened, in
+lower_snake_case. See NOTIFICATIONS.md for how it differs from `type:`.
 
 ## Verification (run in the container, host Ruby is 2.6)
 
@@ -83,7 +87,7 @@ there. See doubtfire-deploy/RUNNING-LOCALLY.md.
    `$COMPOSE exec doubtfire-api bundle exec rails db:migrate`
 4. Lint the new code:
    `$COMPOSE exec doubtfire-api bundle exec rubocop app/models/notification.rb app/services app/api/notifications_api.rb app/api/entities/notification_entity.rb`
-5. Smoke test: in a rails console, `NotificationService.notify(user: User.first, type: 'general', message: 'Hello')`, then `GET /api/notifications` as that user.
+5. Smoke test: in a rails console, `NotificationService.notify(user: User.first, type: 'general', event: 'smoke_test', message: 'Hello')`, then `GET /api/notifications` as that user. A mail file should also appear in `doubtfire-deploy/data/tmp/mails/`.
 
 Still to add for Stage 1 completion (good first tasks, run in container):
 - `test/factories/notifications_factory.rb`

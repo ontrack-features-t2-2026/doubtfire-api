@@ -28,14 +28,24 @@ Call this from anywhere in the API code:
     NotificationService.notify(
       user: project.student,
       type: 'feedback',
+      event: 'task_comment_created',
       message: "New feedback is ready for #{task_definition.name}.",
       link: "/#/projects/#{project.id}"
     )
 
 - user: who gets it.
 - type: the category. One of task, feedback, portfolio, extension, general.
-- message: the text the user sees. Keep it short.
+  This is what the user's on/off setting controls.
+- event: the specific thing that happened, as a lower_snake_case string.
+  Required. Use one event name per ticket, and use the same name every time you
+  raise that notification, so a notification can always be traced back to the
+  code that sent it.
+- message: the text the user sees. Keep it short, 500 characters at most.
 - link: where clicking it should take them. Optional.
+
+type and event are different on purpose. type is the coarse category the user
+switches off in their profile. event is the fine-grained reason, and there will
+be many events inside one type.
 
 ## Types and preferences
 

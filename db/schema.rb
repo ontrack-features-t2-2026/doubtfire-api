@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_22_000001) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_02_000003) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -343,11 +343,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_22_000001) do
   create_table "notifications", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "user_id", null: false
     t.string "notification_type", null: false
-    t.string "message", null: false
+    t.text "message", null: false
     t.string "link"
     t.datetime "read_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "event", null: false
+    t.index ["user_id", "event"], name: "index_notifications_on_user_id_and_event"
     t.index ["user_id", "read_at"], name: "index_notifications_on_user_id_and_read_at"
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
@@ -485,6 +487,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_22_000001) do
     t.index ["unit_id", "user_id"], name: "index_projects_on_unit_id_and_user_id", unique: true
     t.index ["unit_id"], name: "index_projects_on_unit_id"
     t.index ["user_id"], name: "index_projects_on_user_id"
+  end
+
+  create_table "push_subscriptions", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "endpoint", limit: 500, null: false
+    t.string "p256dh", null: false
+    t.string "auth", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["endpoint"], name: "index_push_subscriptions_on_endpoint", unique: true
+    t.index ["user_id"], name: "index_push_subscriptions_on_user_id"
   end
 
   create_table "roles", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -1004,6 +1017,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_22_000001) do
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "source_id"
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "target_id"
   add_foreign_key "notifications", "users"
+  add_foreign_key "push_subscriptions", "users"
   add_foreign_key "user_oauth_states", "users"
   add_foreign_key "user_oauth_tokens", "users"
 end
