@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_09_014859) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_09_153000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -441,6 +441,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_09_014859) do
     t.index ["status_on_failure_id"], name: "index_overseer_steps_on_status_on_failure_id"
     t.index ["status_on_success_id"], name: "index_overseer_steps_on_status_on_success_id"
     t.index ["task_definition_id"], name: "index_overseer_steps_on_task_definition_id"
+  end
+
+  create_table "peer_progress_snapshots", charset: "utf8mb4", collation: "utf8mb4_uca1400_ai_ci", force: :cascade do |t|
+    t.bigint "unit_id", null: false
+    t.bigint "task_definition_id", null: false
+    t.integer "target_grade", null: false
+    t.decimal "submitted_percentage", precision: 5, scale: 2
+    t.integer "cohort_size", null: false
+    t.datetime "calculated_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["task_definition_id"], name: "index_peer_progress_snapshots_on_task_definition_id"
+    t.index ["unit_id", "task_definition_id", "target_grade"], name: "idx_peer_progress_unit_task_grade", unique: true
+    t.index ["unit_id"], name: "index_peer_progress_snapshots_on_unit_id"
   end
 
   create_table "projects", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
