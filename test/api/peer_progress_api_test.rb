@@ -340,7 +340,11 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   end
 
   test 'returns a neutral unavailable state when no target grade is selected' do
+    # Intentionally bypass validations and callbacks to verify that the API
+    # safely handles a project with no stored target grade.
+    # rubocop:disable Rails/SkipsModelValidations
     @project.update_column(:target_grade, nil)
+    # rubocop:enable Rails/SkipsModelValidations
 
     request_as(@student)
 
@@ -361,7 +365,11 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   end
 
   test 'does not expose an invalid stored target grade' do
+    # Intentionally bypass validations and callbacks to verify that the API
+    # safely handles an invalid legacy target-grade value.
+    # rubocop:disable Rails/SkipsModelValidations
     @project.update_column(:target_grade, 999)
+    # rubocop:enable Rails/SkipsModelValidations
 
     request_as(@student)
 
@@ -443,6 +451,78 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_private_no_store
   end
 
+  test 'returns the same generic response for unknown project and task ids' do
+    unknown_project_id = Project.maximum(:id).to_i + 10_000
+
+    request_as(
+      @student,
+      "/api/projects/#{unknown_project_id}/task_def_id/" \
+      "#{@task_definition.id}/peer_progress"
+    )
+
+    assert_peer_progress_not_found
+
+    unknown_task_id = TaskDefinition.maximum(:id).to_i + 10_000
+
+    request_as(
+      @student,
+      "/api/projects/#{@project.id}/task_def_id/" \
+      "#{unknown_task_id}/peer_progress"
+    )
+
+    assert_peer_progress_not_found
+  end
+
+  test 'fails closed for invalid positive integer configuration' do
+    create_snapshot(
+      submitted_percentage: 50,
+      cohort_size: 5
+    )
+
+    [
+      ['DF_PPI_MINIMUM_COHORT_SIZE', '0'],
+      ['DF_PPI_MINIMUM_COHORT_SIZE', 'not-a-number'],
+      ['DF_PPI_STALE_AFTER_HOURS', '-1'],
+      ['DF_PPI_STALE_AFTER_HOURS', '1.5']
+    ].each do |name, value|
+      original = ENV.fetch(name, nil)
+
+      begin
+        ENV[name] = value
+        request_as(@student)
+
+        assert_equal 503, last_response.status
+        assert_equal(
+          PeerProgressApi::CONFIG_ERROR_MESSAGE,
+          last_response_body['error']
+        )
+        assert_private_no_store
+      ensure
+        restore_env(name, original)
+      end
+    end
+  end
+
+  test 'keeps a snapshot available at the exact stale boundary' do
+    travel_to Time.zone.parse('2026-08-10 12:00:00 UTC') do
+      create_snapshot(
+        submitted_percentage: 50,
+        cohort_size: 5,
+        calculated_at: 48.hours.ago
+      )
+
+      request_as(@student)
+
+      assert_equal 200, last_response.status
+
+      body = last_response_body
+      assert_peer_progress_response_contract(body)
+
+      assert_equal 50.0, body['submitted_percentage']
+      assert_equal false, body['is_stale']
+    end
+  end
+
   test 'fails closed when required PPI configuration is missing' do
     create_snapshot(
       submitted_percentage: 50,
@@ -491,10 +571,16 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
   def assert_peer_progress_not_found
     assert_equal 404, last_response.status
+
+    body = last_response_body
+
+    assert_json_limit_keys_to_exactly %w[error], body
+
     assert_equal(
       PeerProgressApi::NOT_FOUND_MESSAGE,
-      last_response_body['error']
+      body['error']
     )
+
     assert_private_no_store
   end
 

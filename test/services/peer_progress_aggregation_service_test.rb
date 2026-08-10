@@ -192,8 +192,8 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     assert_equal 100.0, snapshot.submitted_percentage.to_f
   end
 
-  def test_does_not_count_a_task_without_a_submission_date
-    projects = create_list(
+  def test_does_not_mix_projects_or_submissions_from_another_unit
+    local_projects = create_list(
       :project,
       2,
       unit: @unit,
@@ -202,17 +202,41 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     )
 
     create_submitted_task(
-      project: projects.first,
+      project: local_projects.first,
       task_definition: @pass_task
     )
 
-    create(
-      :task,
-      project: projects.second,
-      task_definition: @pass_task,
-      task_status: TaskStatus.complete,
-      submission_date: nil
+    other_unit = create(
+      :unit,
+      with_students: false,
+      task_count: 0,
+      stream_count: 0,
+      tutorials: 0,
+      staff_count: 0,
+      outcome_count: 0
     )
+
+    other_task = create(
+      :task_definition,
+      unit: other_unit,
+      target_grade: 0,
+      outcome_count: 0
+    )
+
+    other_projects = create_list(
+      :project,
+      4,
+      unit: other_unit,
+      target_grade: 0,
+      enrolled: true
+    )
+
+    other_projects.each do |project|
+      create_submitted_task(
+        project: project,
+        task_definition: other_task
+      )
+    end
 
     run_service
 
@@ -223,6 +247,7 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
 
     assert_equal 2, snapshot.cohort_size
     assert_equal 50.0, snapshot.submitted_percentage.to_f
+    assert_not PeerProgressSnapshot.exists?(unit: other_unit)
   end
 
   def test_does_not_create_missing_task_rows
@@ -294,8 +319,6 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
 
     assert_equal 33.33, snapshot.submitted_percentage.to_f
   end
-
-  private
 
   def run_service
     PeerProgressAggregationService.call(

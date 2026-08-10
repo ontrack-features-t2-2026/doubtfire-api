@@ -20,11 +20,11 @@ class AggregatePeerProgressJob
     calculated_at = Time.zone.now
 
     if unit_id.present?
-        aggregate_unit(Unit.find(unit_id), calculated_at)
+      aggregate_unit(Unit.find(unit_id), calculated_at)
     else
-        Unit.active_units.find_each do |unit|
-            aggregate_unit(unit, calculated_at)
-        end
+      Unit.active_units.find_each do |unit|
+        aggregate_unit(unit, calculated_at)
+      end
     end
 
     at(1)
