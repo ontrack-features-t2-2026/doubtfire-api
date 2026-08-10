@@ -704,6 +704,9 @@ class Task < ApplicationRecord
     return if task_status_id == previous_status_id
 
     recipient = project&.student
+    # recipient == by_user is belt and braces: once role == :tutor the actor
+    # cannot be the student, since user_role checks user == student first. Kept
+    # so a future change to user_role cannot start emailing someone themselves.
     return if recipient.blank? || recipient == by_user
 
     NotificationService.notify(

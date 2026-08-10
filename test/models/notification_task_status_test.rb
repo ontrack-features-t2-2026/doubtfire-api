@@ -114,6 +114,17 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     assert_includes body, 'The new status is not included in this email'
   end
 
+  def test_bulk_marking_still_notifies_one_per_task
+    # This event ignores the bulk: flag on purpose (see the event doc): a bulk
+    # mark still notifies. One call, one task, one email.
+    assert_difference 'Notification.count', 1 do
+      assert @task.trigger_transition(trigger: 'discuss', by_user: @tutor, bulk: true)
+    end
+
+    assert_equal 1, ActionMailer::Base.deliveries.count
+    assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
+  end
+
   def test_a_notification_failure_does_not_stop_the_transition
     result = nil
 

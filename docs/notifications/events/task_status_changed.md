@@ -68,11 +68,40 @@ event when it exists. Adding this event never required editing the mailer.
 4. Turn that student's task notifications off in their profile, have the tutor
    mark again, and no email arrives.
 
+## Known limitations and deliberate choices
+
+- **Bulk marking sends one email per task, inline.** `Project#trigger_week_end`
+  (`app/models/project.rb`) loops `trigger_transition(trigger: 'complete',
+  bulk: true)` over a student's discuss/demonstrate tasks, and this event ignores
+  the `bulk:` flag, so a single request can send several near-identical emails
+  (NotificationService delivers inline by design). The path is latent today — no
+  `doubtfire-web` caller drives `trigger_week_end`. Left un-suppressed on purpose
+  so bulk-marked tasks still notify; batching many into one email belongs with the
+  queue work (EN-F03), not here.
+
+- **The fix-and-resubmit cascade does not raise this event.** Inside `assess`, the
+  `recursive_fix` cascade calls `assess` directly on dependent tasks instead of
+  going through `trigger_transition`, so those status changes raise nothing here.
+  The student is still emailed, but via `task_comment_created` (the cascade adds an
+  automated comment) — i.e. under a different event. Reconciling that is out of
+  scope for EN-E02.
+
+- **Site admins acting on the student-side branches notify nobody.** `user_role`
+  returns `:admin` for an unenrolled site admin, who can still drive the
+  `working_on_it` / `need_help` / `not_started` / `ready_for_feedback` branches.
+  The `role == :tutor` guard means those changes notify no one. That is intended:
+  an admin poking at a task is not a tutor marking it for the student.
+
 ## Tests
 
 `test/models/notification_task_status_test.rb`
 
 Covers the staff change, the student's own action sending nothing, an unchanged
 status sending nothing, the preference switch, the status value staying out of
-the email, the event-specific template being used, and that a notification
-failure still leaves the transition committed.
+the email, the event-specific template being used, a bulk mark still notifying,
+and that a notification failure still leaves the transition committed.
+
+Not yet covered: the group-task fan-out (each member emailed about their own
+task). The behaviour is correct — `propagate_transition` threads `by_user`
+through a per-member `trigger_transition` — but a factory-built group task test
+is a worthwhile follow-up.
