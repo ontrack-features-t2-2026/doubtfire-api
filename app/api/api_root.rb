@@ -66,6 +66,7 @@ class ApiRoot < Grape::API
   mount GroupSetsApi
   mount LearningOutcomesApi
   mount ProjectsApi
+  mount PeerProgressApi
   mount SettingsApi
   mount StudentsApi
   mount Submission::PortfolioApi
@@ -125,6 +126,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to GroupSetsApi
   AuthenticationHelpers.add_auth_to LearningOutcomesApi
   AuthenticationHelpers.add_auth_to ProjectsApi
+  AuthenticationHelpers.add_auth_to PeerProgressApi
   AuthenticationHelpers.add_auth_to StudentsApi
   AuthenticationHelpers.add_auth_to Submission::PortfolioApi
   AuthenticationHelpers.add_auth_to Submission::PortfolioEvidenceApi
