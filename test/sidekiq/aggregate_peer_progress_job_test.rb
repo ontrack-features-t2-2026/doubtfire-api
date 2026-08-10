@@ -109,6 +109,45 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
     assert_equal [@active_unit.id], queued_job['args']
   end
 
+  def test_creates_a_snapshot_through_the_real_aggregation_service
+    task_definition = create(
+      :task_definition,
+      unit: @active_unit,
+      target_grade: 0,
+      outcome_count: 0
+    )
+
+    projects = create_list(
+      :project,
+      2,
+      unit: @active_unit,
+      target_grade: 0,
+      enrolled: true
+    )
+
+    create(
+      :task,
+      project: projects.first,
+      task_definition: task_definition,
+      task_status: TaskStatus.ready_for_feedback,
+      submission_date: @calculated_at - 1.hour
+    )
+
+    travel_to @calculated_at do
+      AggregatePeerProgressJob.new.perform(@active_unit.id)
+    end
+
+    snapshot = PeerProgressSnapshot.find_by!(
+      unit: @active_unit,
+      task_definition: task_definition,
+      target_grade: 0
+    )
+
+    assert_equal 2, snapshot.cohort_size
+    assert_equal 50.0, snapshot.submitted_percentage.to_f
+    assert_equal @calculated_at, snapshot.calculated_at
+  end
+
   private
 
   def create_minimal_unit(active:)
