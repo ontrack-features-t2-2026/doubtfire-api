@@ -10,12 +10,22 @@ class PeerProgressApi < Grape::API
   CONFIG_ERROR_MESSAGE = 'Peer progress is not configured.'
 
   before do
+    header 'Cache-Control', 'private, no-store'
     authenticated?
   end
 
   helpers do
     def peer_progress_not_found!
       error!({ error: PeerProgressApi::NOT_FOUND_MESSAGE }, 404)
+    end
+
+    def safe_target_grade(project)
+      target_grade = project.target_grade
+
+      return nil if target_grade.nil?
+      return nil unless project.unit.grade_value?(target_grade)
+
+      target_grade
     end
 
     def positive_integer_env!(name)
@@ -40,12 +50,12 @@ class PeerProgressApi < Grape::API
       {
         task_definition_id: task_definition.id,
         unit_id: project.unit_id,
-        target_grade: project.target_grade,
+        target_grade: safe_target_grade(project),
         submitted_percentage: submitted_percentage,
         is_suppressed: is_suppressed,
         is_stale: is_stale,
         is_feature_enabled: is_feature_enabled,
-        last_updated_at: snapshot&.calculated_at&.iso8601,
+        last_updated_at: snapshot&.calculated_at&.utc&.iso8601,
         unavailable_message: unavailable_message
       }
     end
@@ -62,8 +72,8 @@ class PeerProgressApi < Grape::API
         )
       end
 
-      target_grade = project.target_grade
-      unless target_grade.present? && unit.grade_value?(target_grade)
+      target_grade = safe_target_grade(project)
+      unless target_grade
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
@@ -156,8 +166,6 @@ class PeerProgressApi < Grape::API
        task_definition.target_grade > target_grade
       peer_progress_not_found!
     end
-
-    header 'Cache-Control', 'private, no-store'
 
     present peer_progress_result(
       project: project,
