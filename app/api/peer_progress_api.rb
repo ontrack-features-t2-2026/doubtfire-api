@@ -8,6 +8,7 @@ class PeerProgressApi < Grape::API
   UNAVAILABLE_MESSAGE = 'Peer progress is currently unavailable.'
   NOT_FOUND_MESSAGE = 'Peer progress is unavailable for this project or task.'
   CONFIG_ERROR_MESSAGE = 'Peer progress is not configured.'
+  MINIMUM_SAFE_COHORT_SIZE = 5
 
   before do
     header 'Cache-Control', 'private, no-store'
@@ -55,6 +56,19 @@ class PeerProgressApi < Grape::API
       value
     rescue KeyError, ArgumentError
       error!({ error: PeerProgressApi::CONFIG_ERROR_MESSAGE }, 503)
+    end
+
+    def minimum_cohort_size!
+      value = positive_integer_env!(
+        'DF_PPI_MINIMUM_COHORT_SIZE'
+      )
+
+      return value if value >= PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE
+
+      error!(
+        { error: PeerProgressApi::CONFIG_ERROR_MESSAGE },
+        503
+      )
     end
 
     def peer_progress_payload(
@@ -116,9 +130,8 @@ class PeerProgressApi < Grape::API
         )
       end
 
-      minimum_cohort_size = positive_integer_env!(
-        'DF_PPI_MINIMUM_COHORT_SIZE'
-      )
+      minimum_cohort_size = minimum_cohort_size!
+      
       stale_after_hours = positive_integer_env!(
         'DF_PPI_STALE_AFTER_HOURS'
       )

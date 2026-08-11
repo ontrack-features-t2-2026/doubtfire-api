@@ -197,6 +197,39 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal 200, last_response.status
   end
 
+  test 'fails closed when the cohort configuration is below the privacy floor' do
+    create_snapshot(
+      submitted_percentage: 50,
+      cohort_size: 5
+    )
+
+    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '4'
+
+    request_as(@student)
+
+    assert_equal 503, last_response.status
+    assert_equal(
+      PeerProgressApi::CONFIG_ERROR_MESSAGE,
+      last_response_body['error']
+    )
+    assert_private_no_store
+  end
+
+  test 'accepts a configured threshold above the privacy floor' do
+    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '6'
+
+    create_snapshot(
+      submitted_percentage: 50,
+      cohort_size: 6
+    )
+
+    request_as(@student)
+
+    assert_equal 200, last_response.status
+    assert_equal 50.0, last_response_body['submitted_percentage']
+    assert_equal false, last_response_body['is_suppressed']
+  end
+
   test 'does not allow a student to read another students project' do
     other_student = create(:user, :student)
     other_project = @unit.enrol_student(
