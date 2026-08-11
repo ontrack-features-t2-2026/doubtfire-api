@@ -33,31 +33,52 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
     assert_equal @calculated_at, calls.first[:calculated_at]
   end
 
-  def test_aggregates_all_active_units_when_no_unit_id_is_given
-    expected_unit_ids = Unit.active_units.order(:id).pluck(:id)
-    calls = []
+  def test_enqueues_one_job_for_each_active_unit_when_no_unit_id_is_given
+    Sidekiq::Job.clear_all
 
-    travel_to @calculated_at do
-      PeerProgressAggregationService.stub(
-        :call,
-        lambda do |unit:, calculated_at:|
-          calls << {
-            unit_id: unit.id,
-            calculated_at: calculated_at
-          }
-          []
-        end
-      ) do
-        AggregatePeerProgressJob.new.perform
-      end
+    expected_unit_ids =
+      Unit.active_units.order(:id).pluck(:id)
+
+    assert_difference(
+      -> { AggregatePeerProgressJob.jobs.size },
+      expected_unit_ids.length
+    ) do
+      AggregatePeerProgressJob.new.perform
     end
 
-    actual_unit_ids = calls.map { |call| call[:unit_id] }.sort
-    calculated_times = calls.map { |call| call[:calculated_at] }.uniq
+    actual_unit_ids =
+      AggregatePeerProgressJob.jobs
+                              .last(expected_unit_ids.length)
+                              .map { |job| job['args'].first }
+                              .sort
 
     assert_equal expected_unit_ids, actual_unit_ids
-    assert_equal [@calculated_at], calculated_times
-    assert_not_includes expected_unit_ids, @inactive_unit.id
+    assert_not_includes actual_unit_ids, @inactive_unit.id
+  end
+
+  def test_failure_for_one_unit_does_not_prevent_another_unit_job
+    other_unit = create_minimal_unit(active: true)
+    successful_unit_ids = []
+
+    PeerProgressAggregationService.stub(
+      :call,
+      lambda do |unit:, **_kwargs|
+        if unit.id == @active_unit.id
+          raise StandardError, 'first unit failed'
+        end
+
+        successful_unit_ids << unit.id
+        []
+      end
+    ) do
+      assert_raises(StandardError) do
+        AggregatePeerProgressJob.new.perform(@active_unit.id)
+      end
+
+      AggregatePeerProgressJob.new.perform(other_unit.id)
+    end
+
+    assert_equal [other_unit.id], successful_unit_ids
   end
 
   def test_skips_a_requested_inactive_unit
@@ -130,6 +151,7 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
       project: projects.first,
       task_definition: task_definition,
       task_status: TaskStatus.ready_for_feedback,
+      file_uploaded_at: @calculated_at - 1.hour,
       submission_date: @calculated_at - 1.hour
     )
 
