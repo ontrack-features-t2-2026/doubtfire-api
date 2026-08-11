@@ -73,6 +73,7 @@ class UnitsApi < Grape::API
       optional :code, type: String
       optional :description, type: String
       optional :active, type: Boolean
+      optional :peer_progress_enabled, type: Boolean, desc: 'Enable anonymous peer progress for students in this unit'
       optional :teaching_period_id, type: Integer
       optional :start_date, type: Date
       optional :end_date, type: Date
@@ -116,6 +117,7 @@ class UnitsApi < Grape::API
                                                           :description,
                                                           :start_date,
                                                           :end_date,
+                                                          :peer_progress_enabled,
                                                           :teaching_period_id,
                                                           :active,
                                                           :main_convenor_id,
