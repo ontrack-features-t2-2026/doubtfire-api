@@ -132,6 +132,71 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal '', body['unavailable_message']
   end
 
+  test 'does not allow access before a student specific flexible start date' do
+    @unit.update!(allow_flexible_dates: true)
+
+    create(
+      :task,
+      project: @project,
+      task_definition: @task_definition,
+      task_status: TaskStatus.not_started,
+      target_start_date: 1.day.from_now
+    )
+
+    request_as(@student)
+
+    assert_peer_progress_not_found
+  end
+
+  test 'does not allow access before a target grade specific start date' do
+    @unit.update!(allow_flexible_dates: true)
+
+    TaskDefinitionGradeDueDate.create!(
+      task_definition: @task_definition,
+      target_grade: @project.target_grade,
+      start_date: 1.day.from_now,
+      target_due_date: @task_definition.target_date
+    )
+
+    request_as(@student)
+
+    assert_peer_progress_not_found
+  end
+
+  test 'allows access after the target grade specific start date' do
+    @unit.update!(allow_flexible_dates: true)
+
+    TaskDefinitionGradeDueDate.create!(
+      task_definition: @task_definition,
+      target_grade: @project.target_grade,
+      start_date: 1.day.ago,
+      target_due_date: @task_definition.target_date
+    )
+
+    create_snapshot(
+      submitted_percentage: 50,
+      cohort_size: 5
+    )
+
+    request_as(@student)
+
+    assert_equal 200, last_response.status
+    assert_equal 50.0, last_response_body['submitted_percentage']
+  end
+
+  test 'does not create a task row while checking the release date' do
+    create_snapshot(
+      submitted_percentage: 50,
+      cohort_size: 5
+    )
+
+    assert_no_difference('Task.count') do
+      request_as(@student)
+    end
+
+    assert_equal 200, last_response.status
+  end
+
   test 'does not allow a student to read another students project' do
     other_student = create(:user, :student)
     other_project = @unit.enrol_student(

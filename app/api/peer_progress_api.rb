@@ -19,6 +19,26 @@ class PeerProgressApi < Grape::API
       error!({ error: PeerProgressApi::NOT_FOUND_MESSAGE }, 404)
     end
 
+    def effective_task(project:, task_definition:)
+      project.tasks.find_by(
+        task_definition_id: task_definition.id
+      ) || Task.new(
+        project: project,
+        task_definition: task_definition,
+        task_status: TaskStatus.not_started,
+        extensions: 0
+      )
+    end
+
+    def released_for_project?(project:, task_definition:)
+      start_date = effective_task(
+        project: project,
+        task_definition: task_definition
+      ).local_start_date
+
+      start_date.present? && start_date <= Time.zone.now
+    end
+
     def safe_target_grade(project)
       target_grade = project.target_grade
 
@@ -157,9 +177,10 @@ class PeerProgressApi < Grape::API
     )
     peer_progress_not_found! if task_definition.nil?
 
-    released = task_definition.start_date.present? &&
-               task_definition.start_date <= Time.zone.now
-    peer_progress_not_found! unless released
+    peer_progress_not_found! unless released_for_project?(
+      project: project,
+      task_definition: task_definition
+    )
 
     target_grade = project.target_grade
     if target_grade.present? && unit.grade_value?(target_grade) &&
