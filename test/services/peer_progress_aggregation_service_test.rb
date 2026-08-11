@@ -320,6 +320,104 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     assert_equal 33.33, snapshot.submitted_percentage.to_f
   end
 
+  def test_does_not_count_staff_assessment_without_a_student_upload
+    project = create(
+      :project,
+      unit: @unit,
+      target_grade: 0,
+      enrolled: true
+    )
+
+    create(
+      :task,
+      project: project,
+      task_definition: @pass_task,
+      task_status: TaskStatus.complete,
+      file_uploaded_at: nil,
+      submission_date: @calculated_at - 1.hour,
+      assessment_date: @calculated_at - 1.hour
+    )
+
+    run_service
+
+    snapshot = find_snapshot(
+      task_definition: @pass_task,
+      target_grade: 0
+    )
+
+    assert_equal 1, snapshot.cohort_size
+    assert_equal 0.0, snapshot.submitted_percentage.to_f
+  end
+
+  def test_counts_a_group_upload_for_each_participating_project
+    group_unit = create(
+      :unit,
+      with_students: true,
+      student_count: 2,
+      unenrolled_student_count: 0,
+      part_enrolled_student_count: 0,
+      inactive_student_count: 0,
+      task_count: 0,
+      tutorials: 1,
+      group_sets: 1,
+      groups: [{ gs: 0, students: 2 }],
+      outcome_count: 0
+    )
+
+    group_task = create(
+      :task_definition,
+      unit: group_unit,
+      group_set: group_unit.group_sets.first,
+      target_grade: 0,
+      upload_requirements: [],
+      start_date: 1.day.ago,
+      outcome_count: 0
+    )
+
+    projects = group_unit.groups.first.projects.to_a
+    projects.each { |project| project.update!(target_grade: 0) }
+
+    submitting_task =
+      projects.first.task_for_task_definition(group_task)
+
+    contributions = projects.map do |project|
+      {
+        project_id: project.id,
+        pct: 100 / projects.length,
+        pts: 3
+      }
+    end
+
+    submitting_task.create_submission_and_trigger_state_change(
+      submitting_task.student,
+      true,
+      contributions,
+      'ready_for_feedback'
+    )
+
+    PeerProgressAggregationService.call(
+      unit: group_unit,
+      calculated_at: @calculated_at
+    )
+
+    snapshot = PeerProgressSnapshot.find_by!(
+      unit: group_unit,
+      task_definition: group_task,
+      target_grade: 0
+    )
+
+    assert_equal 2, snapshot.cohort_size
+    assert_equal 100.0, snapshot.submitted_percentage.to_f
+
+    projects.each do |project|
+      task = project.tasks.find_by!(
+        task_definition: group_task
+      )
+
+      assert task.file_uploaded_at.present?
+    end
+  end
+
   def run_service
     PeerProgressAggregationService.call(
       unit: @unit,
@@ -340,12 +438,15 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     task_definition:,
     task_status: TaskStatus.ready_for_feedback
   )
+    uploaded_at = @calculated_at - 1.hour
+
     create(
       :task,
       project: project,
       task_definition: task_definition,
       task_status: task_status,
-      submission_date: @calculated_at - 1.hour
+      file_uploaded_at: uploaded_at,
+      submission_date: uploaded_at
     )
   end
 end

@@ -77,7 +77,7 @@ class PeerProgressAggregationService
         project_id: cohort.select(:id),
         task_definition_id: task_definitions.select(:id)
       )
-      .where.not(submission_date: nil)
+      .where.not(file_uploaded_at: nil)
       .group(:task_definition_id)
       .distinct
       .count(:project_id)
