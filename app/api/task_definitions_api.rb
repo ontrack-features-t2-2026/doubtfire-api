@@ -109,6 +109,8 @@ class TaskDefinitionsApi < Grape::API
 
     task_def.save!
 
+    NewTaskAvailableNotificationJob.perform_async(task_def.id)
+
     present task_def, with: Entities::TaskDefinitionEntity, my_role: unit.role_for(current_user)
   end
 
