@@ -605,6 +605,10 @@ class Task < ApplicationRecord
     # State transitions based upon the trigger
     #
 
+    # Remember the status before the transition so we can tell, at the end,
+    # whether it actually changed. An unchanged status must not notify (EN-E02).
+    status_id_before_transition = task_status_id
+
     status = TaskStatus.status_for_name(trigger)
 
     case status
@@ -676,7 +680,44 @@ class Task < ApplicationRecord
       end
     end
 
+    # EN-E02: tell the student when a staff member changed their task's status.
+    notify_student_of_status_change(by_user, role, status_id_before_transition)
+
     true
+  end
+
+  # Tell the student that a staff member changed the status of their task.
+  #
+  # Only a tutor's action notifies (role == :tutor); a student changing their
+  # own task must never email themselves. And only a real change notifies: an
+  # unchanged status is a no-op.
+  #
+  # The new status value is deliberately kept out of the notification, the same
+  # way the comment text is in notify_comment_recipient. The email is a prompt to
+  # come back to OnTrack, not a copy of the result.
+  #
+  # Raising a notification must never roll back the transition, so failures are
+  # logged and swallowed. NotificationService already rescues mail errors; this
+  # catches the record write and anything else unexpected.
+  def notify_student_of_status_change(by_user, role, previous_status_id)
+    return unless role == :tutor
+    return if task_status_id == previous_status_id
+
+    recipient = project&.student
+    # recipient == by_user is belt and braces: once role == :tutor the actor
+    # cannot be the student, since user_role checks user == student first. Kept
+    # so a future change to user_role cannot start emailing someone themselves.
+    return if recipient.blank? || recipient == by_user
+
+    NotificationService.notify(
+      user: recipient,
+      type: 'task',
+      event: 'task_status_changed',
+      message: "#{by_user.name} updated the status of #{task_definition.abbreviation} in #{unit.code}.",
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise task_status_changed notification for task #{id}: #{e.message}"
   end
 
   def has_discussed_in_class_comment?
