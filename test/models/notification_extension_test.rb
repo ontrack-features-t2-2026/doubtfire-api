@@ -128,6 +128,32 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     assert_empty ActionMailer::Base.deliveries
   end
 
+  def test_failed_grant_does_not_assess_or_notify_student
+    extension = create_extension_request
+    task = extension.task
+    original_extensions = task.extensions
+
+    task.stub :can_apply_for_extension?, true do
+      task.stub :grant_extension, false do
+        assert_no_difference 'Notification.count' do
+          result = extension.assess_extension(@tutor, true)
+
+          assert_equal false, result
+        end
+      end
+    end
+
+    assert_empty ActionMailer::Base.deliveries
+    assert_includes extension.errors[:extension], 'could not be applied'
+    refute extension.assessed?
+    refute extension.extension_granted
+    assert_equal original_extensions, task.reload.extensions
+
+    extension.reload
+    refute extension.assessed?
+    refute extension.extension_granted
+  end
+
   def test_extension_notification_uses_event_specific_templates
     extension = create_extension_request
 
