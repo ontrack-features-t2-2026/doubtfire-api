@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'test_helper'
+require 'minitest/mock'
 
 # EN-V02: newly available tasks notify eligible students.
 class NotificationNewTaskTest < ActiveSupport::TestCase
@@ -179,6 +180,27 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
     end
 
     assert_empty ActionMailer::Base.deliveries
+  end
+
+  def test_notification_failure_makes_job_fail_for_retry
+    notification_failure = lambda do |**_args|
+      raise StandardError, 'temporary notification failure'
+    end
+
+    NotificationService.stub(:notify, notification_failure) do
+      error = assert_raises(RuntimeError) do
+        run_job
+      end
+
+      assert_includes error.message, @project.id.to_s
+    end
+  end
+
+  def test_job_has_limited_retries
+    assert_equal(
+      3,
+      NewTaskAvailableNotificationJob.get_sidekiq_options['retry']
+    )
   end
 
   def test_running_fan_out_twice_does_not_duplicate_notification

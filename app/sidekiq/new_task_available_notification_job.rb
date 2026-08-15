@@ -10,7 +10,7 @@ class NewTaskAvailableNotificationJob
   sidekiq_options lock: :until_executed,
                   lock_args_method: ->(args) { [args.first] },
                   on_conflict: :reject,
-                  retry: false
+                  retry: 3
 
   def perform(task_definition_id)
     task_definition = TaskDefinition.find_by(id: task_definition_id)
@@ -19,12 +19,25 @@ class NewTaskAvailableNotificationJob
     unit = task_definition.unit
     return unless unit.active
 
+    failed_project_ids = []
+
     unit.projects
         .where(enrolled: true)
         .includes(:user)
         .find_each(batch_size: BATCH_SIZE) do |project|
       notify_project(project, task_definition)
+    rescue StandardError => e
+      failed_project_ids << project.id
+
+      Rails.logger.error(
+        "Failed new-task notification for TaskDefinition #{task_definition.id}, " \
+        "Project #{project.id}: #{e.class} - #{e.message}"
+      )
     end
+
+    return if failed_project_ids.empty?
+
+    raise "New-task notifications failed for projects: #{failed_project_ids.join(', ')}"
   end
 
   private
@@ -58,11 +71,6 @@ class NewTaskAvailableNotificationJob
       event: EVENT,
       message: "A new task is available: #{task_definition.abbreviation} in #{task_definition.unit.code}.",
       link: link
-    )
-  rescue StandardError => e
-    Rails.logger.error(
-      "Failed new-task notification for TaskDefinition #{task_definition.id}, " \
-      "Project #{project.id}: #{e.class} - #{e.message}"
     )
   end
 end
