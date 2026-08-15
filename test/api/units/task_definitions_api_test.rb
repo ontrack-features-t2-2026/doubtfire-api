@@ -1059,4 +1059,92 @@ class TaskDefinitionsTest < ActiveSupport::TestCase
       end
     end
   end
+
+  def test_due_date_update_enqueues_notification_job
+    unit = FactoryBot.create(:unit, task_count: 1)
+    task_def = unit.task_definitions.first
+
+    previous_due_date = task_def[:due_date]&.to_date&.iso8601
+    new_due_date = (task_def.due_date + 1.week).to_date
+
+    data_to_put = {
+      task_def: {
+        due_date: new_due_date
+      }
+    }
+
+    add_auth_header_for(user: unit.main_convenor_user)
+
+    assert_difference(
+      -> { TaskDueDateChangedNotificationJob.jobs.size },
+      1
+    ) do
+      put_json(
+        "/api/units/#{unit.id}/task_definitions/#{task_def.id}",
+        data_to_put
+      )
+    end
+
+    assert_equal 200, last_response.status, last_response_body
+
+    assert_equal(
+      [
+        task_def.id,
+        previous_due_date,
+        new_due_date.iso8601
+      ],
+      TaskDueDateChangedNotificationJob.jobs.last['args']
+    )
+  end
+
+  def test_unrelated_update_does_not_enqueue_due_date_notification_job
+    unit = FactoryBot.create(:unit, task_count: 1)
+    task_def = unit.task_definitions.first
+
+    data_to_put = {
+      task_def: {
+        description: 'Updated without moving the due date.'
+      }
+    }
+
+    add_auth_header_for(user: unit.main_convenor_user)
+
+    assert_no_difference(
+      -> { TaskDueDateChangedNotificationJob.jobs.size }
+    ) do
+      put_json(
+        "/api/units/#{unit.id}/task_definitions/#{task_def.id}",
+        data_to_put
+      )
+    end
+
+    assert_equal 200, last_response.status, last_response_body
+  end
+
+  def test_due_date_update_succeeds_when_enqueue_fails
+    unit = FactoryBot.create(:unit, task_count: 1)
+    task_def = unit.task_definitions.first
+    new_due_date = (task_def.due_date + 1.week).to_date
+
+    data_to_put = {
+      task_def: {
+        due_date: new_due_date
+      }
+    }
+
+    add_auth_header_for(user: unit.main_convenor_user)
+
+    TaskDueDateChangedNotificationJob.stub(
+      :perform_async,
+      ->(*) { raise StandardError, 'Redis unavailable' }
+    ) do
+      put_json(
+        "/api/units/#{unit.id}/task_definitions/#{task_def.id}",
+        data_to_put
+      )
+    end
+
+    assert_equal 200, last_response.status, last_response_body
+    assert_equal new_due_date, task_def.reload[:due_date].to_date
+  end
 end
