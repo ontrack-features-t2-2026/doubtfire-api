@@ -4,6 +4,8 @@ require 'tempfile'
 
 # EN-V05: notify only the affected student when group membership changes.
 class NotificationGroupTest < ActiveSupport::TestCase
+  include TestHelpers::PushNotificationHelper
+
   setup do
     ActionMailer::Base.deliveries.clear
 
@@ -29,7 +31,14 @@ class NotificationGroupTest < ActiveSupport::TestCase
     assert_equal @student, notification.user
     assert_equal 'general', notification.notification_type
     assert_equal 'group_membership_changed', notification.event
-    assert_includes notification.message, 'added to'
+    assert_equal(
+      "You have been added to group #{@group.name} in #{@project.unit.code}.",
+      notification.message
+    )
+    assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{@project.id}/groups"
+    )
 
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to

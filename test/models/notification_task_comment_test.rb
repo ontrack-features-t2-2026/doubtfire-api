@@ -3,6 +3,8 @@ require 'minitest/mock'
 
 # EN-E01: posting a task comment notifies the other party.
 class NotificationTaskCommentTest < ActiveSupport::TestCase
+  include TestHelpers::PushNotificationHelper
+
   setup do
     ActionMailer::Base.deliveries.clear
 
@@ -34,6 +36,10 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_equal @student, notification.user
     assert_equal 'feedback', notification.notification_type
     assert_equal 'task_comment_created', notification.event
+    assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+    )
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
@@ -68,9 +74,12 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     notification = Notification.recent_first.first
     body = delivered_body
 
+    push = parsed_push_notification(notification)
+
     assert_not_empty body, 'guard: the body must be readable or this test proves nothing'
     assert_not_includes notification.message, secret
     assert_not_includes body, secret
+    assert_not_includes push['body'], secret
   end
 
   def test_the_message_names_the_commenter_and_the_task

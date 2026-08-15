@@ -3,6 +3,11 @@ require 'minitest/mock'
 
 # EN-E03: assessing an extension request notifies the student.
 class NotificationExtensionTest < ActiveSupport::TestCase
+  include TestHelpers::PushNotificationHelper
+
+  EXTENSION_REQUEST_TEXT =
+    'Private extension request text that must stay inside OnTrack.'.freeze
+
   setup do
     ActionMailer::Base.deliveries.clear
 
@@ -21,7 +26,7 @@ class NotificationExtensionTest < ActiveSupport::TestCase
   def create_extension_request
     @task.apply_for_extension(
       @student,
-      'Please grant me an extension.',
+      EXTENSION_REQUEST_TEXT,
       1
     )
   end
@@ -50,6 +55,12 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     assert_equal @student, notification.user
     assert_equal 'extension', notification.notification_type
     assert_equal 'extension_assessed', notification.event
+    push = assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+    )
+    assert_not_includes notification.message, EXTENSION_REQUEST_TEXT
+    assert_not_includes push['body'], EXTENSION_REQUEST_TEXT
 
     assert extension.extension_granted
     assert_includes notification.message, 'Extension granted'
@@ -83,7 +94,7 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     extension.reload
     notification = Notification.recent_first.first
 
-    refute extension.extension_granted
+    assert_not extension.extension_granted
 
     assert_equal @student, notification.user
     assert_equal 'extension', notification.notification_type
@@ -145,13 +156,13 @@ class NotificationExtensionTest < ActiveSupport::TestCase
 
     assert_empty ActionMailer::Base.deliveries
     assert_includes extension.errors[:extension], 'could not be applied'
-    refute extension.assessed?
-    refute extension.extension_granted
+    assert_not extension.assessed?
+    assert_not extension.extension_granted
     assert_equal original_extensions, task.reload.extensions
 
     extension.reload
-    refute extension.assessed?
-    refute extension.extension_granted
+    assert_not extension.assessed?
+    assert_not extension.extension_granted
   end
 
   def test_extension_notification_uses_event_specific_templates
