@@ -24,6 +24,20 @@ class NotificationsMailerTest < ActionMailer::TestCase
 
   EVENTS.each do |event, notification_type|
     define_method("test_#{event}_renders_html_and_text") do
+      # The mailer falls back to the generic template when an event-specific
+      # template is missing, so require both event-specific template files.
+      %w[html text].each do |format|
+        template_path = Rails.root.join(
+          'app',
+          'views',
+          'notifications_mailer',
+          "#{event}.#{format}.erb"
+        )
+
+        assert template_path.file?,
+               "#{event}: missing event-specific #{format} template"
+      end
+
       notification = FactoryBot.create(
         :notification,
         notification_type: notification_type,
