@@ -1,15 +1,95 @@
 # PWA offline behaviour
 
-What a user sees if they lose connection while using OnTrack, and why.
+This document records what users experience when OnTrack loses network
+connectivity and explains the relevant Angular service-worker configuration.
 
-## What is cached, and what is not
+No caching configuration or application behaviour was changed as part of this
+documentation-only investigation.
 
-`ngsw-config.json` (doubtfire-web) has two kinds of cache group. The `app` and
-`assets` asset groups cache the static shell — `index.html`, the compiled JS
-and CSS bundles, and images — with `installMode: prefetch`, so the shell
-downloads up front. That part of the PWA is designed to work offline.
+## Configuration under test
 
-The `api` data group is deliberately excluded:
+Testing used the generated static development build from the
+`doubtfire-web/feature/notifications` branch.
+
+Before the final offline tests, the environment confirmed that:
+
+- `navigator.serviceWorker.controller` referenced `ngsw-worker.js`.
+- `/ngsw/state` reported `Driver state: NORMAL ((nominal))`.
+- `/index.html` existed in the versioned `app` asset cache.
+- **Bypass for network** was disabled.
+- **Update on reload** was disabled.
+- Ordinary reloads were used rather than forced or hard refreshes.
+
+The generated static build was used for the final test so the service worker
+could install and cache the built application files consistently.
+
+## What is cached
+
+### Application shell
+
+The `app` asset group uses `installMode: "prefetch"` and includes:
+
+- `/index.html`
+- the compiled JavaScript bundles
+- the compiled CSS bundles
+- the favicon
+- the web application manifest
+
+These resources are downloaded when the service-worker application version is
+installed.
+
+The `assets` asset group uses `installMode: "lazy"`. Matching images, fonts,
+and other assets are cached after they are requested rather than all being
+downloaded during installation.
+
+### Navigation URLs
+
+The service-worker configuration contains these navigation rules:
+
+```json
+[
+  "/**",
+  "!/**/*.*",
+  "!/**/*__*",
+  "!/**/*__*/**",
+  "!/JPlag/**",
+  "!/JPlag",
+  "!/sidekiq/**",
+  "!/sidekiq",
+  "!/beta/**",
+  "!/beta",
+  "!/legacy",
+  "!/legacy/**"
+]
+```
+
+A URL must match a positive rule and must not match any negative rule to be
+treated as an Angular navigation request.
+
+The `!/**/*.*` rule is intended to exclude file URLs whose final path segment
+contains a file extension. However, it also excludes valid OnTrack task routes
+when the task abbreviation contains a period.
+
+For example:
+
+- `/` is treated as a navigation request.
+- `/projects/2/dashboard` is treated as a navigation request.
+- `/projects/28/dashboard/A15` is treated as a navigation request.
+- `/projects/2/dashboard/2.2P` is not treated as a navigation request because
+  its final path segment contains a period.
+
+No `navigationRequestStrategy` override is configured. Angular therefore uses
+its default `performance` navigation strategy for matching navigation
+requests. This strategy serves the configured `/index.html`, which is normally
+available from the application cache.
+
+An excluded URL is not redirected to the cached index file. When the network
+is unavailable, the excluded request cannot be completed and may produce the
+browser's native error page.
+
+### API data
+
+The `api` data group uses the following policy:
 
 ```json
 {
@@ -23,102 +103,162 @@ The `api` data group is deliberately excluded:
 }
 ```
 
-`maxSize: 0` means the cache holds zero entries, so there is never anything
-to fall back to. `strategy: freshness` is network-first, and with nothing
-cached, a failed network request has no cached response behind it — it just
-fails. In practice: **no API response is ever served from the service
-worker's cache, under any condition.**
+`freshness` is a network-first strategy. The zero maximum size and zero maximum
+age indicate that matching responses are not intended to provide a reusable
+offline API cache.
 
-### The maxSize 0 choice
+Users should therefore not rely on grades, task state, submission details,
+comments, prerequisites, or other API-backed information being available
+after connectivity is lost.
 
-This traces back to commit `ab5a30a`, "FIX: Ensure api/ data is not cached"
-(2020). The commit message does not elaborate further than that, but the
-reasoning is not hard to infer: API responses here are grades, task status,
-submissions and extension state — exactly the data where showing something
-stale would be actively misleading, not just inconvenient. A short-TTL cache
-would still risk a tutor or student acting on an out-of-date number. Opting
-API traffic out of the cache entirely avoids that risk, at the cost of any
-offline API access at all. If a more specific justification than this exists,
-it hasn't been written down anywhere in the codebase — worth confirming with
-the lead if it matters for a future decision.
+This configuration should not be described as proof that an API response can
+never be written to or returned from a service-worker cache under any
+condition. Its practical effect and intent are that API data should not be
+relied upon for meaningful offline reuse.
 
-No caching behaviour was changed to investigate this ticket. The above is a
-description of the existing config, not a proposal.
+A successful response status such as `200` or `304` does not, by itself,
+identify where the response came from. The Network panel's **Size**,
+**Transferred**, and **Initiator** information must be inspected before
+identifying a response as coming from the service worker, memory cache, disk
+cache, or network.
 
-## What actually happens offline
+## Observed offline behaviour
 
-Tested in Chrome DevTools (Network tab → Offline), against the dev stack with
-the service worker confirmed active and controlling the page (`Application` →
-`Service Workers` showed `ngsw-worker.js` "activated and running" before each
-test below).
+### Included navigation route
 
-### Scenario 1: reloading a page while offline
+An ordinary offline reload of `/` loaded the cached Angular application shell
+rather than Chrome's native `HTTP ERROR 504` page.
 
-Navigating to `localhost:4200/projects/28/dashboard/A15` and reloading while
-offline does not show any OnTrack UI. Chrome shows its own native offline
-page — "This page isn't working, localhost took too long to respond, HTTP
-ERROR 504." The network log confirms the top-level document request itself
-failed outright rather than being served from the service worker's cached
-shell.
+Static resources such as the favicon and application icon were returned by the
+service worker. Authentication, API, analytics, and other uncached requests
+failed while the browser was offline.
 
-So despite the service worker being registered and running, a hard reload
-while offline does not fall back to a cached app shell. The user gets a
-generic browser error with no indication it's OnTrack-specific, and no way
-to retry from within the app.
+The application shell could therefore load, but API-backed application state
+was unavailable or incomplete. This confirms that caching the shell does not
+provide a complete offline mode.
 
-### Scenario 2: losing connection mid-session
+### Dotted task route
 
-More realistic: the app is already loaded and the user goes offline without
-reloading, then navigates to a task they haven't opened yet in that session
-(client-side routing, no full page load).
+An ordinary offline reload of:
 
-Here the shell and anything already in memory stay up — the task list
-sidebar, and top-level task fields (title, due date, status) that were part
-of an earlier list fetch, render fine. But the secondary fetches that page
-needs (`prerequisites`, `submission_details`, `comments`) mostly fail. Some
-of the same-looking requests returned `200`/`304` and some returned `504` or
-failed outright — the successes are ordinary browser HTTP cache hits for
-URLs already fetched earlier in the session, not the service worker's own
-data cache, which is disabled by `maxSize: 0`. Anything not already fetched
-before going offline has nothing to fall back to and fails.
+```text
+/projects/2/dashboard/2.2P
+```
 
-When a fetch fails, the app does not degrade gracefully. It surfaced this to
-the user as a toast:
+produced Chrome's native `HTTP ERROR 504` page.
+
+Before this test:
+
+- `ngsw-worker.js` controlled the page.
+- The service-worker driver state was normal.
+- `/index.html` existed in the application cache.
+- The reload was an ordinary reload rather than a forced refresh.
+
+The route was excluded from Angular navigation handling because its final
+segment, `2.2P`, contains a period and matches the `!/**/*.*` negative rule.
+
+The service worker therefore did not use cached `/index.html` as the
+navigation fallback. With the network unavailable, the route request failed
+and Chrome displayed its native error page.
+
+This is a route-specific navigation limitation. It is not evidence that the
+application shell was missing from the service-worker cache.
+
+### Losing connectivity mid-session
+
+When connectivity was removed without reloading, the already-loaded
+application shell and information held in memory remained visible.
+
+Requests for new API-backed information failed. This included secondary task
+requests such as prerequisite, submission-detail, and comment requests when
+the information had not already been loaded.
+
+One observed failure produced this toast:
 
 > Failed to fetch prerequisites for task definition: TypeError: Cannot read
 > properties of null (reading 'error')
 
-That's an unhandled null dereference, not an offline message — the error
-handling path assumes a response body is always present and throws when
-there isn't one. A user sees a confusing technical error rather than
-anything telling them they're offline.
+This is a technical error rather than a clear explanation that the application
+has lost network connectivity.
+
+Some previously requested resources may still return successful statuses while
+offline. Their source must be confirmed using the Network panel rather than
+being inferred from the status code alone.
 
 ## Summary
 
-The `api` group's no-cache config guarantees a user is never shown stale
-academic data, which is clearly the intent. The tradeoff is that there is no
-designed offline mode at all: depending on whether they reload or just keep
-navigating, a disconnected user gets either a browser-level 504 page or a
-raw JS error toast. Neither tells them they're offline, and neither offers a
-retry.
+OnTrack caches its Angular application shell, but offline reload behaviour is
+route-dependent.
+
+Routes that satisfy the configured navigation rules can receive cached
+`/index.html`. Valid task routes whose final path segment contains a period are
+excluded by `!/**/*.*` and can produce a browser-level `504` when reloaded
+offline.
+
+Even when the shell loads, API-backed information cannot be relied upon
+offline. Losing connectivity can therefore leave the application shell visible
+while new data requests fail and technical errors are displayed.
+
+The current behaviour can result in three different user experiences:
+
+1. An included navigation route loads the cached application shell, but
+   API-backed information is missing or fails.
+2. A dotted task route produces Chrome's native `504` page because it is
+   excluded from navigation fallback.
+3. Losing connectivity during an existing session leaves the shell visible
+   but can produce failed requests and technical error messages.
 
 ## Recommendation
 
-Out of scope here — this ticket is documentation only, no caching behaviour
-was changed. If the team wants an actual offline UX (a banner, a clear
-"you're offline, reconnect to continue" state, or handling the null response
-case without throwing), that belongs in a separate ticket.
+A separate `doubtfire-web` ticket should investigate narrowing or replacing
+the `!/**/*.*` navigation exclusion so valid task abbreviations containing
+periods can use the Angular navigation fallback without treating genuine
+static-file requests as application routes.
 
-## How to check it by hand
+A separate ticket should also consider:
 
-1. Open the app, sign in, and confirm the service worker is active:
-   DevTools → `Application` → `Service Workers` → status should read
-   "activated and is running."
-2. **Reload case:** DevTools → `Network` → set throttling to `Offline`,
-   then reload the page. Expect Chrome's native offline error page, not
-   OnTrack.
-3. **Mid-session case:** with the app already loaded, switch to `Offline`
-   without reloading, then click into a task not yet opened this session.
-   Expect the shell to stay up, task list data already in memory to render,
-   and any new data fetch (prerequisites, submission details, comments) to
-   fail — watch for an unhandled error toast rather than an offline message.
+- displaying an offline or disconnected status;
+- replacing technical request errors with user-friendly messages;
+- safely handling absent network responses;
+- providing a retry path after connectivity returns; and
+- identifying which information, if any, should be available offline.
+
+These changes are outside the scope of this documentation-only ticket.
+
+## How to verify manually
+
+1. Build and serve the generated Angular output.
+2. Load OnTrack while online.
+3. Wait until the service worker is ready.
+4. Confirm that
+   `navigator.serviceWorker.controller?.scriptURL`
+   ends in `ngsw-worker.js`.
+5. Confirm that `/ngsw/state` reports
+   `Driver state: NORMAL ((nominal))`.
+6. Confirm that `/index.html` exists in the versioned `app` asset cache.
+7. Ensure **Bypass for network** is disabled.
+8. Ensure **Update on reload** is disabled.
+9. Load `/` while online.
+10. Set Network throttling to **Offline**.
+11. Use ordinary Command+R and confirm that the cached Angular shell loads.
+12. Do not use Shift+Command+R or **Empty cache and hard reload**.
+13. Return Network throttling to **No throttling**.
+14. Load `/projects/2/dashboard/2.2P`.
+15. Set Network throttling back to **Offline**.
+16. Use ordinary Command+R.
+17. Confirm that the dotted task route produces Chrome's native `504` page.
+18. Return online and load a task.
+19. Remove connectivity without reloading.
+20. Navigate to information that has not already been requested.
+21. Record the failed API requests and any user-facing error.
+22. Use the Network panel's **Size**, **Transferred**, and **Initiator**
+    information before attributing successful responses to a particular cache.
+
+## Relevant configuration
+
+The behaviour described here is controlled primarily by:
+
+- `doubtfire-web/ngsw-config.json`
+- the generated `ngsw.json` service-worker manifest
+- Angular's service-worker navigation request handling
+- the application's handling of failed API requests
