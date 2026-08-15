@@ -1,5 +1,6 @@
 require 'test_helper'
 require 'minitest/mock'
+require 'tempfile'
 
 # EN-V05: notify only the affected student when group membership changes.
 class NotificationGroupTest < ActiveSupport::TestCase
@@ -114,6 +115,30 @@ class NotificationGroupTest < ActiveSupport::TestCase
       assert_nothing_raised do
         @group.add_member(@project)
       end
+    end
+
+    assert_includes @group.reload.projects, @project
+  end
+
+  def test_bulk_csv_import_adds_member_without_notification
+    Tempfile.create(['student-groups', '.csv']) do |file|
+      file.write("group_name,username\n#{@group.name},#{@student.username}\n")
+      file.flush
+
+      notification_calls = 0
+
+      NotificationService.stub :notify, ->(**_kwargs) { notification_calls += 1 } do
+        result = @project.unit.import_student_groups_from_csv(
+          @group.group_set,
+          file.path
+        )
+
+        assert_empty result[:errors], result.inspect
+        assert_empty result[:ignored], result.inspect
+        assert_equal 1, result[:success].count, result.inspect
+      end
+
+      assert_equal 0, notification_calls
     end
 
     assert_includes @group.reload.projects, @project
