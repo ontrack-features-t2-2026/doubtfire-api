@@ -4,6 +4,8 @@ require 'minitest/mock'
 # EN-E02: a staff status change notifies the student. A student's own action
 # does not.
 class NotificationTaskStatusTest < ActiveSupport::TestCase
+  include TestHelpers::PushNotificationHelper
+
   setup do
     ActionMailer::Base.deliveries.clear
 
@@ -41,6 +43,10 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     assert_equal @student, notification.user
     assert_equal 'task', notification.notification_type
     assert_equal 'task_status_changed', notification.event
+    assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+    )
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
@@ -81,9 +87,12 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     notification = Notification.recent_first.first
     body = delivered_body
 
+    push = parsed_push_notification(notification)
+
     assert_not_empty body, 'guard: the body must be readable or this test proves nothing'
     assert_not_includes notification.message, 'Discuss'
     assert_not_includes body, 'Discuss'
+    assert_not_includes push['body'], 'Discuss'
   end
 
   def test_the_message_names_the_actor_and_the_task

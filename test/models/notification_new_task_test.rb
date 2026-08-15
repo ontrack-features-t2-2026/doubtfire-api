@@ -5,6 +5,8 @@ require 'minitest/mock'
 
 # EN-V02: newly available tasks notify eligible students.
 class NotificationNewTaskTest < ActiveSupport::TestCase
+  include TestHelpers::PushNotificationHelper
+
   setup do
     ActionMailer::Base.deliveries.clear
 
@@ -79,12 +81,18 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
     assert_equal 'task', notification.notification_type
     assert_equal 'new_task_available', notification.event
 
-    assert_includes notification.message, @task_definition.abbreviation
-    assert_includes notification.message, @unit.code
+    assert_equal(
+      "A new task is available: #{@task_definition.abbreviation} in #{@unit.code}.",
+      notification.message
+    )
 
     assert_equal(
       "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}",
       notification.link
+    )
+    assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
     )
 
     assert_equal 1, ActionMailer::Base.deliveries.count

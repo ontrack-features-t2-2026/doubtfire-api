@@ -3,6 +3,8 @@
 require 'test_helper'
 
 class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
+  include TestHelpers::PushNotificationHelper
+
   EVENT = 'task_due_date_changed'
 
   setup do
@@ -42,7 +44,7 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
 
     run_job
 
-    refute Notification.exists?(
+    assert_not Notification.exists?(
       user: project.student,
       event: EVENT
     )
@@ -54,7 +56,7 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
 
     run_job
 
-    refute Notification.exists?(
+    assert_not Notification.exists?(
       user: project.student,
       event: EVENT
     )
@@ -66,7 +68,7 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
 
     run_job
 
-    refute Notification.exists?(
+    assert_not Notification.exists?(
       user: project.student,
       event: EVENT
     )
@@ -116,12 +118,17 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
 
     assert_includes notification.message, @task_def.abbreviation
     assert_includes notification.message, @unit.code
-    refute_includes notification.message, @new_due_date
+    assert_not_includes notification.message, @new_due_date
 
     assert_equal(
       "/projects/#{project.id}/dashboard/#{@task_def.abbreviation}",
       notification.link
     )
+    push = assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{project.id}/dashboard/#{@task_def.abbreviation}"
+    )
+    assert_not_includes push['body'], @new_due_date
   end
 
   def test_event_specific_template_is_used

@@ -192,7 +192,8 @@ class Group < ApplicationRecord
       user: student,
       type: 'general',
       event: 'group_membership_changed',
-      message: "You have been #{change} group #{name} in #{unit.code}."
+      message: "You have been #{change} group #{name} in #{unit.code}.",
+      link: "/projects/#{project.id}/groups"
     )
   rescue StandardError => e
     logger.error(

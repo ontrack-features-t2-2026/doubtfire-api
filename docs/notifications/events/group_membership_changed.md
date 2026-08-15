@@ -34,6 +34,7 @@ The event uses:
 - `type: 'general'`
 - `event: 'group_membership_changed'`
 - recipient: `project.student`
+- `link: "/projects/#{project.id}/groups"`
 
 Event-specific HTML and text email templates are provided under `app/views/notifications_mailer/`.
 
@@ -58,3 +59,4 @@ The tests cover:
 - `switch_to_tutorial` does not send a leave-then-join notification pair
 - a notification failure does not stop the membership change
 - bulk CSV imports add students without raising per-student notifications
+- the push payload points to the affected project's group page
