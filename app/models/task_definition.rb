@@ -63,7 +63,6 @@ class TaskDefinition < ApplicationRecord
   after_update :update_tii_group, if: :saved_change_to_due_date?
   after_update :update_overdue_tasks_aip, if: :saved_change_to_assess_in_portfolio_only?
   after_update :reset_overdue_tasks, if: :saved_change_to_due_date?
-  after_update :notify_students_of_due_date_change, if: :saved_change_to_due_date?
 
   # Model associations
   belongs_to :unit, optional: false # Foreign key
@@ -268,37 +267,6 @@ class TaskDefinition < ApplicationRecord
       task.add_status_comment(unit.main_convenor.user, TaskStatus.ready_for_feedback)
       task.update(task_status_id: TaskStatus.ready_for_feedback.id)
     end
-  end
-
-  # Emails every student who has this task that its due date changed. A single
-  # due date change can affect a whole cohort, so this walks the tasks the same
-  # way reset_overdue_tasks does and sends one notification to each student. Only
-  # enrolled students are reached, and staff are never notified. The new date is
-  # left out of the message on purpose, because the email is meant to prompt the
-  # student to sign in rather than to carry the date itself. NotificationService
-  # handles the preference check and the delivery.
-  def notify_students_of_due_date_change
-    tasks.joins(:project).where(projects: { enrolled: true }).find_each do |task|
-      notify_student_of_due_date_change(task)
-    end
-  end
-
-  # Each student is handled on its own so that one failure cannot stop the rest
-  # of the notifications and cannot roll back the due date change that triggered
-  # them.
-  def notify_student_of_due_date_change(task)
-    student = task.project.student
-    return if student.nil?
-
-    NotificationService.notify(
-      user: student,
-      type: 'task',
-      event: 'task_due_date_changed',
-      message: "The due date for #{abbreviation} in #{unit.code} has changed.",
-      link: "/projects/#{task.project.id}/dashboard/#{abbreviation}"
-    )
-  rescue StandardError => e
-    Rails.logger.error "Failed to raise task_due_date_changed notification for task #{task.id}: #{e.message}"
   end
 
   def move_files_on_abbreviation_change

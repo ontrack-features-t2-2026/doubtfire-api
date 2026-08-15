@@ -1,93 +1,101 @@
 # Event: task_due_date_changed
 
-A staff member changes a task's due date. Every student who has that task is
-told, one email each. Ticket EN (email when a task due date changes).
+## Purpose
 
-Built the same way as the worked example in `task_comment_created.md`; read that
-one first.
+Notify eligible students when a convenor changes a task definition's due date
+through the normal task-definition update API.
 
-## What it does
+## Trigger
 
-A convenor changes a task definition's due date, and every enrolled student who
-has that task gets an email telling them the date changed. This means they find
-out from OnTrack instead of discovering the change themselves.
+The trigger is in `app/api/task_definitions_api.rb`.
 
-## Hook point (confirmed)
+Immediately after `task_def.update!(task_params)`, the API captures
+`saved_change_to_due_date`. After the rest of the update succeeds, it enqueues
+`TaskDueDateChangedNotificationJob`.
 
-`app/models/task_definition.rb`. The due date lives on the **task definition**,
-and two existing callbacks already fire on a due-date change:
+A `TaskDefinition` model callback is deliberately not used. Task definitions
+can also be saved by unit date propagation, imports, rollovers, copies and
+internal maintenance. A model callback could therefore create unexpected
+cohort-wide email fan-out.
 
-    after_update :update_tii_group,   if: :saved_change_to_due_date?   # line 63
-    after_update :reset_overdue_tasks, if: :saved_change_to_due_date?  # line 65
+## Queue
 
-This event adds a third callback in the same shape, right after them:
+The API request does not perform the cohort email and push fan-out directly.
+`TaskDueDateChangedNotificationJob` performs the fan-out through Sidekiq.
 
-    after_update :notify_students_of_due_date_change, if: :saved_change_to_due_date?
+A functioning Sidekiq worker must consume the same
+`DF_REDIS_SIDEKIQ_URL` used by the API.
 
-`saved_change_to_due_date?` only fires after the new due date has been saved, so
-the notification never runs on a change that did not commit.
+## Recipient eligibility
 
-## Reaching the affected students
+A project is eligible only when:
 
-`notify_students_of_due_date_change` walks `tasks` the same way
-`reset_overdue_tasks` (task_definition.rb:257) does, filtered to enrolled
-projects, and sends one notification per student:
+- the unit is active;
+- the project is enrolled;
+- the project's target grade is at least the task definition's target grade;
+  and
+- the student has task notifications enabled.
 
-    NotificationService.notify(
-      user: task.project.student,
-      type: 'task',
-      event: 'task_due_date_changed',
-      message: "The due date for #{abbreviation} in #{unit.code} has changed.",
-      link: "/projects/#{task.project.id}/dashboard/#{abbreviation}"
-    )
+Recipients are selected from projects rather than existing Task rows. OnTrack
+creates Task rows on demand, so an eligible student may not yet have one. The
+notification job does not create Task rows.
 
-A due date change can affect a whole cohort at once, so the fan-out is per task
-and each send is isolated in `notify_student_of_due_date_change`. This way one
-student failing cannot stop the rest and cannot roll back the due date save.
+## Stale jobs and duplicate queue entries
 
-## Fields
+The job receives:
 
-| Field | Value |
-|---|---|
-| `type` | `task`, so each student's `receive_task_notifications` switch controls it |
-| `event` | `task_due_date_changed` |
-| `message` | Names the task and unit. Never the new (or old) due date value |
-| `link` | `/projects/<project id>/dashboard/<task abbreviation>` |
+- the task definition ID;
+- the previous stored due date; and
+- the new stored due date.
+
+Before sending, it checks that the task definition still has the queued new raw
+due date. This prevents an outdated job from sending after the due date has
+changed again.
+
+Sidekiq uniqueness rejects another pending or executing job with the same task
+definition ID and old/new date values.
+
+Automatic retries are disabled because retrying a partly completed cohort
+fan-out could create duplicate notifications for students already processed.
+A failure for one project is logged without stopping the remaining projects.
+
+## Notification fields
+
+- Type: `task`
+- Event: `task_due_date_changed`
+- Message: names the task and unit but does not expose the due date
+- Link: `/projects/:project_id/dashboard/:task_abbreviation`
+- Preference: `receive_task_notifications`
+
+## Bulk unit date changes
+
+Changing a unit start date updates many task definitions internally. This
+implementation does not send one email per changed task for that path.
+
+A future unit-level notification or digest should cover bulk schedule changes
+without sending many separate emails to each student.
 
 ## Templates
 
 - `app/views/notifications_mailer/task_due_date_changed.text.erb`
 - `app/views/notifications_mailer/task_due_date_changed.html.erb`
 
-Picked up automatically by `NotificationsMailer#event_template_name`; the mailer
-is not edited.
-
-## Three things to know before you copy this
-
-1. **Only enrolled students are reached.** The walk filters
-   `projects.enrolled = true`, so withdrawn students and staff are not emailed.
-
-2. **One student, one email.** A student has a single task per definition, so the
-   fan-out sends exactly one notification to each student rather than one per
-   event listener.
-
-3. **A notification must never break the save.** Each send is wrapped in a
-   `rescue StandardError` that logs and swallows, so changing a due date succeeds
-   even if a notification fails.
-
-## How to check it by hand
-
-1. As a convenor, change a task's due date.
-2. Each enrolled student who has that task gets one email at
-   http://localhost:8025 (Mailpit). It names the task but not the new date.
-3. A student in another unit, and a withdrawn student, get nothing.
-4. Turn a student's task notifications off in their profile, change the date
-   again, and that student gets no email while the others still do.
-
 ## Tests
 
-`test/models/notification_due_date_test.rb`. It covers the full fan-out, that a
-student in another unit and a withdrawn student are not notified, the preference
-switch, the new date staying out of the message, the link, and the
-event-specific template. Run it on its own, because the test database is the
-development database. See item 11 in `doubtfire-deploy/RUNNING-LOCALLY.md`.
+- `test/sidekiq/task_due_date_changed_notification_job_test.rb`
+- `test/api/units/task_definitions_api_test.rb`
+
+The tests cover:
+
+- eligible students without Task rows;
+- target-grade filtering;
+- withdrawn students;
+- notification preferences;
+- inactive units;
+- stale jobs;
+- privacy-safe message content and links;
+- the event-specific email template;
+- enqueue on a due-date API update;
+- no enqueue for unrelated updates;
+- no enqueue from direct model updates; and
+- queue failure not breaking the core due-date update.
