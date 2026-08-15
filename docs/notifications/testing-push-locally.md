@@ -94,8 +94,10 @@ Only once that works should you go anywhere near a tunnel.
 
 ## 2. The trap: a phone on your wifi is not a secure context
 
-**Verified** — the underlying rule is the same secure-context rule as above. Not
-tested with a physical phone.
+**Verified on a physical phone.** MN-Q03 reproduced this on an iPhone 16
+running iOS 26.6 on 13 Aug 2026. The phone reached the api over the LAN
+address, but the push opt-in remained disabled because the page was not a
+secure context.
 
 `angular.json` sets the dev server to `"host": "0.0.0.0"`, so `ng serve` listens
 on every interface, not just loopback. Your laptop's LAN address works. You can
@@ -227,6 +229,16 @@ In `angular.json`, under `projects.doubtfire.architect.serve.options`:
   },
 ```
 
+Changing `angular.json` does not update the already-running dev server. Restart
+the web service before opening the tunnel hostname. Run this from
+`doubtfire-deploy/development`:
+
+    docker compose -f docker-compose.yml -f docker-compose.local-paths.yml \
+      restart doubtfire-web
+
+If the frontend is running directly with `npm start`, stop it and start it again
+instead.
+
 The schema also accepts `"allowedHosts": true` to allow everything. Its own
 description calls that "not recommended and a security risk", which is fair, since
 your dev server is on the public internet for as long as the tunnel is up. Use it
@@ -319,16 +331,19 @@ context first, before anything else:
 window.isSecureContext && 'serviceWorker' in navigator
 ```
 
-Then sign in, wait out the six second service worker registration delay, and use
-MN-C01's opt-in button. Confirm the subscription actually landed:
+Before subscribing on the phone, record the existing rows:
 
     docker exec doubtfire-api bundle exec rails runner \
-      'puts PushSubscription.all.map { |s| "#{s.user.username} #{s.endpoint[0, 60]}" }'
+      'puts PushSubscription.order(:id).map { |s| "#{s.id} #{s.user.username} #{s.endpoint[0, 80]}" }'
 
-The endpoint for a phone will be an FCM URL rather than whatever your desktop
-browser uses. That is how you know you are looking at the phone's row and not the
-one you made on localhost earlier. Then trigger an event as another user and
-watch.
+Then sign in, wait out the six second service worker registration delay, and use
+MN-C01's opt-in button. Run the same command again. The new or changed row is
+the phone's subscription.
+
+Do not identify the device only from the endpoint host. Chrome and Edge commonly
+use FCM on both desktop and Android, Firefox uses Mozilla Push, and Safari/iOS
+uses Apple Web Push. Comparing the rows before and after subscribing is the
+reliable check. Then trigger an event as another user and watch.
 
 ### Things that will probably go wrong
 
