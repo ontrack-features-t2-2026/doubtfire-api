@@ -10,8 +10,9 @@
 # Ignore locally installed gems
 /vendor/bundle/
 
-# Ignore the bin folder made with the app:update:bin task
-/bin
+# Ignore generated binstubs except the Rails launcher required by Rails/Puma restart.
+/bin/*
+!/bin/rails
 
 # Ignore the default SQLite database.
 /db/*.sqlite3
