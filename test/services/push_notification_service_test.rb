@@ -1,4 +1,8 @@
 require 'test_helper'
+# test_helper does not pull this in, and Object#stub comes from it. Without it
+# test_both_timeouts_are_passed_to_the_gem errors with "undefined method 'stub'
+# for module WebPush", which it has done since it was written.
+require 'minitest/mock'
 
 # MN-F02: the push channel actually sends.
 #
@@ -52,6 +56,12 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
 
   def create_subscription(endpoint: ENDPOINT)
     FactoryBot.create(:push_subscription, user: @user, endpoint: endpoint)
+  end
+
+  # Read out of the built payload rather than off tag_for, so these tests fail
+  # if the tag stops reaching the part that is actually sent.
+  def tag_for(notification)
+    JSON.parse(PushNotificationService.payload_for(notification))['notification']['tag']
   end
 
   def test_nothing_is_sent_when_the_vapid_keys_are_missing
@@ -145,6 +155,115 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_equal '/projects/2/dashboard/1.1P', body.dig('data', 'link')
     assert_equal @notification.id, body.dig('data', 'notification_id')
     assert_not_nil body['title']
+  end
+
+  # MN-C06. The operating system does the collapsing, and it collapses on the
+  # tag. Two notifications carrying the same tag means the second replaces the
+  # first on screen instead of stacking under it.
+  def test_two_notifications_about_the_same_thing_share_a_tag
+    second = Notification.create!(
+      user: @user,
+      notification_type: @notification.notification_type,
+      event: @notification.event,
+      message: 'Andrew Cain commented on 1.1P in COS10001.',
+      link: @notification.link
+    )
+
+    assert_equal tag_for(@notification), tag_for(second)
+  end
+
+  # The half that is easy to get wrong in the other direction. A tag shared by
+  # unrelated notifications does not tidy anything up, it hides one behind
+  # another and the user never sees it.
+  def test_notifications_about_different_things_do_not_share_a_tag
+    elsewhere = Notification.create!(
+      user: @user,
+      notification_type: @notification.notification_type,
+      event: @notification.event,
+      message: 'Andrew Cain commented on 2.1P in COS10001.',
+      link: '/projects/2/dashboard/2.1P'
+    )
+
+    assert_not_equal tag_for(@notification), tag_for(elsewhere)
+  end
+
+  # The tag names the conversation, so it cannot contain anything that changes
+  # between messages in it. Using the notification id would be unique every time
+  # and would collapse nothing at all, which is the whole ticket undone.
+  def test_the_tag_does_not_change_between_notifications_in_a_burst
+    tags = 3.times.map do |index|
+      burst = Notification.create!(
+        user: @user,
+        notification_type: @notification.notification_type,
+        event: @notification.event,
+        message: "Andrew Cain commented on 1.1P in COS10001. (#{index})",
+        link: @notification.link
+      )
+
+      tag_for(burst)
+    end
+
+    # Three different ids, one tag. If the id were part of it there would be
+    # three, so this is the assertion that pins the id out of the tag.
+    assert_equal 1, tags.uniq.length, tags.inspect
+  end
+
+  # The one that decides between keying on the event and keying on
+  # notification_type. notification_type is only the preference category, so
+  # task_due_date_changed, task_status_changed, new_task_available and
+  # task_due_soon are all `task`. Keyed on that, a status change would silently
+  # take the place of a deadline alert about the same task, which is the failure
+  # this ticket exists to avoid rather than one to introduce.
+  def test_different_events_in_the_same_category_do_not_share_a_tag
+    deadline = Notification.create!(
+      user: @user,
+      notification_type: 'task',
+      event: 'task_due_date_changed',
+      message: 'The due date for 1.1P in COS10001 has changed.',
+      link: @notification.link
+    )
+    due_soon = Notification.create!(
+      user: @user,
+      notification_type: 'task',
+      event: 'task_due_soon',
+      message: '1.1P in COS10001 is due soon.',
+      link: @notification.link
+    )
+
+    assert_equal deadline.notification_type, due_soon.notification_type
+    assert_not_equal tag_for(deadline), tag_for(due_soon)
+  end
+
+  # link is nullable on the api, and there is nothing else to be about. Sharing
+  # one empty tag between every notification that happens to have no link would
+  # hide all but the newest of them.
+  def test_a_notification_with_no_link_collapses_with_nothing
+    first = Notification.create!(
+      user: @user, notification_type: 'general', event: 'system_announcement', message: 'One'
+    )
+    second = Notification.create!(
+      user: @user, notification_type: 'general', event: 'system_announcement', message: 'Two'
+    )
+
+    assert_not_equal tag_for(first), tag_for(second)
+    assert tag_for(first).present?
+  end
+
+  # Silent replacement is the point. renotify: true puts the sound and the
+  # vibration back on every message in the burst the tag exists to quieten.
+  def test_a_replacement_does_not_buzz_again
+    body = JSON.parse(PushNotificationService.payload_for(@notification))['notification']
+
+    assert_equal false, body['renotify']
+  end
+
+  # MN-D01 and MN-D05 own the wording. This ticket only adds the tag, so a
+  # change to either of those here is somebody else's work being overwritten.
+  def test_the_title_and_body_are_left_alone
+    body = JSON.parse(PushNotificationService.payload_for(@notification))['notification']
+
+    assert_equal 'Andrew Cain commented on 1.1P in COS10001.', body['body']
+    assert_equal Doubtfire::Application.config.institution[:product_name], body['title']
   end
 
   def test_a_long_message_is_trimmed_rather_than_rejected_by_the_push_service
