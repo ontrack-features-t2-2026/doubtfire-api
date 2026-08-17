@@ -48,17 +48,65 @@ class PushNotificationService
   # has to write one.
   #
   # data.link is what MN-C03 reads to decide where to send the user on click.
+  #
+  # tag and renotify are both in the service worker's own list of forwarded
+  # option names (ngsw-worker.js, NOTIFICATION_OPTION_NAMES), so they reach
+  # showNotification without any change on the web side.
   def self.payload_for(notification)
     {
       notification: {
         title: Doubtfire::Application.config.institution[:product_name],
         body: notification.message.to_s.truncate(MAX_BODY_LENGTH),
+        tag: tag_for(notification),
+        # False, so a replacement updates the banner without making a sound or
+        # vibrating again.
+        #
+        # A burst is the case this exists for: a tutor working through one task
+        # posts five comments in two minutes. The tag already collapses those
+        # into one banner, and renotify: true would put the buzz back on every
+        # one of them, which is most of what made the burst worth collapsing.
+        # The user has already been interrupted once and the banner is already
+        # on their screen saying the newest thing.
+        #
+        # The cost is that a genuinely new message inside an ongoing
+        # conversation arrives silently while the old banner is still up. That
+        # is the right way round: the person has been told, and the alternative
+        # is being told five times.
+        renotify: false,
         data: {
           notification_id: notification.id,
           link: notification.link
         }
       }
     }.to_json
+  end
+
+  # What the operating system collapses on.
+  #
+  # Per conversation and not per notification. Two notifications sharing a tag
+  # means the second replaces the first on screen rather than stacking beneath
+  # it, so the tag has to name the thing being discussed and nothing that
+  # changes between messages about it. The notification id would be unique every
+  # time and collapse nothing at all.
+  #
+  # The event plus the link. The link is the only handle the api has on the
+  # subject, `/projects/9/dashboard/T1.1` being one student's copy of one task.
+  # The event is what makes it a conversation rather than a topic: a run of
+  # comments on a task is one thing being said repeatedly, and a deadline change
+  # to the same task is something else that must not quietly replace it.
+  #
+  # notification_type is deliberately not used here. It is the preference
+  # category, so task_due_date_changed, task_status_changed, new_task_available
+  # and task_due_soon are all `task`, and keying on it would let a status change
+  # silently take the place of a deadline alert about the same task.
+  #
+  # Without a link there is nothing to be about, so this falls back to the id
+  # and that notification collapses with nothing. That is the safe direction:
+  # sharing a tag between unrelated notifications would hide one behind another.
+  def self.tag_for(notification)
+    return "notification-#{notification.id}" if notification.link.blank?
+
+    "#{notification.event}:#{notification.link}"
   end
 
   def self.deliver_to(subscription, payload)
