@@ -134,7 +134,7 @@ class PeerProgressApi < Grape::API
       )
 
       if snapshot.nil? ||
-        snapshot_predates_target_grade?(project, snapshot)
+         snapshot_predates_target_grade?(project, snapshot)
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
@@ -142,9 +142,7 @@ class PeerProgressApi < Grape::API
         )
       end
 
-      minimum_cohort_size = positive_integer_env!(
-        'DF_PPI_MINIMUM_COHORT_SIZE'
-      )
+      minimum_cohort_size = minimum_cohort_size!
       stale_after_hours = positive_integer_env!(
         'DF_PPI_STALE_AFTER_HOURS'
       )
@@ -192,7 +190,7 @@ class PeerProgressApi < Grape::API
         submitted_percentage: quantised_percentage(
           snapshot.submitted_percentage
         )
-)
+      )
     end
   end
 

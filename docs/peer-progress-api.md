@@ -30,6 +30,8 @@ camelCase interface.
 
 A genuine zero is returned as `0.0`. It is not treated as missing data.
 
+Student-facing percentages are quantised to the nearest five percentage points. The precise stored aggregate is not returned by this API.
+
 `submitted_percentage` must be `null` for suppressed, stale, disabled and
 unavailable states. The response never includes raw cohort size or submitted
 count.
@@ -40,7 +42,8 @@ count.
 | --- | --- | --- | --- | --- | --- |
 | Normal | Number | False | False | True | Timestamp |
 | Genuine zero | `0.0` | False | False | True | Timestamp |
-| Small cohort | `null` | True | False | True | Timestamp |
+| Empty or small cohort, fresh | `null` | True | False | True | Timestamp |
+| Empty or small cohort, stale | `null` | True | True | True | Timestamp |
 | Stale snapshot | `null` | False | True | True | Timestamp |
 | No snapshot | `null` | False | False | True | `null` |
 | No valid target grade | `null` | False | False | True | `null` |
@@ -106,12 +109,28 @@ count.
 }
 ```
 
-### No target grade or no snapshot
+### No valid target grade
 ``` json
 {
   "task_definition_id": 12,
   "unit_id": 5,
   "target_grade": null,
+  "submitted_percentage": null,
+  "is_suppressed": false,
+  "is_stale": false,
+  "is_feature_enabled": true,
+  "last_updated_at": null,
+  "unavailable_message": "Peer progress is currently unavailable."
+}
+```
+
+
+### No snapshot for a valid target grade
+``` json
+{
+  "task_definition_id": 12,
+  "unit_id": 5,
+  "target_grade": 2,
   "submitted_percentage": null,
   "is_suppressed": false,
   "is_stale": false,
@@ -158,12 +177,22 @@ The response must not include names, usernames, student IDs, peer project IDs,
 marks, feedback, individual task statuses, submitted counts, or raw cohort sizes.
 The endpoint reads `cohort_size` only to apply suppression.
 
+An empty cohort and any cohort below the configured privacy threshold return the same suppressed state. A suppressed snapshot can also be stale, so `is_suppressed` and `is_stale` may both be `true`.
+
+
+## Target-grade change protection
+
+Each project records `target_grade_changed_at`. The API does not return a
+snapshot calculated before the current target-grade selection. After a target
+grade change, peer progress remains unavailable until a newer aggregation run
+creates a snapshot for that grade.
+
 ## Configuration
 
 - `DF_PPI_MINIMUM_COHORT_SIZE`: approved minimum cohort size.
 - `DF_PPI_STALE_AFTER_HOURS`: approved maximum snapshot age.
 
-Both must be positive integers. No production defaults are included. An enabled unit
+`DF_PPI_STALE_AFTER_HOURS` must be a positive integer. `DF_PPI_MINIMUM_COHORT_SIZE` must be an integer of at least `5`. No production defaults are included. An enabled unit
 with a valid snapshot fails closed with HTTP 503 when either value is missing or invalid.
 
 ## Feature enablement
@@ -172,6 +201,8 @@ with a valid snapshot fails closed with HTTP 503 when either value is missing or
 privacy thresholds and the endpoint have been reviewed.
 
 ## Status behaviour
+
+Malformed integer path parameters may return HTTP 400 from Grape before the project or task lookup.
 
 - `200`: authorised request, including normal, zero, suppressed, stale, disabled, or unavailable state.
 - `404`: wrong user, project, unit, task, target-grade applicability, inactive unit, or unreleased task. The same message is used to reduce object enumeration.

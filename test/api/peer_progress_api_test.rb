@@ -68,7 +68,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
       :task_definition,
       unit: @unit,
       target_grade: 0,
-      start_date: 1.day.ago,
+      start_date: Time.zone.parse('2026-01-01 00:00:00 UTC'),
       outcome_count: 0
     )
   end
@@ -108,7 +108,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal @unit.id, body['unit_id']
     assert_equal @project.target_grade, body['target_grade']
     assert_equal 65.0, body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert body['last_updated_at'].present?
@@ -128,7 +128,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_equal 0.0, body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal '', body['unavailable_message']
   end
@@ -352,7 +352,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -391,7 +391,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_equal 40.0, body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
   end
 
   test 'hides the percentage when an active unit snapshot is stale' do
@@ -408,7 +408,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal true, body['is_stale']
     assert body['last_updated_at'].present?
     assert body['unavailable_message'].present?
@@ -424,7 +424,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal false, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -465,7 +465,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     assert_nil body['target_grade']
     assert_nil body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -491,7 +491,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     assert_nil body['target_grade']
     assert_nil body['submitted_percentage']
-    assert_equal true, body['is_suppressed']
+    assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -654,7 +654,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
       assert_equal 2, body['target_grade']
       assert_nil body['submitted_percentage']
-      assert_equal true, body['is_suppressed']
+      assert_equal false, body['is_suppressed']
       assert_nil body['last_updated_at']
       assert body['unavailable_message'].present?
     end
