@@ -106,7 +106,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal @task_definition.id, body['task_definition_id']
     assert_equal @unit.id, body['unit_id']
     assert_equal @project.target_grade, body['target_grade']
-    assert_in_delta 62.5, body['submitted_percentage'], 0.001
+    assert_equal 65.0, body['submitted_percentage']
     assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
@@ -195,6 +195,18 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     end
 
     assert_equal 200, last_response.status
+  end
+
+  test 'quantises the student percentage to five point buckets' do
+    create_snapshot(
+      submitted_percentage: 61,
+      cohort_size: 10
+    )
+
+    request_as(@student)
+
+    assert_equal 200, last_response.status
+    assert_equal 60.0, last_response_body['submitted_percentage']
   end
 
   test 'fails closed when the cohort configuration is below the privacy floor' do

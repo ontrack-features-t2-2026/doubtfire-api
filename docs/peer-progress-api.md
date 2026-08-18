@@ -52,7 +52,7 @@ count.
   "task_definition_id": 12,
   "unit_id": 5,
   "target_grade": 2,
-  "submitted_percentage": 62.5,
+  "submitted_percentage": 65.0,
   "is_suppressed": false,
   "is_stale": false,
   "is_feature_enabled": true,

@@ -9,6 +9,7 @@ class PeerProgressApi < Grape::API
   NOT_FOUND_MESSAGE = 'Peer progress is unavailable for this project or task.'
   CONFIG_ERROR_MESSAGE = 'Peer progress is not configured.'
   MINIMUM_SAFE_COHORT_SIZE = 5
+  PERCENTAGE_BUCKET_SIZE = 5.0
 
   before do
     header 'Cache-Control', 'private, no-store'
@@ -38,6 +39,12 @@ class PeerProgressApi < Grape::API
       ).local_start_date
 
       start_date.present? && start_date <= Time.zone.now
+    end
+
+    def quantised_percentage(value)
+      bucket_size = PeerProgressApi::PERCENTAGE_BUCKET_SIZE
+
+      ((value.to_f / bucket_size).round * bucket_size).to_f
     end
 
     def safe_target_grade(project)
@@ -160,7 +167,9 @@ class PeerProgressApi < Grape::API
         project: project,
         task_definition: task_definition,
         snapshot: snapshot,
-        submitted_percentage: snapshot.submitted_percentage.to_f
+        submitted_percentage: quantised_percentage(
+          snapshot.submitted_percentage
+        )
       )
     end
   end
