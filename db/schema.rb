@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_10_033824) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_18_160804) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -443,7 +443,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_10_033824) do
     t.index ["task_definition_id"], name: "index_overseer_steps_on_task_definition_id"
   end
 
-  create_table "peer_progress_snapshots", charset: "utf8mb4", collation: "utf8mb4_uca1400_ai_ci", force: :cascade do |t|
+  create_table "peer_progress_snapshots", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "unit_id", null: false
     t.bigint "task_definition_id", null: false
     t.integer "target_grade", null: false
@@ -481,6 +481,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_10_033824) do
     t.integer "spec_con_days", default: 0, null: false
     t.bigint "assessor_id"
     t.datetime "portfolio_submission_date"
+    t.datetime "target_grade_changed_at", null: false
     t.index ["assessor_id"], name: "index_projects_on_assessor_id"
     t.index ["campus_id"], name: "index_projects_on_campus_id"
     t.index ["enrolled"], name: "index_projects_on_enrolled"
