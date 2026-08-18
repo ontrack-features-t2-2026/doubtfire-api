@@ -41,6 +41,12 @@ class PeerProgressApi < Grape::API
       start_date.present? && start_date <= Time.zone.now
     end
 
+    def snapshot_predates_target_grade?(project, snapshot)
+      changed_at = project.target_grade_changed_at
+
+      changed_at.present? && snapshot.calculated_at < changed_at
+    end
+
     def quantised_percentage(value)
       bucket_size = PeerProgressApi::PERCENTAGE_BUCKET_SIZE
 
@@ -127,33 +133,49 @@ class PeerProgressApi < Grape::API
         target_grade: target_grade
       )
 
-      if snapshot.nil? || snapshot.cohort_size.zero? ||
-         snapshot.submitted_percentage.nil?
+      if snapshot.nil? ||
+        snapshot_predates_target_grade?(project, snapshot)
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
-          snapshot: snapshot,
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
 
-      minimum_cohort_size = minimum_cohort_size!
-      
+      minimum_cohort_size = positive_integer_env!(
+        'DF_PPI_MINIMUM_COHORT_SIZE'
+      )
       stale_after_hours = positive_integer_env!(
         'DF_PPI_STALE_AFTER_HOURS'
       )
 
+      is_stale = snapshot.calculated_at < stale_after_hours.hours.ago
+
+      # Treat an empty cohort exactly like every other cohort below the
+      # privacy threshold. This prevents the response from revealing
+      # whether a target-grade group is empty or merely small.
       if snapshot.cohort_size < minimum_cohort_size
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
           snapshot: snapshot,
           is_suppressed: true,
+          is_stale: is_stale,
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
 
-      if snapshot.calculated_at < stale_after_hours.hours.ago
+      if snapshot.submitted_percentage.nil?
+        return peer_progress_payload(
+          project: project,
+          task_definition: task_definition,
+          snapshot: snapshot,
+          is_stale: is_stale,
+          unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
+        )
+      end
+
+      if is_stale
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
@@ -170,7 +192,7 @@ class PeerProgressApi < Grape::API
         submitted_percentage: quantised_percentage(
           snapshot.submitted_percentage
         )
-      )
+)
     end
   end
 

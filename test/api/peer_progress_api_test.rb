@@ -62,6 +62,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
       @unit.tutorials.first.campus
     )
     @project.update!(target_grade: 1)
+    @project.update!(target_grade_changed_at: 1.year.ago)
 
     @task_definition = create(
       :task_definition,
@@ -107,7 +108,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal @unit.id, body['unit_id']
     assert_equal @project.target_grade, body['target_grade']
     assert_equal 65.0, body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert body['last_updated_at'].present?
@@ -127,7 +128,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_equal 0.0, body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal '', body['unavailable_message']
   end
@@ -351,7 +352,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -390,7 +391,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_equal 40.0, body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
   end
 
   test 'hides the percentage when an active unit snapshot is stale' do
@@ -407,7 +408,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal true, body['is_stale']
     assert body['last_updated_at'].present?
     assert body['unavailable_message'].present?
@@ -423,7 +424,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal false, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -464,7 +465,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     assert_nil body['target_grade']
     assert_nil body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -490,7 +491,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     assert_nil body['target_grade']
     assert_nil body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert_nil body['last_updated_at']
@@ -514,7 +515,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_peer_progress_response_contract(body)
 
     assert_nil body['submitted_percentage']
-    assert_equal false, body['is_suppressed']
+    assert_equal true, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
     assert body['last_updated_at'].present?
@@ -633,6 +634,59 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     end
   end
 
+  test 'does not serve a snapshot created before the target grade changed' do
+    travel_to Time.zone.parse('2026-08-10 12:00:00 UTC') do
+      create_snapshot(
+        target_grade: 2,
+        submitted_percentage: 60,
+        cohort_size: 5,
+        calculated_at: 1.hour.ago
+      )
+
+      @project.update!(target_grade: 2)
+
+      request_as(@student)
+
+      assert_equal 200, last_response.status
+
+      body = last_response_body
+      assert_peer_progress_response_contract(body)
+
+      assert_equal 2, body['target_grade']
+      assert_nil body['submitted_percentage']
+      assert_equal true, body['is_suppressed']
+      assert_nil body['last_updated_at']
+      assert body['unavailable_message'].present?
+    end
+  end
+
+  test 'records when a project target grade changes' do
+    project = create(:project)
+    original_timestamp = project.target_grade_changed_at
+
+    travel 1.minute
+    project.update!(target_grade: project.target_grade + 1)
+
+    assert_operator(
+      project.reload.target_grade_changed_at,
+      :>,
+      original_timestamp
+    )
+  end
+
+  test 'does not change the grade timestamp for an unrelated update' do
+    project = create(:project)
+    original_timestamp = project.target_grade_changed_at
+
+    travel 1.minute
+    project.update!(started: !project.started)
+
+    assert_equal(
+      original_timestamp,
+      project.reload.target_grade_changed_at
+    )
+  end
+
   test 'fails closed when required PPI configuration is missing' do
     create_snapshot(
       submitted_percentage: 50,
@@ -648,6 +702,26 @@ class PeerProgressApiTest < ActiveSupport::TestCase
       last_response_body['error']
     )
     assert_private_no_store
+  end
+
+  test 'serves a fresh snapshot calculated after the target grade changed' do
+    travel_to Time.zone.parse('2026-08-10 12:00:00 UTC') do
+      @project.update!(target_grade: 2)
+
+      travel 1.minute
+
+      create_snapshot(
+        target_grade: 2,
+        submitted_percentage: 61,
+        cohort_size: 5,
+        calculated_at: Time.zone.now
+      )
+
+      request_as(@student)
+
+      assert_equal 200, last_response.status
+      assert_equal 60.0, last_response_body['submitted_percentage']
+    end
   end
 
   private
@@ -666,13 +740,14 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   def create_snapshot(
     submitted_percentage:,
     cohort_size:,
-    calculated_at: Time.zone.now
+    calculated_at: Time.zone.now,
+    target_grade: @project.target_grade
   )
     create(
       :peer_progress_snapshot,
       unit: @unit,
       task_definition: @task_definition,
-      target_grade: @project.target_grade,
+      target_grade: target_grade,
       submitted_percentage: submitted_percentage,
       cohort_size: cohort_size,
       calculated_at: calculated_at
