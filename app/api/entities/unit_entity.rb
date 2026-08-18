@@ -56,10 +56,10 @@ module Entities
     expose :allow_flexible_dates, unless: :summary_only
     expose :mark_late_submissions_as_assess_in_portfolio, unless: :summary_only
     expose :peer_progress_enabled,
-       unless: :summary_only,
-       if: lambda { |_unit, options|
-         can_read_unit_config?(options[:my_role])
-       }
+           unless: :summary_only,
+           if: lambda { |_unit, options|
+             can_read_unit_config?(options[:my_role])
+           }
 
     expose :learning_outcomes, using: LearningOutcomeEntity, as: :ilos, unless: :summary_only
     expose :tutorial_streams, using: TutorialStreamEntity, unless: :summary_only

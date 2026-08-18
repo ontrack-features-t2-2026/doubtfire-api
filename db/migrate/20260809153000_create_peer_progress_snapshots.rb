@@ -1,8 +1,8 @@
 class CreatePeerProgressSnapshots < ActiveRecord::Migration[8.0]
   def change
     create_table :peer_progress_snapshots,
-             options: 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ' \
-                      'COLLATE=utf8mb4_general_ci' do |t|
+                 options: 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ' \
+                          'COLLATE=utf8mb4_general_ci' do |t|
       t.references :unit, null: false
       t.references :task_definition, null: false
 
