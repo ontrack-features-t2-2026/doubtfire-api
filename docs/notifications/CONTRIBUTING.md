@@ -329,11 +329,18 @@ Ignore it. This project does not use RSpec, and the handover document that says
 it does is a trimester out of date. The same document says Angular 17 and Karma.
 It is Angular 22 and vitest.
 
-Development mail is written to files, not sent. It lands in
-`doubtfire-deploy/data/tmp/mails/`, **not** `doubtfire-api/tmp/mails` as the
-comment in `config/environments/development.rb` claims. The container mounts
-`../data/tmp` over `/doubtfire/tmp`, so the comment is wrong under Docker. Mailpit
-on port 8025 is the easier way to look at them.
+Development mail goes to **Mailpit, on `http://localhost:8025`**. The dev stack
+starts it and sets `DF_SMTP_ADDRESS`, so `config/environments/development.rb`
+takes the SMTP path and everything the app sends turns up there. That is the
+easiest way to check an email actually went out, and a Mailpit screenshot is
+good evidence on a ticket.
+
+If `DF_SMTP_ADDRESS` is not set, Rails falls back to writing mail to a file
+instead. Under Docker those land on the host at
+`doubtfire-deploy/data/tmp/mails/`, not under `doubtfire-api/tmp/mails`, because
+the compose file mounts `../data/tmp` over `/doubtfire/tmp`. Looking in the wrong
+one shows an empty folder and makes email look broken. The comment in
+`development.rb` explains this too.
 
 ---
 
