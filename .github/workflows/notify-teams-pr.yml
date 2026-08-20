@@ -1,0 +1,140 @@
+# NOTE ON THE BASE BRANCH. GitHub loads a `pull_request_target` workflow from the
+# repository DEFAULT branch (11.0.x), not from the pull request's base branch. That
+# changed on 2025-12-08. So this file is merged into 11.0.x deliberately, against the
+# usual CONTRIBUTING rule, and a copy on feature/notifications would be dead code.
+# It fires for pull requests into every base branch, which is what we want.
+name: Notify Teams when a pull request opens
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      # - review_requested   # matches "reviewer alerts" most directly, but adds one
+      #                      # message per requested reviewer. Decide, do not default.
+
+# Removes all GITHUB_TOKEN scopes, which this workflow does not need. It does NOT
+# restrict secrets.* - the webhook is protected by the job guard below, not by this.
+permissions: {}
+
+jobs:
+  notify-teams:
+    name: Post pull request notification to Teams
+    # First clause makes the file inert if it ever travels to thoth-tech or
+    # doubtfire-lms. Second keeps the webhook out of reach of anonymous fork PRs
+    # while still notifying teammates who work from their own forks, which
+    # several doubtfire-web contributors do.
+    if: >-
+      github.repository_owner == 'ontrack-features-t2-2026' &&
+      (github.event.pull_request.head.repo.full_name == github.repository ||
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Build and send Teams notification
+        shell: bash
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_PR_WEBHOOK_URL }}
+          PAYLOAD_PATH: ${{ runner.temp }}/teams-pr-notification.json
+
+          REPOSITORY: ${{ github.repository }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_HEAD: ${{ github.event.pull_request.head.label }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${TEAMS_WEBHOOK_URL:-}" ]]; then
+            echo "::error::The TEAMS_PR_WEBHOOK_URL Actions secret is not configured."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+
+
+          def plain(value):
+              """Teams renders these fields as Markdown, and titles and branch names
+              come from anyone who can open a pull request. Removing [ ] < > and
+              backticks stops a title forging a Markdown link or code span.
+              Parentheses are left alone so `feat(scope): ...` still reads
+              properly. Note this does NOT stop Teams auto-linking a bare URL in
+              a title, it only stops the link TEXT being controlled."""
+              value = " ".join(value.split())
+              return re.sub(r"[\[\]<>`]", " ", value)[:200]
+
+
+          headline = {
+              "opened": "New pull request opened",
+              "reopened": "Pull request reopened",
+              "ready_for_review": "Pull request is ready for review",
+          }.get(os.environ["PR_ACTION"], "Pull request updated")
+
+          status = (
+              "Draft"
+              if os.environ.get("PR_DRAFT", "").lower() == "true"
+              else "Ready for review"
+          )
+
+          # Teams renders a break for "\n\n" and not for a single "\n".
+          text = "\n\n".join(
+              [
+                  headline,
+                  f"Repository: {os.environ['REPOSITORY']}",
+                  f"PR #{os.environ['PR_NUMBER']}: {plain(os.environ['PR_TITLE'])}",
+                  f"Author: {plain(os.environ['PR_AUTHOR'])}",
+                  f"Status: {status}",
+                  f"Branches: {plain(os.environ['PR_HEAD'])} -> {os.environ['PR_BASE']}",
+                  os.environ["PR_URL"],
+              ]
+          )
+
+          with open(
+              os.environ["PAYLOAD_PATH"],
+              "w",
+              encoding="utf-8",
+          ) as payload_file:
+              json.dump(
+                  {"text": text},
+                  payload_file,
+                  ensure_ascii=False,
+              )
+          PY
+
+          http_status="$(
+            curl \
+              --proto '=https' \
+              --tlsv1.2 \
+              --silent \
+              --show-error \
+              --connect-timeout 10 \
+              --max-time 30 \
+              --header 'Content-Type: application/json' \
+              --data-binary "@${PAYLOAD_PATH}" \
+              --output "${RUNNER_TEMP}/teams-response.txt" \
+              --write-out '%{http_code}' \
+              --url "${TEAMS_WEBHOOK_URL}"
+          )" || http_status="000"
+
+          # Uncomment to debug a failing webhook. The body comes from a third party
+          # and lands in a PUBLIC Actions log, and GitHub only masks an exact
+          # full-value match of a secret. Read it once, then comment it out again.
+          # cat "${RUNNER_TEMP}/teams-response.txt"
+
+          if [[ "${http_status}" != 2* ]]; then
+            echo "::error::Teams webhook returned HTTP ${http_status}."
+            exit 1
+          fi
+
+          echo "Teams webhook returned HTTP ${http_status} for PR #${PR_NUMBER}."
+          echo "That means the request was accepted. It does not prove the message rendered in the channel."
