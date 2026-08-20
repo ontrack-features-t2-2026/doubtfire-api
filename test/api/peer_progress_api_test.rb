@@ -42,7 +42,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     @original_stale_after_hours =
       ENV.fetch('DF_PPI_STALE_AFTER_HOURS', nil)
-    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '5'
+    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '20'
     ENV['DF_PPI_STALE_AFTER_HOURS'] = '48'
 
     @unit = create(
@@ -95,7 +95,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'returns a privacy-safe normal response for the owning student' do
     create_snapshot(
       submitted_percentage: 62.5,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     request_as(@student)
@@ -107,7 +107,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal @task_definition.id, body['task_definition_id']
     assert_equal @unit.id, body['unit_id']
     assert_equal @project.target_grade, body['target_grade']
-    assert_equal 65.0, body['submitted_percentage']
+    assert_equal 60.0, body['submitted_percentage']
     assert_equal false, body['is_suppressed']
     assert_equal false, body['is_stale']
     assert_equal true, body['is_feature_enabled']
@@ -118,7 +118,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'returns a genuine zero as zero rather than unavailable' do
     create_snapshot(
       submitted_percentage: 0,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     request_as(@student)
@@ -176,7 +176,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     request_as(@student)
@@ -188,7 +188,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'does not create a task row while checking the release date' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     assert_no_difference('Task.count') do
@@ -198,10 +198,10 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal 200, last_response.status
   end
 
-  test 'quantises the student percentage to five point buckets' do
+  test 'quantises the student percentage to ten point buckets' do
     create_snapshot(
       submitted_percentage: 61,
-      cohort_size: 10
+      cohort_size: 20
     )
 
     request_as(@student)
@@ -213,10 +213,10 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'fails closed when the cohort configuration is below the privacy floor' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5
+      cohort_size: 20
     )
 
-    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '4'
+    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '19'
 
     request_as(@student)
 
@@ -229,11 +229,11 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   end
 
   test 'accepts a configured threshold above the privacy floor' do
-    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '6'
+    ENV['DF_PPI_MINIMUM_COHORT_SIZE'] = '21'
 
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 6
+      cohort_size: 21
     )
 
     request_as(@student)
@@ -362,7 +362,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'suppresses a cohort below the configured threshold' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 4
+      cohort_size: 19
     )
 
     request_as(@student)
@@ -381,7 +381,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'shows a cohort at the exact configured threshold' do
     create_snapshot(
       submitted_percentage: 40,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     request_as(@student)
@@ -394,10 +394,44 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     assert_equal false, body['is_suppressed']
   end
 
+  test 'keeps the bucket wider than one students share of the smallest cohort' do
+    # Quantising only hides the submitted count while a bucket is strictly
+    # wider than 100.0 / cohort_size. If these two constants ever drift so that
+    # the bucket is no larger than one student's share, the returned percentage
+    # becomes injective and inverts to an exact count.
+    assert_operator(
+      PeerProgressApi::PERCENTAGE_BUCKET_SIZE,
+      :>,
+      100.0 / PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE,
+      'PERCENTAGE_BUCKET_SIZE must exceed 100.0 / MINIMUM_SAFE_COHORT_SIZE, ' \
+      'or the quantised percentage reveals the exact submitted count'
+    )
+  end
+
+  test 'does not let the quantised percentage reveal the submitted count' do
+    # Walk every submitted count for the smallest permitted cohort and assert
+    # at least one collision, i.e. the mapping is not reversible.
+    cohort_size = PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE
+    bucket = PeerProgressApi::PERCENTAGE_BUCKET_SIZE
+
+    quantised = (0..cohort_size).map do |submitted|
+      exact = ((submitted * 100.0) / cohort_size).round(2)
+      ((exact / bucket).round * bucket).to_f
+    end
+
+    assert_operator(
+      quantised.uniq.length,
+      :<,
+      quantised.length,
+      "every submitted count from 0 to #{cohort_size} maps to a distinct " \
+      'percentage, so the count is recoverable'
+    )
+  end
+
   test 'hides the percentage when an active unit snapshot is stale' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5,
+      cohort_size: 20,
       calculated_at: 49.hours.ago
     )
 
@@ -434,7 +468,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'ignores a browser supplied target grade' do
     create_snapshot(
       submitted_percentage: 60,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     request_as(
@@ -527,7 +561,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
 
     create_snapshot(
       submitted_percentage: 62.5,
-      cohort_size: 5,
+      cohort_size: 20,
       calculated_at: calculated_at
     )
 
@@ -547,7 +581,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'fails closed when the stale window configuration is missing' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     ENV.delete('DF_PPI_STALE_AFTER_HOURS')
@@ -587,7 +621,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'fails closed for invalid positive integer configuration' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5
+      cohort_size: 20
     )
 
     [
@@ -618,7 +652,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
     travel_to Time.zone.parse('2026-08-10 12:00:00 UTC') do
       create_snapshot(
         submitted_percentage: 50,
-        cohort_size: 5,
+        cohort_size: 20,
         calculated_at: 48.hours.ago
       )
 
@@ -639,7 +673,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
       create_snapshot(
         target_grade: 2,
         submitted_percentage: 60,
-        cohort_size: 5,
+        cohort_size: 20,
         calculated_at: 1.hour.ago
       )
 
@@ -690,7 +724,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
   test 'fails closed when required PPI configuration is missing' do
     create_snapshot(
       submitted_percentage: 50,
-      cohort_size: 5
+      cohort_size: 20
     )
     ENV.delete('DF_PPI_MINIMUM_COHORT_SIZE')
 
@@ -713,7 +747,7 @@ class PeerProgressApiTest < ActiveSupport::TestCase
       create_snapshot(
         target_grade: 2,
         submitted_percentage: 61,
-        cohort_size: 5,
+        cohort_size: 20,
         calculated_at: Time.zone.now
       )
 

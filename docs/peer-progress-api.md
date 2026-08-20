@@ -8,8 +8,6 @@ The route is restricted to the authenticated student who owns the enrolled proje
 The unit and target grade are derived from that project. The route does not accept a
 student ID, unit ID, trimester, cohort, or target grade from the browser.
 
-## Response fields
-
 ## Successful response contract
 
 All authorised business states return HTTP 200 with exactly the following
@@ -28,9 +26,20 @@ camelCase interface.
 | `last_updated_at` | String | Yes | UTC ISO 8601 snapshot time, or `null` when no snapshot was used |
 | `unavailable_message` | String | No | Empty on success; otherwise a neutral and privacy-safe message |
 
-A genuine zero is returned as `0.0`. It is not treated as missing data.
+Student-facing percentages are quantised to the nearest ten percentage points.
+The precise stored aggregate is never returned by this API.
 
-Student-facing percentages are quantised to the nearest five percentage points. The precise stored aggregate is not returned by this API.
+The bucket size and the minimum cohort size are a matched pair. Quantising only
+hides the underlying submitted count while a bucket is strictly wider than one
+student's share of the cohort, which is `100.0 / cohort_size`. With a floor of
+20 and a bucket of 10, no cohort at or above the floor allows the count to be
+recovered from the percentage. Changing either number alone breaks that, so the
+relationship is asserted in `test/api/peer_progress_api_test.rb`.
+
+Quantisation applies to `0.0` and `100.0` as well. A cohort where nobody has
+submitted and a cohort where fewer than one bucket's worth have submitted both
+return `0.0`, so `0.0` means "at most a rounding bucket", not "exactly none".
+The same holds at the top of the range.
 
 `submitted_percentage` must be `null` for suppressed, stale, disabled and
 unavailable states. The response never includes raw cohort size or submitted
@@ -41,7 +50,7 @@ count.
 | State | Percentage | Suppressed | Stale | Enabled | Last updated |
 | --- | --- | --- | --- | --- | --- |
 | Normal | Number | False | False | True | Timestamp |
-| Genuine zero | `0.0` | False | False | True | Timestamp |
+| Rounds to zero | `0.0` | False | False | True | Timestamp |
 | Empty or small cohort, fresh | `null` | True | False | True | Timestamp |
 | Empty or small cohort, stale | `null` | True | True | True | Timestamp |
 | Stale snapshot | `null` | False | True | True | Timestamp |
@@ -55,7 +64,7 @@ count.
   "task_definition_id": 12,
   "unit_id": 5,
   "target_grade": 2,
-  "submitted_percentage": 65.0,
+  "submitted_percentage": 60.0,
   "is_suppressed": false,
   "is_stale": false,
   "is_feature_enabled": true,
@@ -64,7 +73,7 @@ count.
 }
 ```
 
-### Genuine zero
+### Rounds to zero
 ``` json
 {
   "task_definition_id": 12,
@@ -192,7 +201,7 @@ creates a snapshot for that grade.
 - `DF_PPI_MINIMUM_COHORT_SIZE`: approved minimum cohort size.
 - `DF_PPI_STALE_AFTER_HOURS`: approved maximum snapshot age.
 
-`DF_PPI_STALE_AFTER_HOURS` must be a positive integer. `DF_PPI_MINIMUM_COHORT_SIZE` must be an integer of at least `5`. No production defaults are included. An enabled unit
+`DF_PPI_STALE_AFTER_HOURS` must be a positive integer. `DF_PPI_MINIMUM_COHORT_SIZE` must be an integer of at least `PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE`, which is `20`. A lower value is rejected rather than honoured, so configuration alone cannot defeat suppression. No production defaults are included. An enabled unit
 with a valid snapshot fails closed with HTTP 503 when either value is missing or invalid.
 
 ## Feature enablement

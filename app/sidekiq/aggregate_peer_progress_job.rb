@@ -31,7 +31,11 @@ class AggregatePeerProgressJob
       'Queueing peer progress aggregation for active units...'
     )
 
-    Unit.active_units.find_each do |unit|
+    # Only units whose convenor has opted in. Aggregating the rest would store
+    # derived cohort statistics for units that never enabled the feature, and
+    # the endpoint returns early on peer_progress_enabled? so those rows could
+    # never be served anyway.
+    Unit.active_units.where(peer_progress_enabled: true).find_each do |unit|
       self.class.perform_async(unit.id)
     end
 
@@ -44,6 +48,14 @@ class AggregatePeerProgressJob
     unless unit.active?
       logger.info(
         "Skipping peer progress aggregation for inactive unit_id=#{unit.id}"
+      )
+      return
+    end
+
+    unless unit.peer_progress_enabled?
+      logger.info(
+        "Skipping peer progress aggregation for unit_id=#{unit.id}, " \
+        'peer progress is not enabled'
       )
       return
     end

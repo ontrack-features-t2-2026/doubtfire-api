@@ -7,6 +7,10 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
   def setup
     @active_unit = create_minimal_unit(active: true)
     @inactive_unit = create_minimal_unit(active: false)
+    @disabled_unit = create_minimal_unit(
+      active: true,
+      peer_progress_enabled: false
+    )
     @calculated_at = Time.zone.parse('2026-08-10 23:45:00')
   end
 
@@ -33,11 +37,14 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
     assert_equal @calculated_at, calls.first[:calculated_at]
   end
 
-  def test_enqueues_one_job_for_each_active_unit_when_no_unit_id_is_given
+  def test_enqueues_one_job_for_each_enabled_active_unit_when_no_unit_id_is_given
     Sidekiq::Job.clear_all
 
     expected_unit_ids =
-      Unit.active_units.order(:id).pluck(:id)
+      Unit.active_units
+          .where(peer_progress_enabled: true)
+          .order(:id)
+          .pluck(:id)
 
     assert_difference(
       -> { AggregatePeerProgressJob.jobs.size },
@@ -54,6 +61,7 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
 
     assert_equal expected_unit_ids, actual_unit_ids
     assert_not_includes actual_unit_ids, @inactive_unit.id
+    assert_not_includes actual_unit_ids, @disabled_unit.id
   end
 
   def test_failure_for_one_unit_does_not_prevent_another_unit_job
@@ -92,6 +100,22 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
       end
     ) do
       AggregatePeerProgressJob.new.perform(@inactive_unit.id)
+    end
+
+    assert_empty calls
+  end
+
+  def test_skips_a_requested_unit_with_peer_progress_disabled
+    calls = []
+
+    PeerProgressAggregationService.stub(
+      :call,
+      lambda do |unit:, calculated_at:|
+        calls << [unit, calculated_at]
+        []
+      end
+    ) do
+      AggregatePeerProgressJob.new.perform(@disabled_unit.id)
     end
 
     assert_empty calls
@@ -172,10 +196,11 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
 
   private
 
-  def create_minimal_unit(active:)
+  def create_minimal_unit(active:, peer_progress_enabled: true)
     create(
       :unit,
       active: active,
+      peer_progress_enabled: peer_progress_enabled,
       with_students: false,
       task_count: 0,
       stream_count: 0,

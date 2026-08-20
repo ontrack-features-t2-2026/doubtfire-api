@@ -8,8 +8,19 @@ class PeerProgressApi < Grape::API
   UNAVAILABLE_MESSAGE = 'Peer progress is currently unavailable.'
   NOT_FOUND_MESSAGE = 'Peer progress is unavailable for this project or task.'
   CONFIG_ERROR_MESSAGE = 'Peer progress is not configured.'
-  MINIMUM_SAFE_COHORT_SIZE = 5
-  PERCENTAGE_BUCKET_SIZE = 5.0
+  # These two constants are a pair and must not be changed independently.
+  #
+  # Quantising into buckets of PERCENTAGE_BUCKET_SIZE only hides the underlying
+  # submitted count while a bucket is wider than one student's share of the
+  # cohort, which is 100.0 / cohort_size. Once PERCENTAGE_BUCKET_SIZE is less
+  # than or equal to 100.0 / MINIMUM_SAFE_COHORT_SIZE the mapping is injective
+  # and the returned percentage inverts to an exact submitted count -- the raw
+  # value the snapshot migration promises never to expose through this API.
+  #
+  # 20 and 10.0 leave no cohort size at or above the floor from which the count
+  # can be recovered. peer_progress_api_test.rb asserts the relationship holds.
+  MINIMUM_SAFE_COHORT_SIZE = 20
+  PERCENTAGE_BUCKET_SIZE = 10.0
 
   before do
     header 'Cache-Control', 'private, no-store'
