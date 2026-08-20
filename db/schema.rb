@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_09_014859) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_18_160804) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -443,6 +443,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_09_014859) do
     t.index ["task_definition_id"], name: "index_overseer_steps_on_task_definition_id"
   end
 
+  create_table "peer_progress_snapshots", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "unit_id", null: false
+    t.bigint "task_definition_id", null: false
+    t.integer "target_grade", null: false
+    t.decimal "submitted_percentage", precision: 5, scale: 2
+    t.integer "cohort_size", null: false
+    t.datetime "calculated_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["task_definition_id"], name: "index_peer_progress_snapshots_on_task_definition_id"
+    t.index ["unit_id", "task_definition_id", "target_grade"], name: "idx_peer_progress_unit_task_grade", unique: true
+    t.index ["unit_id"], name: "index_peer_progress_snapshots_on_unit_id"
+  end
+
   create_table "projects", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "unit_id"
     t.string "project_role"
@@ -467,6 +481,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_09_014859) do
     t.integer "spec_con_days", default: 0, null: false
     t.bigint "assessor_id"
     t.datetime "portfolio_submission_date"
+    t.datetime "target_grade_changed_at", null: false
     t.index ["assessor_id"], name: "index_projects_on_assessor_id"
     t.index ["campus_id"], name: "index_projects_on_campus_id"
     t.index ["enrolled"], name: "index_projects_on_enrolled"
@@ -901,6 +916,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_09_014859) do
     t.integer "feedback_overflow_threshold_days", default: 7
     t.boolean "enforce_feedback_before_discussed_in_class", default: false, null: false
     t.text "grade_values", size: :long, collation: "utf8mb4_bin"
+    t.boolean "peer_progress_enabled", default: false, null: false
     t.index ["draft_task_definition_id"], name: "index_units_on_draft_task_definition_id"
     t.index ["main_convenor_id"], name: "index_units_on_main_convenor_id"
     t.index ["overseer_image_id"], name: "index_units_on_overseer_image_id"

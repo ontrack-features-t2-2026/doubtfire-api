@@ -174,6 +174,7 @@ class Unit < ApplicationRecord
   has_many :learning_outcomes, as: :context, dependent: :destroy # inverse_of: :unit
   has_many :marking_sessions, dependent: :destroy
   has_many :task_completion_snapshots, dependent: :destroy, inverse_of: :unit
+  has_many :peer_progress_snapshots, dependent: :destroy, inverse_of: :unit
   has_many :communication_sets, class_name: 'CommunicationSet', dependent: :destroy
   has_many :communication_rules, through: :communication_sets, class_name: 'CommunicationRule'
   has_many :communication_set_schedules, through: :communication_sets, class_name: 'CommunicationSetSchedule'

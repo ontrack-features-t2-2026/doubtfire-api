@@ -16,6 +16,10 @@ refresh_moderation_feedback_timestamps:
   cron: "every 60 minutes"
   class: "RefreshModerationFeedbackTimestampsJob"
 
+aggregate_peer_progress:
+  cron: "every day at 11:45pm"
+  class: "AggregatePeerProgressJob"
+
 aggregate_task_completion_stats:
   cron: "every day at 11:55pm"
   class: "AggregateTaskCompletionStatsJob"
