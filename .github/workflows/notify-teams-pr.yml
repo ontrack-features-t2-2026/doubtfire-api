@@ -1,0 +1,90 @@
+name: Notify Teams when a pull request opens
+
+on:
+  pull_request_target:
+    types:
+      - opened
+
+permissions: {}
+
+jobs:
+  notify-teams:
+    name: Post pull request notification to Teams
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+
+      - name: Build and send Teams notification
+        shell: bash
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_PR_WEBHOOK_URL }}
+          PAYLOAD_PATH: ${{ runner.temp }}/teams-pr-notification.json
+
+          REPOSITORY: ${{ github.repository }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_HEAD: ${{ github.event.pull_request.head.label }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${TEAMS_WEBHOOK_URL:-}" ]]; then
+            echo "::error::The TEAMS_PR_WEBHOOK_URL Actions secret is not configured."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+
+          status = (
+              "Draft"
+              if os.environ.get("PR_DRAFT", "").lower() == "true"
+              else "Ready for review"
+          )
+
+          text = "\n".join(
+              [
+                  "New pull request opened",
+                  "",
+                  f"Repository: {os.environ['REPOSITORY']}",
+                  f"PR #{os.environ['PR_NUMBER']}: {os.environ['PR_TITLE']}",
+                  f"Author: {os.environ['PR_AUTHOR']}",
+                  f"Status: {status}",
+                  f"Branches: {os.environ['PR_HEAD']} -> {os.environ['PR_BASE']}",
+                  "",
+                  os.environ["PR_URL"],
+              ]
+          )
+
+          with open(
+              os.environ["PAYLOAD_PATH"],
+              "w",
+              encoding="utf-8",
+          ) as payload_file:
+              json.dump(
+                  {"text": text},
+                  payload_file,
+                  ensure_ascii=False,
+              )
+          PY
+
+          curl \
+            --proto '=https' \
+            --tlsv1.2 \
+            --silent \
+            --show-error \
+            --fail-with-body \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --header 'Content-Type: application/json' \
+            --data-binary "@${PAYLOAD_PATH}" \
+            "${TEAMS_WEBHOOK_URL}"
+
+          echo "Teams accepted the pull request notification."
