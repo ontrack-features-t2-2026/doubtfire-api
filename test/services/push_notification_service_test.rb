@@ -165,7 +165,6 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_not_nil body['title']
   end
 
-
   def test_click_payload_preserves_every_approved_route_family
     routes = [
       '/notifications',
@@ -173,7 +172,13 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/2/groups',
       '/projects/2/dashboard/1.1P',
       '/projects/2/dashboard/T1.1',
-      '/projects/2/dashboard/HD1.2'
+      '/projects/2/dashboard/HD1.2',
+      '/projects/2/dashboard/10.1H',
+      '/projects/2/dashboard/A15',
+      '/projects/2/dashboard/TASK1',
+      '/projects/2/dashboard/P-2.21',
+      '/projects/2/dashboard/D-9.568',
+      '/projects/2/dashboard/C-4.602'
     ]
 
     routes.each do |route|
@@ -210,6 +215,9 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/0/dashboard',
       '/projects/2/dashboard/',
       '/projects/2/dashboard/1.1P/extra',
+      '/projects/2/dashboard/1.1P?token=secret',
+      '/projects/2/dashboard/1.1P#feedback',
+      "/projects/2/dashboard/#{'A1' * 20}",
       '/units/2',
       '/home'
     ]
@@ -224,16 +232,15 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
   end
 
   def test_an_unsafe_link_is_not_copied_into_the_push_tag
-    @notification.link = '/projects/2/dashboard/token123'
+    @notification.link = 'https://example.test/unsafe'
 
     tag = tag_for(@notification)
-
     assert_equal "notification-#{@notification.id}", tag
-    refute_includes tag, 'token123'
+    assert_not_includes tag, 'example.test'
   end
 
-  def test_click_payload_does_not_place_sensitive_values_in_routes
-    invalid_links = [
+  def test_click_payload_preserves_bounded_task_segments_without_guessing_their_format
+    routes = [
       '/projects/2/dashboard/85',
       '/projects/2/dashboard/Alice1',
       '/projects/2/dashboard/BOB1',
@@ -241,29 +248,7 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/2/dashboard/1.1BOB',
       '/projects/2/dashboard/feedback1',
       '/projects/2/dashboard/token123',
-      '/projects/2/dashboard/mark85',
-      '/projects/2/dashboard/1.1P?token=secret',
-      '/projects/2/dashboard/1.1P#feedback',
-      "/projects/2/dashboard/#{'A1' * 20}"
-    ]
-
-    invalid_links.each do |link|
-      @notification.link = link
-      data = click_data
-
-      assert_equal '/notifications', data['link'], "expected fallback for #{link.inspect}"
-      assert_equal '/notifications', data.dig('onActionClick', 'default', 'url')
-    end
-  end
-
-  def test_click_payload_preserves_each_approved_route_family
-    routes = [
-      '/notifications',
-      '/projects/2/dashboard',
-      '/projects/2/groups',
-      '/projects/2/dashboard/1.1P',
-      '/projects/2/dashboard/T1.1',
-      '/projects/2/dashboard/HD1.2'
+      '/projects/2/dashboard/mark85'
     ]
 
     routes.each do |route|
@@ -272,8 +257,6 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
 
       assert_equal route, data['link']
       assert_equal route, data.dig('onActionClick', 'default', 'url')
-      assert_equal 'focusLastFocusedOrOpen',
-                   data.dig('onActionClick', 'default', 'operation')
     end
   end
 

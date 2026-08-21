@@ -23,15 +23,7 @@ class PushNotificationService
   MAX_CLICK_LINK_LENGTH = 256
   FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#%]/
   SAFE_PROJECT_ROOT_LINK = %r{\A/projects/[1-9]\d*/(?:dashboard|groups)\z}
-  SAFE_PROJECT_TASK_LINK = %r{
-    \A/projects/[1-9]\d*/dashboard/
-    (?<task>[A-Za-z0-9][A-Za-z0-9._-]{0,31})\z
-  }x
-  EXPECTED_TASK_ABBREVIATION = /
-    \A(?=.{1,32}\z)(?=.*\d)(?=.*(?:\.|[A-Z]))
-    (?:HD|P|C|D|T)?\d+(?:\.\d+)*(?:HD|P|C|D|T)?\z
-  /x
-  SENSITIVE_TASK_TEXT = /(feedback|token|mark|grade|student|learner|name|comment)/i
+  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z}x
   # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
   # service that accepts a connection and then never answers holds the request
@@ -110,17 +102,21 @@ class PushNotificationService
     return SAFE_CLICK_FALLBACK unless link == link.strip
     return SAFE_CLICK_FALLBACK if link.match?(FORBIDDEN_CLICK_LINK_TEXT)
     return link if link == SAFE_CLICK_FALLBACK || link.match?(SAFE_PROJECT_ROOT_LINK)
+    return link if link.match?(SAFE_PROJECT_TASK_LINK)
 
-    task_match = SAFE_PROJECT_TASK_LINK.match(link)
-    return SAFE_CLICK_FALLBACK if task_match.nil?
-
-    task = task_match[:task]
-    return SAFE_CLICK_FALLBACK unless task.match?(EXPECTED_TASK_ABBREVIATION)
-    return SAFE_CLICK_FALLBACK if task.match?(SENSITIVE_TASK_TEXT)
-
-    link
+    SAFE_CLICK_FALLBACK
   end
 
+  # Use the event and validated destination as the collapse key so repeated
+  # pushes about the same event and task can replace one banner.
+  #
+  # notification_type is intentionally not used because several different
+  # events share one category. For example, a task status change must not
+  # silently replace a due-date warning about the same task.
+  #
+  # A missing or rejected destination receives a notification-specific tag.
+  # This prevents unrelated downgraded notifications from replacing each other
+  # and prevents the rejected raw route from being copied into the tag.
   def self.tag_for(notification)
     click_link = safe_click_link(notification.link)
     return "notification-#{notification.id}" unless click_link == notification.link
