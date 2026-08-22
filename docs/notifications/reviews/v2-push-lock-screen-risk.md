@@ -1,70 +1,115 @@
-# MN-S04 – v2 Push Payload Lock-Screen Risk Review
+# MN-S04 – v2 push payload lock-screen sign-off
 
 ## Decision
 
-**Sign-off status: NOT APPROVED.**
+**Sign-off status: APPROVED for the payload policy in this branch.**
 
-The v2 event set cannot be approved against the lock-screen rule until the
-failed events are changed and the conditional events have an explicit privacy
-decision or safer push copy:
+All eight v2 event bodies are safe to display on a locked device. The four
+events whose richer in-app messages contain a free-form name or precise
+schedule data now use reviewed, event-keyed Web Push copy. Email and in-app
+notifications retain their useful detail after sign-in.
 
-- Pass: EN-V01, EN-V02, EN-V03 and EN-V08
-- Conditional: EN-V04 and EN-V07
-- Fail: EN-V05 and EN-V06
+This review covers the current EN-V01, EN-V02, EN-V03 and EN-V05
+implementations on `feature/notifications`, plus the candidate EN-V04, EN-V06,
+EN-V07 and EN-V08 branches. The candidate event branches had not merged when
+the review was completed. Their sign-off depends on retaining the event names
+recorded below so the lock-screen override is applied.
 
-This review covers the current implementations of EN-V01 to EN-V03 and EN-V05
-on `feature/notifications`, plus the candidate EN-V04, EN-V06, EN-V07 and
-EN-V08 ticket branches. Those candidate branches had not yet merged when this
-review was completed.
+## Applied rule
 
-## Lock-screen rule
+A push notification must be safe when anyone near a locked phone can read it.
+The visible title is the configured product name, **OnTrack** in this
+deployment. The body must contain no person name, comment, feedback, mark,
+grade, free-form label, task name, precise schedule, or exact action time unless
+that field has received an explicit lock-screen privacy approval.
 
-A push notification must be safe to display on a locked device where anyone
-nearby may read it. The banner title is **OnTrack**, and the notification body
-is copied directly from `Notification#message`. Truncating that body to 400
-characters limits payload size; it does not redact sensitive content.
-
-The payload also contains an event-and-route collapse tag, the notification ID
-and a validated internal click route. Those fields are not rendered as
-lock-screen text by the service worker, so this review concentrates on the
-title and body. A safe click route does not make an unsafe body safe.
+`PushNotificationService` still caps the body at 400 characters. Truncation is
+a transport limit, not redaction. Safety comes from selecting reviewed copy
+before truncation.
 
 ## Event findings
 
-| Event                             | Current lock-screen body                                                                                                       | Finding         | Reason and required action                                                                                                                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| EN-V01 – Task due date changed    | `The due date for <task abbreviation> in <unit code> has changed.`                                                             | **Pass**        | Contains bounded academic identifiers but no date, student name, result, feedback or free-form text.                                                                                                                   |
-| EN-V02 – New task available       | `A new task is available: <task abbreviation> in <unit code>.`                                                                 | **Pass**        | Contains bounded academic identifiers and does not reveal a result, submission, feedback or personal detail.                                                                                                           |
-| EN-V03 – Task due soon            | `<task abbreviation> in <unit code> is due soon.`                                                                              | **Pass**        | Contains bounded academic identifiers without exposing the exact deadline or student-specific progress.                                                                                                                |
-| EN-V04 – Tutorial changed         | `You have been moved to tutorial <tutorial abbreviation> in <unit code>. It meets on <day> at <time>.`                         | **Conditional** | The tutorial and exact meeting schedule reveal location-pattern metadata. Approve only if that metadata is explicitly classified as safe for a locked device. Otherwise use `Your tutorial details changed.` for push. |
-| EN-V05 – Group membership changed | `You have been added to group <group name> in <unit code>.` or `You have been removed from group <group name> in <unit code>.` | **Fail**        | A group name is free-form user or staff content and may contain a person's name or other sensitive text. Use `Your group membership changed.` for push.                                                                |
-| EN-V06 – Submitted for marking    | `<student name> submitted <task definition name> for marking in <product name>.`                                               | **Fail**        | Exposes a student's name and a potentially free-form task name on the recipient's lock screen. Use `A task is ready for marking.` for push.                                                                            |
-| EN-V07 – Portfolio received       | `<product name> received your portfolio submission at <exact time>.`                                                           | **Conditional** | Confirms a student action and exposes its exact time. Approve only if both are explicitly classified as safe for a locked device. Otherwise use `Your portfolio submission was received.` for push.                    |
-| EN-V08 – Discussion prompt ready  | `A discussion prompt is ready for you.`                                                                                        | **Pass**        | Generic copy reveals neither a task, staff or student name, nor discussion content. This finding applies to the rescoped discussion-prompt event in the candidate branch.                                              |
+| Event                             | Event name                   | Final lock-screen body                                             | Finding  | Reason                                                                                          |
+| --------------------------------- | ---------------------------- | ------------------------------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------- |
+| EN-V01 – Task due date changed    | `task_due_date_changed`      | `The due date for <task abbreviation> in <unit code> has changed.` | **Pass** | Bounded academic identifiers; no date, person, result, feedback, or free-form content.          |
+| EN-V02 – New task available       | `new_task_available`         | `A new task is available: <task abbreviation> in <unit code>.`     | **Pass** | Bounded academic identifiers; no personal or assessment detail.                                 |
+| EN-V03 – Task due soon            | `task_due_soon`              | `<task abbreviation> in <unit code> is due soon.`                  | **Pass** | No exact deadline or student-specific progress.                                                 |
+| EN-V04 – Tutorial changed         | `tutorial_changed`           | `Your tutorial details changed.`                                   | **Pass** | The override omits the tutorial label, unit, meeting day, and meeting time.                     |
+| EN-V05 – Group membership changed | `group_membership_changed`   | `Your group membership changed.`                                   | **Pass** | The override omits the free-form group name, unit, and add/remove direction.                    |
+| EN-V06 – Submitted for marking    | `task_submitted`             | `A task is ready for marking.`                                     | **Pass** | The tutor sees no student name, task name, unit, or product interpolation on the lock screen.   |
+| EN-V07 – Portfolio received       | `portfolio_received`         | `Your portfolio submission was received.`                          | **Pass** | The override omits the exact submission time and timezone while preserving the receipt meaning. |
+| EN-V08 – Discussion prompt ready  | `discussion_request_created` | `A discussion prompt is ready for you.`                            | **Pass** | No tutor, student, task, unit, audio, or prompt content.                                        |
 
-## Required changes before approval
+## How the unsafe payloads were corrected
 
-1. Give EN-V05 and EN-V06 channel-specific push bodies using the safer text in
-   the table. Their richer email and in-app copy may remain unchanged.
-2. Resolve the privacy classification for the schedule details in EN-V04 and
-   the submission/time details in EN-V07. If there is no explicit approval,
-   use the safer push bodies in the table.
-3. Treat every free-form value as unsafe for push by default. This includes
-   group names, task names, comments, feedback and user-supplied labels.
-4. Keep email/in-app meaning separate from lock-screen copy. A message that is
-   appropriate after sign-in is not automatically appropriate for Web Push.
-5. Add automated negative tests for every push event. Tests should assert that
-   the rendered push body does not contain student or staff names, free-form
-   values, comments, feedback, results, exact schedule metadata or exact action
-   times unless each field has an explicit lock-screen approval.
+`PushNotificationService::LOCK_SCREEN_BODY_OVERRIDES` owns the reviewed bodies
+for EN-V04 through EN-V07. `payload_for` selects that copy by the persisted
+event name before applying `MAX_BODY_LENGTH`.
+
+This location is deliberate:
+
+- `Notification#message` remains the rich in-app and email message.
+- Web Push never receives the group name in EN-V05 or the student/task names in
+  EN-V06.
+- Rebuilding a payload from a persisted notification produces the same safe
+  body; no transient caller argument can be lost or bypassed.
+- Unrelated events continue to use their existing notification message.
+
+Focused service tests construct every overridden event with a unique sensitive
+canary and assert both the exact approved body and the canary's absence. The
+EN-V05 model test separately proves that its email still contains the rich
+message while its push body is generic.
+
+## Payload fields outside the visible body
+
+The payload also carries a collapse tag, `notification_id`, a validated
+internal click route, and Angular's click action. The service worker does not
+render these values as lock-screen text. The route allowlist still matters for
+navigation safety, but a safe route is not being used as a substitute for safe
+visible copy.
+
+The encrypted payload transits a third-party push service operated by the
+browser vendor. The reviewed bodies reveal only the broad event type. Endpoint
+and encryption keys are transport metadata supplied separately to that service;
+they are not copied into the notification JSON.
+
+## Email and in-app consistency
+
+The shorter push copy preserves the meaning of the richer EN-V05 and EN-V06
+email/in-app messages without repeating private detail on a shared screen:
+
+- EN-V05 still tells the signed-in student which membership changed.
+- EN-V06 still tells the signed-in tutor which student and task are waiting.
+- EN-V04 and EN-V07 keep schedule and receipt details in authenticated or email
+  contexts while push communicates only that the event occurred.
+
+This is intentional channel-specific copy, not a contradiction between
+channels.
+
+## Rule gaps and follow-up guardrails
+
+The original rule named comments, feedback, marks, and grades but did not fully
+classify free-form labels, schedule metadata, or exact action times. Apply these
+additions going forward:
+
+1. Treat every free-form value as unsafe for push by default.
+2. Treat names and precise schedule/action timestamps as unsafe unless a
+   documented privacy decision approves them.
+3. Give email, in-app, and lock-screen copy separate fields in the event
+   documentation template.
+4. Add a negative payload test whenever an event's rich message contains a
+   person name, free-form value, assessment detail, schedule, or exact time.
+5. Re-run this review if any event name changes, because the override is keyed
+   by that stable name.
 
 ## Sign-off checklist
 
-- [x] Reviewed all eight v2 event bodies as they would appear in the shared
-      Web Push payload.
-- [x] Checked the visible title and body separately from hidden payload fields.
-- [x] Recorded safer lock-screen copy for every failed or conditional event.
-- [ ] Replace unsafe EN-V05 and EN-V06 push copy.
-- [ ] Resolve EN-V04 and EN-V07 privacy decisions or replace their push copy.
-- [ ] Add channel-specific copy support and lock-screen negative tests.
-- [ ] Re-run this review and change the decision to approved.
+- [x] Applied the MN-S02 lock-screen rule without weakening it.
+- [x] Reviewed all eight v2 event bodies.
+- [x] Reviewed the tutor-facing EN-V06 payload specifically.
+- [x] Replaced unsafe V05 and V06 bodies with channel-specific copy.
+- [x] Resolved V04 and V07 conservatively rather than exposing schedule/time
+      metadata.
+- [x] Preserved richer email and in-app meaning.
+- [x] Added automated negative checks for every override.
+- [x] Recorded the remaining rule gaps and follow-up guardrails.
