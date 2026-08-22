@@ -1,6 +1,13 @@
 name: Unit Tests
 on:
   push:
+    branches:
+      - "*.x"
+      - development
+      - main
+      - master
+    tags:
+      - "v*"
     paths-ignore:
       - "*.md"
       - "docs/**"
@@ -8,6 +15,11 @@ on:
     paths-ignore:
       - "*.md"
       - "docs/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   RAILS_ENV: "test"
@@ -33,8 +45,16 @@ env:
   LTI_ENABLED: true
 
 jobs:
-  unit-tests:
+  unit_test_shards:
+    name: Unit Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      TEST_SHARD_COUNT: "4"
+      TEST_SHARD_NUMBER: ${{ matrix.shard }}
     services:
       mariadb:
         image: mariadb
@@ -62,7 +82,7 @@ jobs:
           load: true
           tags: doubtfire-texlive-development:local
           cache-from: type=gha,scope=texlive
-          cache-to: type=gha,mode=max,scope=texlive
+          cache-to: ${{ matrix.shard == 1 && 'type=gha,mode=max,scope=texlive' || '' }}
       - name: Build JPlag image
         uses: docker/build-push-action@v5
         with:
@@ -72,7 +92,7 @@ jobs:
           load: true
           tags: doubtfire-jplag-development:local
           cache-from: type=gha,scope=jplag
-          cache-to: type=gha,mode=max,scope=jplag
+          cache-to: ${{ matrix.shard == 1 && 'type=gha,mode=max,scope=jplag' || '' }}
       - name: Build base doubtfire-api development image
         uses: docker/build-push-action@v5
         with:
@@ -81,7 +101,7 @@ jobs:
           load: true
           tags: doubtfire-api-development:local
           cache-from: type=gha,scope=doubtfire-api
-          cache-to: type=gha,mode=max,scope=doubtfire-api
+          cache-to: ${{ matrix.shard == 1 && 'type=gha,mode=max,scope=doubtfire-api' || '' }}
       - name: Start TexLive service
         uses: maus007/docker-run-action-fork@207a4e2a8ebf7e4b985656ba990b1e53715dce2a
         with:
@@ -183,8 +203,25 @@ jobs:
             -e LATEX_BUILD_PATH
             -e LTI_SHARED_API_SECRET
             -e LTI_ENABLED
-          run: TERM=xterm bundle exec rails test
+            -e TEST_SHARD_COUNT
+            -e TEST_SHARD_NUMBER
+          run: TERM=xterm bundle exec ruby script/test_shard.rb
       - name: Stop TexLive service
         run: docker rm -f ${{ env.LATEX_CONTAINER_NAME }}
       - name: Stop JPlag service
         run: docker rm -f jplag
+
+  unit-tests:
+    name: unit-tests
+    if: ${{ always() }}
+    needs: unit_test_shards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all unit test shards passed
+        env:
+          SHARD_RESULT: ${{ needs.unit_test_shards.result }}
+        run: |
+          if [ "$SHARD_RESULT" != "success" ]; then
+            echo "::error::One or more unit test shards did not succeed (result: $SHARD_RESULT)."
+            exit 1
+          fi

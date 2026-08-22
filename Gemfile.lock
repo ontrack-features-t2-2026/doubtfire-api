@@ -120,10 +120,6 @@ GEM
       tzinfo
       unicode (>= 0.4.4.5)
     csv (3.3.3)
-    database_cleaner-active_record (2.2.0)
-      activerecord (>= 5.a)
-      database_cleaner-core (~> 2.0.0)
-    database_cleaner-core (2.0.1)
     date (3.4.1)
     devise (4.9.4)
       bcrypt (~> 3.0)
@@ -585,7 +581,6 @@ DEPENDENCIES
   ci_reporter
   coderay
   csv
-  database_cleaner-active_record
   devise
   devise_ldap_authenticatable
   dotenv
