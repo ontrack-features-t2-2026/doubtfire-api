@@ -6,8 +6,8 @@ class NotificationsMailer < ApplicationMailer
   end
 
   # Sends a single in-system notification as an email. Called by
-  # NotificationService, which rescues delivery errors so the in-app
-  # notification is never blocked by a mail problem.
+  # NotificationEmailJob, which lets delivery failures reach Sidekiq so they can
+  # be retried without blocking the request that created the notification.
   def single_notification(notification)
     add_general
 
