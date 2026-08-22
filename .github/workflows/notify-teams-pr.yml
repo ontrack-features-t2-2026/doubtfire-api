@@ -25,10 +25,7 @@ jobs:
     # doubtfire-lms. Second keeps the webhook out of reach of anonymous fork PRs
     # while still notifying teammates who work from their own forks, which
     # several doubtfire-web contributors do.
-    if: >-
-      github.repository_owner == 'ontrack-features-t2-2026' &&
-      (github.event.pull_request.head.repo.full_name == github.repository ||
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    if: github.repository_owner == 'ontrack-features-t2-2026'
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
