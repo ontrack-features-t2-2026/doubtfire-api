@@ -1,0 +1,22 @@
+Affected-test verification
+Date: 2026-08-23
+
+Command:
+bundle exec rails test test/api/comments/extension_test.rb test/api/tii/tii_hook_test.rb --seed 12345
+
+Result:
+Run options: --seed 12345
+
+# Running:
+
+..........
+
+Finished in 47.381856s, 0.2111 runs/s, 1.1397 assertions/s.
+10 runs, 54 assertions, 0 failures, 0 errors, 0 skips
+
+Notes:
+- The restored extension test initially exposed an outdated tutorial-enrolment
+  lookup that had been hidden by Ruby's duplicate-method replacement.
+- The test now uses the unit's current tutorial stream, matching the adjacent
+  extension scenario and current factory data.
+- The final rerun above is clean.
