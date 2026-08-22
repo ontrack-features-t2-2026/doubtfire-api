@@ -64,6 +64,10 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     JSON.parse(PushNotificationService.payload_for(notification))['notification']['tag']
   end
 
+  def click_data(notification = @notification)
+    JSON.parse(PushNotificationService.payload_for(notification)).dig('notification', 'data')
+  end
+
   def test_nothing_is_sent_when_the_vapid_keys_are_missing
     create_subscription
 
@@ -154,12 +158,108 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_equal 'Andrew Cain commented on 1.1P in COS10001.', body['body']
     assert_equal '/projects/2/dashboard/1.1P', body.dig('data', 'link')
     assert_equal @notification.id, body.dig('data', 'notification_id')
+    assert_equal 'focusLastFocusedOrOpen',
+                 body.dig('data', 'onActionClick', 'default', 'operation')
+    assert_equal '/projects/2/dashboard/1.1P',
+                 body.dig('data', 'onActionClick', 'default', 'url')
     assert_not_nil body['title']
   end
 
-  # MN-C06. The operating system does the collapsing, and it collapses on the
-  # tag. Two notifications carrying the same tag means the second replaces the
-  # first on screen instead of stacking under it.
+  def test_click_payload_preserves_every_approved_route_family
+    routes = [
+      '/notifications',
+      '/projects/2/dashboard',
+      '/projects/2/groups',
+      '/projects/2/dashboard/1.1P',
+      '/projects/2/dashboard/T1.1',
+      '/projects/2/dashboard/HD1.2',
+      '/projects/2/dashboard/10.1H',
+      '/projects/2/dashboard/A15',
+      '/projects/2/dashboard/TASK1',
+      '/projects/2/dashboard/P-2.21',
+      '/projects/2/dashboard/D-9.568',
+      '/projects/2/dashboard/C-4.602'
+    ]
+
+    routes.each do |route|
+      @notification.link = route
+      data = click_data
+
+      assert_equal route, data['link']
+      assert_equal route, data.dig('onActionClick', 'default', 'url')
+      assert_equal 'focusLastFocusedOrOpen',
+                   data.dig('onActionClick', 'default', 'operation')
+    end
+  end
+
+  def test_click_payload_falls_back_for_missing_malformed_external_and_encoded_links
+    invalid_links = [
+      nil,
+      '',
+      ' ',
+      'http://example.test/projects/2/dashboard',
+      'https://example.test/projects/2/dashboard',
+      'mailto:student@example.test',
+      'javascript:alert(1)',
+      'data:text/html,unsafe',
+      'file:///etc/passwd',
+      '//example.test/projects/2/dashboard',
+      '\\example.test\\projects\\2',
+      '/projects/2\\dashboard',
+      '/%2f%2fexample.test',
+      '/%5cexample.test',
+      '/projects/2/dashboard/%31.1P',
+      '/projects/2/dashboard/1.1P%3ftoken%3dsecret',
+      '/%252f%252fexample.test',
+      '/projects/2/dashboard/%',
+      '/projects/0/dashboard',
+      '/projects/2/dashboard/',
+      '/projects/2/dashboard/1.1P/extra',
+      '/projects/2/dashboard/1.1P?token=secret',
+      '/projects/2/dashboard/1.1P#feedback',
+      "/projects/2/dashboard/#{'A1' * 20}",
+      '/units/2',
+      '/home'
+    ]
+
+    invalid_links.each do |link|
+      @notification.link = link
+      data = click_data
+
+      assert_equal '/notifications', data['link'], "expected fallback for #{link.inspect}"
+      assert_equal '/notifications', data.dig('onActionClick', 'default', 'url')
+    end
+  end
+
+  def test_an_unsafe_link_is_not_copied_into_the_push_tag
+    @notification.link = 'https://example.test/unsafe'
+
+    tag = tag_for(@notification)
+    assert_equal "notification-#{@notification.id}", tag
+    assert_not_includes tag, 'example.test'
+  end
+
+  def test_click_payload_preserves_bounded_task_segments_without_guessing_their_format
+    routes = [
+      '/projects/2/dashboard/85',
+      '/projects/2/dashboard/Alice1',
+      '/projects/2/dashboard/BOB1',
+      '/projects/2/dashboard/1.1ALICE',
+      '/projects/2/dashboard/1.1BOB',
+      '/projects/2/dashboard/feedback1',
+      '/projects/2/dashboard/token123',
+      '/projects/2/dashboard/mark85'
+    ]
+
+    routes.each do |route|
+      @notification.link = route
+      data = click_data
+
+      assert_equal route, data['link']
+      assert_equal route, data.dig('onActionClick', 'default', 'url')
+    end
+  end
+
   def test_two_notifications_about_the_same_thing_share_a_tag
     second = Notification.create!(
       user: @user,

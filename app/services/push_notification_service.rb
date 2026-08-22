@@ -18,6 +18,13 @@ class PushNotificationService
   # task titles, so it is trimmed rather than trusted.
   MAX_BODY_LENGTH = 400
 
+  # MN-C03 BEGIN: safe click route constants
+  SAFE_CLICK_FALLBACK = '/notifications'.freeze
+  MAX_CLICK_LINK_LENGTH = 256
+  FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#%]/
+  SAFE_PROJECT_ROOT_LINK = %r{\A/projects/[1-9]\d*/(?:dashboard|groups)\z}
+  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z}x
+  # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
   # service that accepts a connection and then never answers holds the request
   # thread open until the app server kills it. NotificationService calls this
@@ -53,6 +60,8 @@ class PushNotificationService
   # option names (ngsw-worker.js, NOTIFICATION_OPTION_NAMES), so they reach
   # showNotification without any change on the web side.
   def self.payload_for(notification)
+    click_link = safe_click_link(notification.link)
+
     {
       notification: {
         title: Doubtfire::Application.config.institution[:product_name],
@@ -75,38 +84,44 @@ class PushNotificationService
         renotify: false,
         data: {
           notification_id: notification.id,
-          link: notification.link
+          link: click_link,
+          onActionClick: {
+            default: {
+              operation: 'focusLastFocusedOrOpen',
+              url: click_link
+            }
+          }
         }
       }
     }.to_json
   end
 
-  # What the operating system collapses on.
-  #
-  # Per conversation and not per notification. Two notifications sharing a tag
-  # means the second replaces the first on screen rather than stacking beneath
-  # it, so the tag has to name the thing being discussed and nothing that
-  # changes between messages about it. The notification id would be unique every
-  # time and collapse nothing at all.
-  #
-  # The event plus the link. The link is the only handle the api has on the
-  # subject, `/projects/9/dashboard/T1.1` being one student's copy of one task.
-  # The event is what makes it a conversation rather than a topic: a run of
-  # comments on a task is one thing being said repeatedly, and a deadline change
-  # to the same task is something else that must not quietly replace it.
-  #
-  # notification_type is deliberately not used here. It is the preference
-  # category, so task_due_date_changed, task_status_changed, new_task_available
-  # and task_due_soon are all `task`, and keying on it would let a status change
-  # silently take the place of a deadline alert about the same task.
-  #
-  # Without a link there is nothing to be about, so this falls back to the id
-  # and that notification collapses with nothing. That is the safe direction:
-  # sharing a tag between unrelated notifications would hide one behind another.
-  def self.tag_for(notification)
-    return "notification-#{notification.id}" if notification.link.blank?
+  def self.safe_click_link(link)
+    return SAFE_CLICK_FALLBACK unless link.is_a?(String)
+    return SAFE_CLICK_FALLBACK if link.empty? || link.length > MAX_CLICK_LINK_LENGTH
+    return SAFE_CLICK_FALLBACK unless link == link.strip
+    return SAFE_CLICK_FALLBACK if link.match?(FORBIDDEN_CLICK_LINK_TEXT)
+    return link if link == SAFE_CLICK_FALLBACK || link.match?(SAFE_PROJECT_ROOT_LINK)
+    return link if link.match?(SAFE_PROJECT_TASK_LINK)
 
-    "#{notification.event}:#{notification.link}"
+    SAFE_CLICK_FALLBACK
+  end
+
+  # Use the event and validated destination as the collapse key so repeated
+  # pushes about the same event and task can replace one banner.
+  #
+  # notification_type is intentionally not used because several different
+  # events share one category. For example, a task status change must not
+  # silently replace a due-date warning about the same task.
+  #
+  # A missing or rejected destination receives a notification-specific tag.
+  # This prevents unrelated downgraded notifications from replacing each other
+  # and prevents the rejected raw route from being copied into the tag.
+  def self.tag_for(notification)
+    click_link = safe_click_link(notification.link)
+    return "notification-#{notification.id}" unless click_link == notification.link
+
+    "#{notification.event}:#{click_link}"
   end
 
   def self.deliver_to(subscription, payload)
@@ -163,5 +178,5 @@ class PushNotificationService
     ENV['DOUBTFIRE_VAPID_PUBLIC_KEY'].present? && ENV['DOUBTFIRE_VAPID_PRIVATE_KEY'].present?
   end
 
-  private_class_method :deliver_to, :vapid_details, :vapid_subject
+  private_class_method :safe_click_link, :deliver_to, :vapid_details, :vapid_subject
 end
