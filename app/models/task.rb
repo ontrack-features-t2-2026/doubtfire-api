@@ -1085,9 +1085,31 @@ class Task < ApplicationRecord
     end
 
     discussion.mark_as_read(user, unit)
+    notify_discussion_request_recipient(discussion)
 
     logger.info(discussion)
     return discussion
+  end
+
+  # EN-V08 was originally described as a discussion booking notification, but
+  # OnTrack has no booking or appointment record to hook. A discussion comment
+  # is the point where a tutor actually raises an audio prompt for a student,
+  # so notify the student once that prompt and its attachments are ready.
+  #
+  # Prompt content is deliberately left out of the notification and email. A
+  # notification failure must not stop the discussion comment being created.
+  def notify_discussion_request_recipient(discussion)
+    return if discussion.recipient.blank?
+
+    NotificationService.notify(
+      user: discussion.recipient,
+      type: 'feedback',
+      event: 'discussion_request_created',
+      message: 'A discussion prompt is ready for you.',
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise discussion_request_created notification for task #{id}: #{e.message}"
   end
 
   # TODO: Refactor to attachment comment (with inheritance on model)
