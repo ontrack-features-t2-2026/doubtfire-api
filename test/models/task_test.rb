@@ -344,18 +344,21 @@ class TaskTest < ActiveSupport::TestCase
 
     project = unit.active_projects.first
 
+    task = project.task_for_task_definition(td)
+    clear_submission(task)
+
     add_auth_header_for user: unit.main_convenor_user
 
     post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission", data_to_post
 
-    assert_equal 201, last_response.status
+    assert_equal 201, last_response.status, last_response_body
 
-    task = project.task_for_task_definition(td)
     task.move_files_to_in_process(FileHelper.student_work_dir(:new))
 
     assert File.exist? "#{Doubtfire::Application.config.student_work_dir}/in_process/#{task.id}/000-image.jpg"
-
-    td.destroy
+  ensure
+    clear_submission(task) if task
+    td&.destroy
   end
 
   def test_pdf_creation_with_jpg
