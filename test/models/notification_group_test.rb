@@ -126,6 +126,7 @@ class NotificationGroupTest < ActiveSupport::TestCase
         group.switch_to_tutorial(new_tutorial)
       end
     end
+    NotificationEmailJob.drain
 
     tutorial_notifications = Notification.where(event: 'tutorial_changed').recent_first.limit(2)
 

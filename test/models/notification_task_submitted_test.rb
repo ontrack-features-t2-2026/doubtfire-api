@@ -7,6 +7,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -37,6 +38,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       assert submit_for_marking
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -49,12 +51,14 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
 
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}",
+      expected_body: 'A task is ready for marking.'
     )
   end
 
   def test_message_and_templates_use_the_approved_tutor_facing_copy
     submit_for_marking
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
     parts = delivered_parts
@@ -107,6 +111,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
   def test_repeating_ready_for_marking_does_not_notify_again
     assert submit_for_marking
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     assert_no_difference 'Notification.count' do
       assert submit_for_marking
@@ -127,6 +132,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       assert @task.trigger_transition(trigger: 'ready_for_feedback', by_user: @tutor)
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 

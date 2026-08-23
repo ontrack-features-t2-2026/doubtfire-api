@@ -9,6 +9,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -70,6 +71,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
         discussion = @task.add_discussion_comment(@tutor, uploads)
       end
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -99,16 +101,25 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
   end
 
   def test_email_uses_the_event_template_without_assessment_content
+    private_task_name = 'PRIVATE-TASK-NAME-7429'
+    private_unit_name = 'PRIVATE-UNIT-NAME-7429'
+    private_tutor_name = 'PrivateTutor7429 SensitiveName7429'
+
+    @task_definition.update!(name: private_task_name)
+    @unit.update!(name: private_unit_name)
+    @tutor.update!(first_name: 'PrivateTutor7429', last_name: 'SensitiveName7429')
+
     @task.notify_discussion_request_recipient(notification_target)
+    NotificationEmailJob.drain
 
     body = delivered_body
 
     assert_not_empty body, 'guard: the multipart email body must be readable'
     assert_includes body, 'The prompt is not included in this email'
     assert_includes body, 'feedback notifications are turned on'
-    assert_not_includes body, @task_definition.name
-    assert_not_includes body, @unit.name
-    assert_not_includes body, @tutor.name
+    assert_not_includes body, private_task_name
+    assert_not_includes body, private_unit_name
+    assert_not_includes body, private_tutor_name
   end
 
   def test_failed_audio_attachment_does_not_send_a_notification

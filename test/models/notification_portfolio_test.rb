@@ -15,6 +15,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @project.campus.update!(timezone: 'Australia/Melbourne')
@@ -50,6 +51,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
         submit_portfolio
       end
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -63,7 +65,8 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     )
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard"
+      expected_link: "/projects/#{@project.id}/dashboard",
+      expected_body: 'Your portfolio submission was received.'
     )
 
     assert_equal 1, ActionMailer::Base.deliveries.count
@@ -81,6 +84,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     travel_to Time.zone.parse('2026-08-23 12:34:00 UTC') do
       submit_portfolio
     end
+    NotificationEmailJob.drain
 
     body = delivered_body
 
@@ -110,6 +114,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
 
     original_submission_date = @project.reload.portfolio_submission_date
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     travel_to Time.zone.parse('2026-08-23 12:39:00 UTC') do
       assert_no_difference 'Notification.count' do
@@ -125,6 +130,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     travel_to Time.zone.parse('2026-08-23 12:34:00 UTC') do
       submit_portfolio
     end
+    NotificationEmailJob.drain
 
     first_submission_date = @project.reload.portfolio_submission_date
     @project.update!(compile_portfolio: false)
@@ -135,6 +141,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
         submit_portfolio
       end
     end
+    NotificationEmailJob.drain
 
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_operator @project.reload.portfolio_submission_date, :>, first_submission_date
@@ -150,6 +157,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       submit_portfolio
     end
+    NotificationEmailJob.drain
 
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_not @project.reload.portfolio_auto_generated?
