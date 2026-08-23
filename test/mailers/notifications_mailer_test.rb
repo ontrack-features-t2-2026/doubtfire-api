@@ -12,12 +12,12 @@ class NotificationsMailerTest < ActionMailer::TestCase
   # event => notification_type, matching the six events currently wired up
   # in NotificationService.notify call sites across the app.
   EVENTS = {
-    'task_comment_created'     => 'feedback',
-    'extension_assessed'       => 'extension',
+    'task_comment_created' => 'feedback',
+    'extension_assessed' => 'extension',
     'group_membership_changed' => 'general',
-    'new_task_available'       => 'task',
-    'task_due_date_changed'    => 'task',
-    'task_status_changed'      => 'task'
+    'new_task_available' => 'task',
+    'task_due_date_changed' => 'task',
+    'task_status_changed' => 'task'
   }.freeze
 
   LINK = '/projects/1/dashboard/A1'.freeze
@@ -67,14 +67,6 @@ class NotificationsMailerTest < ActionMailer::TestCase
     end
 
     define_method("test_#{event}_link_is_in_the_body") do
-      # KNOWN GAP, not a test bug: group_membership_changed.html.erb and
-      # .text.erb never reference @notification.link, unlike every other
-      # event template (compare task_comment_created.html.erb). The real
-      # call site in app/models/group.rb also never passes a link. Same
-      # underlying issue as flagged on MN-T02 - raised with the lead,
-      # remove this skip once it's resolved one way or the other.
-      skip "group_membership_changed template does not render @notification.link — see MN-T02 discussion, needs lead decision" if event == 'group_membership_changed'
-
       notification = FactoryBot.create(
         :notification,
         notification_type: notification_type,
@@ -83,9 +75,10 @@ class NotificationsMailerTest < ActionMailer::TestCase
       )
 
       mail = NotificationsMailer.single_notification(notification)
+      expected_url = "#{Doubtfire::Application.config.institution[:host]}#{LINK}"
 
-      assert_includes mail.html_part.body.to_s, LINK, "#{event}: link missing from HTML body"
-      assert_includes mail.text_part.body.to_s, LINK, "#{event}: link missing from text body"
+      assert_includes mail.html_part.body.to_s, expected_url, "#{event}: exact link missing from HTML body"
+      assert_includes mail.text_part.body.to_s, expected_url, "#{event}: exact link missing from text body"
     end
   end
 
