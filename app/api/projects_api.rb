@@ -19,6 +19,9 @@ class ProjectsApi < Grape::API
     include_task_definitions = params[:include_task_definitions] || false
 
     projects = Project.eager_load(:unit, :user).for_user current_user, include_inactive
+    if include_task_definitions
+      projects = projects.preload(unit: { task_definitions: :grade_due_dates })
+    end
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, include_task_definitions: include_task_definitions, user: current_user
   end
 
