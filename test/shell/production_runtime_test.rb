@@ -29,6 +29,9 @@ class ProductionRuntimeTest < Minitest::Test
       environment = {
         'BUNDLE_APP_CONFIG' => '/usr/local/bundle',
         'DF_SECRET_KEY_BASE' => secret_value,
+        'DOCKER_AUTH_CONFIG' => 'must-not-be-persisted-docker-auth',
+        'DOCKER_HOST' => 'tcp://docker-socket-proxy:2375',
+        'DOCKER_TLS_VERIFY' => '1',
         'PATH' => ENV.fetch('PATH'),
         'RAILS_ENV' => 'production',
         'RAILS_MASTER_KEY' => 'rails-master-key',
@@ -49,6 +52,10 @@ class ProductionRuntimeTest < Minitest::Test
 
       contents = File.read(environment_file)
       assert_includes contents, 'DF_SECRET_KEY_BASE'
+      assert_includes contents, 'DOCKER_HOST'
+      assert_includes contents, 'DOCKER_TLS_VERIFY'
+      refute_includes contents, 'DOCKER_AUTH_CONFIG'
+      refute_includes contents, 'must-not-be-persisted-docker-auth'
       refute_includes contents, 'UNRELATED_SECRET'
       refute_includes contents, 'must-not-be-persisted'
 

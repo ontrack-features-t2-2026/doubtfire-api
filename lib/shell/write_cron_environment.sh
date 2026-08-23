@@ -9,11 +9,13 @@ set -euo pipefail
 is_cron_environment_variable() {
   case "$1" in
     BUNDLE_* | DATABASE_URL | DF_* | D2L_* | DISK_SPACE_ENDPOINT_ENABLED | \
-      DOCKER_* | DOUBTFIRE_* | GEM_HOME | GEM_PATH | GOTENBERG_* | HTTP_PROXY | \
-      HTTPS_PROXY | LANG | LATEX_* | LC_* | LTI_* | MODERATION_SCORE_FACTOR | \
-      NO_PROXY | OVERSEER_* | RABBITMQ_* | RACK_ENV | RAILS_* | RUBYLIB | \
-      RUBYOPT | SENTRY_* | SSL_CERT_DIR | SSL_CERT_FILE | TCA_* | TII_* | \
-      TMPDIR | TZ | http_proxy | https_proxy | no_proxy)
+      DOCKER_CERT_PATH | DOCKER_HOST | DOCKER_PROXY_URL | DOCKER_REGISTRY_URL | \
+      DOCKER_TLS_VERIFY | DOCKER_TOKEN | DOCKER_USER | DOUBTFIRE_* | GEM_HOME | \
+      GEM_PATH | GOTENBERG_* | HTTP_PROXY | HTTPS_PROXY | LANG | LATEX_* | \
+      LC_* | LTI_* | MODERATION_SCORE_FACTOR | NO_PROXY | OVERSEER_* | \
+      RABBITMQ_* | RACK_ENV | RAILS_* | RUBYLIB | RUBYOPT | SENTRY_* | \
+      SSL_CERT_DIR | SSL_CERT_FILE | TCA_* | TII_* | TMPDIR | TZ | \
+      http_proxy | https_proxy | no_proxy)
       return 0
       ;;
     *)
