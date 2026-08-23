@@ -88,4 +88,22 @@ class NotificationsMailerTest < ActionMailer::TestCase
       assert_includes mail.text_part.body.to_s, LINK, "#{event}: link missing from text body"
     end
   end
+
+  def test_configured_sender_is_used
+    institution = Doubtfire::Application.config.institution
+    previous_sender = institution[:email_sender]
+    institution[:email_sender] = 'notifications@example.edu'
+
+    notification = FactoryBot.create(
+      :notification,
+      notification_type: 'feedback',
+      event: 'task_comment_created'
+    )
+
+    mail = NotificationsMailer.single_notification(notification)
+
+    assert_equal ['notifications@example.edu'], mail.from
+  ensure
+    institution[:email_sender] = previous_sender
+  end
 end

@@ -14,8 +14,8 @@ class NotificationsMailer < ApplicationMailer
     @notification = notification
     @user = notification.user
 
-    # No global default sender is configured, so pass one explicitly. Set
-    # institution[:email_sender] in config for the real address (open decision).
+    # Use the deployment's SMTP-authorised sender, with a development-safe
+    # fallback for older installations that have not configured one yet.
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
 
     email_with_name = %("#{@user.name}" <#{@user.email}>)
