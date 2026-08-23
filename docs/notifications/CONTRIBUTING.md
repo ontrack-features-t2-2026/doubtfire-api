@@ -36,7 +36,8 @@ your work.
 ## Setting up, and the four things that go wrong
 
 Full instructions are in `doubtfire-deploy/RUNNING-LOCALLY.md`. Read that first.
-These are the failures that are not in it.
+The four failures below are worth being able to recognise quickly; that guide
+has the current setup commands and the detailed recovery steps.
 
 **You are probably pointed at the wrong remote.** Our work is in the
 `ontrack-features-t2-2026` organisation. It is not on `thoth-tech` and it is not
@@ -191,11 +192,13 @@ costs you nothing.
 The lead merges. Do not merge your own pull request, and note that GitHub will
 not let you approve it either.
 
-**There is no CI.** Nothing on GitHub runs either test suite. No status check
-will ever go green or red on your pull request, so a merge button that looks
-happy tells you nothing about whether your code works. The human read is the
-only gate we have. Put your real test output in the pull request body so a
-reviewer has something to check rather than a promise.
+**Check CI, but do not treat it as the whole review.** API code pull requests run
+the Minitest suite and RuboCop in GitHub Actions. Those workflows deliberately
+ignore documentation-only changes, so a documentation pull request can have no
+checks. Web pull requests run build, lint, typecheck and vitest workflows. A
+green result is necessary when those checks apply, but it does not replace the
+human review or targeted manual testing. Put your real test output in the pull
+request body so a reviewer has something to check rather than a promise.
 
 **Two approvals is our rule, not GitHub's.** The ruleset enforces one. Do not
 treat an available merge button as evidence the rule was met.
@@ -246,23 +249,29 @@ request.
 
 ---
 
-## The one domain rule: notifications send inline
+## The one domain rule: notification delivery is inline
 
-`NotificationService.notify` sends the email and the push **synchronously**, on
-the request thread. There is no worker process running in the dev stack, which
-is exactly why it works that way. `app/services/notification_service.rb` explains
-the reasoning at the top of the file.
+`NotificationService.notify` sends the email and the push **synchronously** in
+the process that calls it. If a request calls it directly, delivery blocks the
+request thread. If a Sidekiq job calls it, delivery blocks that worker instead.
+There is no Sidekiq worker process in the normal dev stack, so queued
+notification fan-out will sit in Redis unless you run a worker separately.
+`app/services/notification_service.rb` explains the delivery trade-off.
 
-The consequence matters more than the mechanism. **Any event that can address a
-whole cohort sends one email plus one push per person, inside a single web
-request.** A group CSV import, a task definition added to a unit, a bulk marking
-run. Every one of those is a timeout in production and a very long request in
-development.
+The consequence matters more than the mechanism. **Never loop over a whole
+cohort and call `NotificationService.notify` directly from a web request.** That
+would send one email plus one push per person before the request can finish. The
+current new-task and due-date events avoid that by enqueueing
+`NewTaskAvailableNotificationJob` and `TaskDueDateChangedNotificationJob`; group
+CSV import suppresses notifications. Follow those current patterns rather than
+reintroducing request-path fan-out.
 
 So before you wire an event to a hook, ask who it reaches when the hook fires in
 the worst case, not the normal case. Three separate tickets have hit this
-independently. If the answer is "everyone in the unit", stop and talk to the lead
-before you build it. Batching is EN-F03 and it is not done yet.
+independently. If the answer is "everyone in the unit", inspect the existing
+fan-out jobs and talk to the lead before you build it. The general delivery-queue
+work in EN-F03 is not done yet: some fan-out jobs exist, but channel delivery is
+still synchronous and the normal dev stack still has no worker.
 
 Two related habits worth having:
 
@@ -280,8 +289,10 @@ All notification documentation lives in **one** place:
 `doubtfire-api/docs/notifications/`. Do not start a new folder, and do not put it
 in `doubtfire-web`.
 
-Naming: lowercase, hyphenated, no dates in the filename, one file per subject.
-`push-setup.md`, not `PushSetup_2026-08-14.md`.
+For general documents, use lowercase, hyphenated names with no dates and one file
+per subject: `push-setup.md`, not `PushSetup_2026-08-14.md`. Event documents are
+the exception: their filename is the exact lower-snake-case event passed to
+`NotificationService.notify`, for example `task_comment_created.md`.
 
 | What you are writing | Where it goes |
 |---|---|
