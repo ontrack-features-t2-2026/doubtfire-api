@@ -29,12 +29,13 @@ camelCase interface.
 Student-facing percentages are quantised to the nearest ten percentage points.
 The precise stored aggregate is never returned by this API.
 
-The bucket size and the minimum cohort size are a matched pair. Quantising only
-hides the underlying submitted count while a bucket is strictly wider than one
-student's share of the cohort, which is `100.0 / cohort_size`. With a floor of
-20 and a bucket of 10, no cohort at or above the floor allows the count to be
-recovered from the percentage. Changing either number alone breaks that, so the
-relationship is asserted in `test/api/peer_progress_api_test.rb`.
+The bucket size and the minimum cohort size are a matched pair. At the `0.0`
+and `100.0` edges, quantising only hides the submitted count while half a bucket
+is strictly wider than one student's share of the cohort, which is
+`100.0 / cohort_size`. With a floor of 21 and a bucket of 10, every returned
+bucket represents at least two possible counts. Changing either number can
+break that guarantee, so the relationship is asserted across cohort sizes in
+`test/api/peer_progress_api_test.rb`.
 
 Quantisation applies to `0.0` and `100.0` as well. A cohort where nobody has
 submitted and a cohort where fewer than one bucket's worth have submitted both
@@ -201,7 +202,7 @@ creates a snapshot for that grade.
 - `DF_PPI_MINIMUM_COHORT_SIZE`: approved minimum cohort size.
 - `DF_PPI_STALE_AFTER_HOURS`: approved maximum snapshot age.
 
-`DF_PPI_STALE_AFTER_HOURS` must be a positive integer. `DF_PPI_MINIMUM_COHORT_SIZE` must be an integer of at least `PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE`, which is `20`. A lower value is rejected rather than honoured, so configuration alone cannot defeat suppression. No production defaults are included. An enabled unit
+`DF_PPI_STALE_AFTER_HOURS` must be a positive integer. `DF_PPI_MINIMUM_COHORT_SIZE` must be an integer of at least `PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE`, which is `21`. A lower value is rejected rather than honoured, so configuration alone cannot defeat suppression. No production defaults are included. An enabled unit
 with a valid snapshot fails closed with HTTP 503 when either value is missing or invalid.
 
 ## Feature enablement
