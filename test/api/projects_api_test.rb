@@ -70,7 +70,12 @@ class ProjectsApiTest < ActiveSupport::TestCase
   end
 
   def test_projects_with_task_definitions_uses_student_safe_serialization
-    unit = FactoryBot.create(:unit, with_students: false, task_count: 0)
+    unit = FactoryBot.create(
+      :unit,
+      with_students: false,
+      task_count: 0,
+      allow_flexible_dates: true
+    )
     common_start_date = unit.start_date + 1.week
     later_task = FactoryBot.create(
       :task_definition,
@@ -99,6 +104,13 @@ class ProjectsApiTest < ActiveSupport::TestCase
       abbreviation: 'CROSS-A',
       start_date: common_start_date
     )
+    grade_due_date = FactoryBot.create(
+      :task_definition_grade_due_date,
+      task_definition: later_task,
+      target_grade: 1,
+      target_due_date: later_task.target_date + 2.days,
+      start_date: later_task.start_date + 1.day
+    )
     student = FactoryBot.create(:user, :student)
     unit.enrol_student(student, unit.tutorials.first.campus)
 
@@ -114,7 +126,10 @@ class ProjectsApiTest < ActiveSupport::TestCase
 
     project_data = last_response_body.first
     assert project_data.key?('tasks')
-    task_definitions = project_data.fetch('unit').fetch('task_definitions')
+    unit_data = project_data.fetch('unit')
+    assert_equal true, unit_data.fetch('allow_flexible_dates')
+
+    task_definitions = unit_data.fetch('task_definitions')
     assert_equal [earlier_task.id, later_task.id], task_definitions.pluck('id')
 
     task_definitions.each do |task_definition|
@@ -138,6 +153,17 @@ class ProjectsApiTest < ActiveSupport::TestCase
       [{ 'key' => 'file0', 'name' => 'Student report', 'type' => 'document' }],
       student_requirements
     )
+
+    student_later_task = task_definitions.find do |task_definition|
+      task_definition['id'] == later_task.id
+    end
+    grade_due_dates = student_later_task.fetch('grade_due_dates')
+    assert_equal 1, grade_due_dates.length
+    assert_equal grade_due_date.target_grade, grade_due_dates.first.fetch('target_grade')
+    assert_equal grade_due_date.target_due_date.to_date,
+                 Date.parse(grade_due_dates.first.fetch('target_due_date'))
+    assert_equal grade_due_date.start_date.to_date,
+                 Date.parse(grade_due_dates.first.fetch('start_date'))
   end
 
   def test_get_project_response_is_correct

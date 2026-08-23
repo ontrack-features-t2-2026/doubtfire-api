@@ -48,7 +48,15 @@ class TaskPrioritizationApiTest < ActiveSupport::TestCase
         unit_id
         priority_score
       ], body['data'].first.keys
-      assert_equal({ 'total_count' => 2 }, body['meta'])
+      assert_equal(
+        {
+          'page' => 1,
+          'per_page' => TaskPrioritizationApi::DEFAULT_PER_PAGE,
+          'total_count' => 2,
+          'total_pages' => 1
+        },
+        body['meta']
+      )
     end
   end
 
@@ -326,6 +334,45 @@ class TaskPrioritizationApiTest < ActiveSupport::TestCase
       excluded_definitions.each_key do |definition|
         assert_not_includes returned_ids, definition.id
       end
+    end
+  end
+
+  test 'paginates every recommendation without overlap' do
+    travel_to @today do
+      unit = create_unit
+      definitions = 3.times.map do |index|
+        create_task_definition(
+          unit,
+          name: "Task #{index}",
+          target_date: (index + 1).days.from_now
+        )
+      end
+      student = create(:user, :student)
+      enrol_student(unit, student, target_grade: 0)
+
+      add_auth_header_for(user: student)
+      get endpoint, page: 1, per_page: 2
+      first_page = last_response_body
+
+      get endpoint, page: 2, per_page: 2
+      second_page = last_response_body
+
+      returned_ids = first_page['data'].pluck('task_definition_id') +
+                     second_page['data'].pluck('task_definition_id')
+      assert_equal definitions.map(&:id).sort, returned_ids.sort
+      assert_equal 2, first_page['data'].length
+      assert_equal 1, second_page['data'].length
+      assert_equal(
+        {
+          'page' => 1,
+          'per_page' => 2,
+          'total_count' => 3,
+          'total_pages' => 2
+        },
+        first_page['meta']
+      )
+      assert_empty first_page['data'].pluck('task_definition_id') &
+                   second_page['data'].pluck('task_definition_id')
     end
   end
 
