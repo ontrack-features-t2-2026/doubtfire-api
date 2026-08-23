@@ -10,10 +10,12 @@ class NotificationExtensionTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
     @task_definition = @unit.task_definitions.first
+    @task_definition.update!(due_date: @task_definition.target_date + 2.weeks)
     @task = @project.task_for_task_definition(@task_definition)
 
     @student = @project.student
@@ -43,11 +45,10 @@ class NotificationExtensionTest < ActiveSupport::TestCase
   def test_granted_extension_notifies_student_with_new_date
     extension = create_extension_request
 
-    @task.stub :can_apply_for_extension?, true do
-      assert_difference 'Notification.count', 1 do
-        extension.assess_extension(@tutor, true)
-      end
+    assert_difference 'Notification.count', 1 do
+      extension.assess_extension(@tutor, true)
     end
+    NotificationEmailJob.drain
 
     extension.reload
     notification = Notification.recent_first.first
@@ -90,6 +91,7 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       extension.assess_extension(@tutor, false)
     end
+    NotificationEmailJob.drain
 
     extension.reload
     notification = Notification.recent_first.first
@@ -115,6 +117,7 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     extension.assess_extension(@tutor, false)
 
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     assert_no_difference 'Notification.count' do
       result = extension.assess_extension(@tutor, true)
@@ -169,6 +172,7 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     extension = create_extension_request
 
     extension.assess_extension(@tutor, false)
+    NotificationEmailJob.drain
 
     parts = delivered_parts
 
