@@ -92,6 +92,82 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
+  def test_feedback_notification_is_queued_when_the_category_preference_is_on
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    notification = nil
+
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      assert_difference 'Notification.count', 1 do
+        notification = NotificationService.notify(
+          user: user, type: 'feedback', event: 'feedback_available', message: 'Feedback available.'
+        )
+
+        assert notification.persisted?
+      end
+    end
+
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_task_preference_gates_notifications_in_both_directions
+    user = FactoryBot.create(:user, receive_task_notifications: true)
+    notification = nil
+
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      assert_difference 'Notification.count', 1 do
+        notification = NotificationService.notify(
+          user: user, type: 'task', event: 'task_due_date_changed', message: 'Task date changed.'
+        )
+
+        assert notification.persisted?
+      end
+    end
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+
+    user.update!(receive_task_notifications: false)
+
+    assert_no_difference -> { NotificationEmailJob.jobs.size } do
+      assert_no_difference 'Notification.count' do
+        result = NotificationService.notify(
+          user: user, type: 'task', event: 'task_due_date_changed', message: 'Suppressed task change.'
+        )
+
+        assert_nil result
+      end
+    end
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_portfolio_preference_gates_notifications_in_both_directions
+    user = FactoryBot.create(:user, receive_portfolio_notifications: true)
+    notification = nil
+
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      assert_difference 'Notification.count', 1 do
+        notification = NotificationService.notify(
+          user: user, type: 'portfolio', event: 'portfolio_received', message: 'Portfolio received.'
+        )
+
+        assert notification.persisted?
+      end
+    end
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+
+    user.update!(receive_portfolio_notifications: false)
+
+    assert_no_difference -> { NotificationEmailJob.jobs.size } do
+      assert_no_difference 'Notification.count' do
+        result = NotificationService.notify(
+          user: user, type: 'portfolio', event: 'portfolio_received', message: 'Suppressed portfolio receipt.'
+        )
+
+        assert_nil result
+      end
+    end
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
   def test_types_without_a_preference_are_always_queued
     user = FactoryBot.create(
       :user,
@@ -107,6 +183,26 @@ class NotificationServiceTest < ActiveSupport::TestCase
     ) do
       notification = NotificationService.notify(
         user: user, type: 'general', event: 'always_sent', message: 'General notice.'
+      )
+    end
+
+    assert notification.persisted?
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_extension_notifications_are_always_queued
+    user = FactoryBot.create(
+      :user,
+      receive_task_notifications: false,
+      receive_feedback_notifications: false,
+      receive_portfolio_notifications: false
+    )
+    notification = nil
+
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      notification = NotificationService.notify(
+        user: user, type: 'extension', event: 'extension_decided', message: 'Extension decision available.'
       )
     end
 
