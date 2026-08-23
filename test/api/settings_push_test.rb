@@ -1,8 +1,8 @@
 require 'test_helper'
 
-# MN-C01: the front end reads the VAPID public key from /api/settings so it is
-# configured in one place instead of being copied into the web repo and going
-# stale the first time the keys are rotated.
+# MN-C01: the authenticated front end reads the VAPID public key from
+# /api/settings so it is configured in one place instead of being copied into
+# the web repo and going stale the first time the keys are rotated.
 #
 # Separate from settings_test.rb on purpose. That file predates rubocop's style
 # rules and already carries 17 offenses; adding to it would either add more or
@@ -14,6 +14,15 @@ class SettingsPushTest < ActiveSupport::TestCase
 
   def app
     Rails.application
+  end
+
+  setup do
+    clear_auth_header
+    add_auth_header_for
+  end
+
+  teardown do
+    clear_auth_header
   end
 
   # Restores whatever was there rather than deleting. The development container
@@ -57,8 +66,8 @@ class SettingsPushTest < ActiveSupport::TestCase
     end
   end
 
-  # The public key is safe to publish. The private key is not, and this endpoint
-  # needs no authentication at all.
+  # The browser needs the public key after sign-in. The private key must never
+  # be included in the authenticated settings response.
   def test_the_private_key_is_never_published
     with_vapid_keys do
       get '/api/settings'
