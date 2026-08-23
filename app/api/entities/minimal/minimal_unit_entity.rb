@@ -20,6 +20,7 @@ module Entities
       end
 
       expose :active
+      expose :task_definitions, if: :include_task_definitions
       expose :grade_values
       expose :grade_definitions
     end

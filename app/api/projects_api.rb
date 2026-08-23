@@ -12,12 +12,14 @@ class ProjectsApi < Grape::API
   desc "Fetches all of the current user's projects"
   params do
     optional :include_inactive, type: Boolean, desc: 'Include projects for units that are no longer active?'
+    optional :include_task_definitions, type: Boolean, desc: 'Include all task definitions with tasks for each project?'
   end
   get '/projects' do
     include_inactive = params[:include_inactive] || false
+    include_task_definitions = params[:include_task_definitions] || false
 
     projects = Project.eager_load(:unit, :user).for_user current_user, include_inactive
-    present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, user: current_user
+    present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, include_task_definitions: include_task_definitions, user: current_user
   end
 
   desc 'Get project'
