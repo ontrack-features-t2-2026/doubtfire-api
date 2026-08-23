@@ -108,6 +108,7 @@ class ApiRoot < Grape::API
   mount MarkingSessionsApi
   mount DiscussionPromptsApi
   mount OverseerStepsApi
+  mount TaskPrioritizationApi
 
   mount Feedback::FeedbackChipApi
 
@@ -160,6 +161,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to MarkingSessionsApi
   AuthenticationHelpers.add_auth_to DiscussionPromptsApi
   AuthenticationHelpers.add_auth_to OverseerStepsApi
+  AuthenticationHelpers.add_auth_to TaskPrioritizationApi
   AuthenticationHelpers.add_auth_to TutorNotesApi
 
   add_swagger_documentation \
