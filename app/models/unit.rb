@@ -489,6 +489,7 @@ class Unit < ApplicationRecord
 
   def rollover(teaching_period, start_date, end_date, new_code)
     new_unit = self.dup
+    copied_task_definitions = []
 
     new_unit.code = new_code if new_code.present?
 
@@ -541,6 +542,7 @@ class Unit < ApplicationRecord
     # Duplicate task definitions
     task_definitions.each do |td|
       new_td = td.copy_to(new_unit)
+      copied_task_definitions << new_td
 
       td.learning_outcomes.each do |learning_outcome| # for each old task definition, duplicate the learning outcomes associated with it aswell
         new_outcome = learning_outcome.dup
@@ -610,6 +612,8 @@ class Unit < ApplicationRecord
         child_chip.update(parent_chip_id: parent_chip.id)
       end
     end
+
+    NewTaskAvailableNotificationJob.track_and_enqueue_all(copied_task_definitions)
 
     new_unit
   end
@@ -1724,10 +1728,11 @@ class Unit < ApplicationRecord
     end
   end
 
-  def import_tasks_from_csv(file)
+  def import_tasks_from_csv(file, notify: true)
     success = []
     errors = []
     ignored = []
+    imported_task_definitions = []
 
     data = read_file_to_str(file)
 
@@ -1758,6 +1763,7 @@ class Unit < ApplicationRecord
         end
 
         prerequisites_by_task[task_definition.abbreviation] = JSON.parse(row[:task_prerequisites]) unless row[:task_prerequisites].nil?
+        imported_task_definitions << task_definition if new_task
 
         success << { row: row, message: message }
       rescue Exception => e
@@ -1797,6 +1803,10 @@ class Unit < ApplicationRecord
       rescue Exception => e
         errors << { row: "TaskDef '#{task_abbreviation}' prerequisites: #{prerequisites_list}", message: e.message }
       end
+    end
+
+    if notify
+      NewTaskAvailableNotificationJob.track_and_enqueue_all(imported_task_definitions)
     end
 
     {

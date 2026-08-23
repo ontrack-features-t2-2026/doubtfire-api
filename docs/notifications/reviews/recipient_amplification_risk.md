@@ -140,11 +140,13 @@ If students need to be notified about a bulk unit schedule change in the future,
 
 ## Trigger
 
-The current implementation queues:
+The implementation queues:
 
 `NewTaskAvailableNotificationJob`
 
-after a TaskDefinition is successfully created through the normal task-definition API.
+after a `TaskDefinition` is successfully created through the normal API, CSV
+task import or unit rollover/copy workflow. Bulk workflows enqueue only after
+the task definition is fully populated.
 
 A generic `TaskDefinition after_create` callback is not used.
 
@@ -172,25 +174,32 @@ For one new task and `S` eligible students:
 
 This is expected.
 
-There are other TaskDefinition creation paths, including CSV/import-related code. If a bulk operation created `T` tasks and each automatically triggered a cohort notification, the fan-out could become:
+If a bulk operation creates `T` tasks, the fan-out can become:
 
 `T × S emails`
 
-from one import.
+from one import. This is intentional when all `T` rows are new tasks, but it is
+kept off the request thread and updated rows are excluded.
 
 ## Existing guard
 
-The current implementation only queues EN-V02 from the normal API creation path.
+The implementation uses explicit post-workflow triggers rather than a generic
+model callback. The API, import and rollover requests only queue Sidekiq jobs;
+they do not deliver cohort email inline.
 
-It also checks for an existing notification for the same student, event and task link before sending, which protects against the fan-out job being run again.
+It reserves an immutable task-definition key for the student under a unique
+database index. This protects against concurrent fan-outs, retries, task
+renames and the scheduled future-date check without confusing a genuinely new
+definition that reuses an abbreviation.
 
 ## Recommendation
 
-Keep the current API-level trigger.
+Keep each workflow trigger explicit and best-effort.
 
 Do not replace it with a generic `after_create` callback.
 
-If imports, rollovers or copying should generate this notification later, those workflows should be reviewed separately so that a bulk action does not unexpectedly email students once for every created task.
+Keep bulk fan-out in Sidekiq, enqueue only genuinely new imported/copied tasks,
+and retain the effective-date and duplicate guards.
 
 ---
 # EN-V03 – Task due soon
@@ -466,7 +475,7 @@ If no replacement is agreed, closing or rescoping EN-V08 is the correct outcome.
 | Event | Expected fan-out from one action | Main risk | Current/recommended guard |
 |---|---:|---|---|
 | EN-V01 – Due date changed | `S` | Unit date propagation could become `T × S` | Keep API-level trigger; avoid generic TaskDefinition callback |
-| EN-V02 – New task | `S` | Bulk creation/import could become `T × S` | Keep normal API trigger; handle bulk paths separately |
+| EN-V02 – New task | `S` | Bulk creation/import can become `T × S` | Queue explicit post-workflow fan-outs; exclude updated rows; retain date and duplicate guards |
 | EN-V03 – Due soon | Up to `S × T` per scheduled sweep | Same reminder being sent every run | Existing duplicate check: one reminder per student/task |
 | EN-V04 – Tutorial changed | `1` normally, `N` for a real group move | Whole-tutorial recipients or misclassifying the replacement-row path | Compare effective tutorial IDs before and after; notify only genuinely changed students |
 | EN-V05 – Group changed | `1` normally | Tutorial switch could create `2N` false emails | Existing `notify: false` guard |

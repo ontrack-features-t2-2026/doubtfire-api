@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_02_000003) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_24_000001) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -349,6 +349,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_02_000003) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "event", null: false
+    t.string "dedupe_key", limit: 191
+    t.datetime "delivered_at"
+    t.index ["user_id", "dedupe_key"], name: "index_notifications_on_user_and_dedupe_key", unique: true
     t.index ["user_id", "event"], name: "index_notifications_on_user_id_and_event"
     t.index ["user_id", "read_at"], name: "index_notifications_on_user_id_and_read_at"
     t.index ["user_id"], name: "index_notifications_on_user_id"
@@ -631,9 +634,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_02_000003) do
     t.boolean "use_resources_for_jplag_base_code", default: false, null: false
     t.boolean "lock_assessments_to_tutorial_stream", default: false, null: false
     t.boolean "requires_discussion", default: false, null: false
+    t.datetime "new_task_notifications_from", default: -> { "utc_timestamp()" }
     t.index ["abbreviation", "unit_id"], name: "index_task_definitions_on_abbreviation_and_unit_id", unique: true
     t.index ["group_set_id"], name: "index_task_definitions_on_group_set_id"
     t.index ["name", "unit_id"], name: "index_task_definitions_on_name_and_unit_id", unique: true
+    t.index ["new_task_notifications_from"], name: "index_task_definitions_on_new_task_notifications_from"
     t.index ["overseer_image_id"], name: "index_task_definitions_on_overseer_image_id"
     t.index ["tutorial_stream_id"], name: "index_task_definitions_on_tutorial_stream_id"
     t.index ["unit_id"], name: "index_task_definitions_on_unit_id"
