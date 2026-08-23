@@ -146,6 +146,7 @@ class TaskDefinitionsTest < ActiveSupport::TestCase
       created_task_definition.id,
       enqueued_task_definition_id
     )
+    assert_not_nil created_task_definition.reload.new_task_notifications_from
   end
 
   def test_task_definition_creation_succeeds_when_enqueue_fails
@@ -170,10 +171,12 @@ class TaskDefinitionsTest < ActiveSupport::TestCase
     end
 
     assert_equal 201, last_response.status, last_response_body
+    created_task_definition = unit.task_definitions.order(:id).last
     assert_equal(
       'Notification Queue Test',
-      unit.task_definitions.order(:id).last.name
+      created_task_definition.name
     )
+    assert_not_nil created_task_definition.new_task_notifications_from
   end
 
   def test_post_invalid_file_tasksheet
