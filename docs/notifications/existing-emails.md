@@ -1,8 +1,8 @@
 # Existing Email Audit
 
 This document records email behaviour that already exists in OnTrack and the
-shared email-delivery paths used by the v2 notification work. Its purpose is to 
-prevent new notification events from duplicating existing email behaviour or 
+shared email-delivery paths used by the v2 notification work. Its purpose is to
+prevent new notification events from duplicating existing email behaviour or
 accidentally sending multiple messages for the same action.
 
 The audit covers both the API mailers and the existing communication subsystem
