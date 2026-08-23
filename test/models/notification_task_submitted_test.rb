@@ -11,6 +11,10 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
     @project = FactoryBot.create(:project)
     @unit = @project.unit
     @task_definition = @unit.task_definitions.first
+    @task_definition.update!(
+      start_date: 1.week.ago,
+      target_date: 1.week.from_now
+    )
     @task = @project.task_for_task_definition(@task_definition)
     @student = @project.student
     @tutor = @project.tutor_for(@task_definition)
