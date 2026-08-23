@@ -5,14 +5,14 @@ namespace :db do
   task ppi_sample_data: [:skip_prod, :environment] do
     Rails.logger.level = :info
 
-    # ---- constants -----------------------------------------------------
-    NUM_UNITS = 2
-    CLASSES_PER_UNIT = 2
-    STUDENTS_PER_GRADE = 4
-    GRADE_LABELS = { 0 => 'Pass', 1 => 'Credit', 2 => 'Distinction', 3 => 'HighDistinction' }.freeze
-    GRADES = GRADE_LABELS.keys.freeze # [0, 1, 2, 3]
-    NUM_TASKS = 7 # within the requested 5-10 range
-    WEEKDAYS = %w[Monday Tuesday Wednesday Thursday Friday].freeze
+    # ---- configuration -------------------------------------------------
+    num_units = 2
+    classes_per_unit = 2
+    students_per_grade = 4
+    grade_labels = { 0 => 'Pass', 1 => 'Credit', 2 => 'Distinction', 3 => 'HighDistinction' }.freeze
+    grades = grade_labels.keys.freeze # [0, 1, 2, 3]
+    num_tasks = 7 # within the requested 5-10 range
+    weekdays = %w[Monday Tuesday Wednesday Thursday Friday].freeze
 
     # ---- helpers ---------------------------------------------------------
 
@@ -39,7 +39,7 @@ namespace :db do
     campus = Campus.first || Campus.create!(name: 'Online', mode: 'timetable', abbreviation: 'C', active: true)
     convenor = ppi_find_or_create_user('ppi_convenor', 'Peer', 'Convenor', Role.convenor_id)
 
-    (1..NUM_UNITS).each do |unit_num|
+    (1..num_units).each do |unit_num|
       code = "PPI100#{unit_num}"
       unit = Unit.find_by(code: code) || Unit.create!(
         code: code,
@@ -54,7 +54,7 @@ namespace :db do
       # All tasks are assigned regardless of a student's target grade (target_grade: 0 = Pass),
       # so every student in the unit has the same task list - needed to compare % completion
       # meaningfully across target-grade bands.
-      task_defs = (1..NUM_TASKS).map do |t|
+      task_defs = (1..num_tasks).map do |t|
         unit.task_definitions.find_by(abbreviation: "T#{t}") || TaskDefinition.create!(
           unit_id: unit.id,
           name: "Task #{t}",
@@ -68,29 +68,29 @@ namespace :db do
         )
       end
 
-      (1..CLASSES_PER_UNIT).each do |class_num|
+      (1..classes_per_unit).each do |class_num|
         tutor_username = "ppi_tutor_u#{unit_num}c#{class_num}"
         tutor = ppi_find_or_create_user(tutor_username, "Tutor#{unit_num}#{class_num}", 'PPI', Role.tutor_id)
         unit.employ_staff(tutor, Role.tutor)
 
         tutorial_abbrev = "PPI-U#{unit_num}-C#{class_num}"
         tutorial = unit.tutorials.find_by(abbreviation: tutorial_abbrev) || unit.add_tutorial(
-          WEEKDAYS[class_num - 1],
+          weekdays[class_num - 1],
           '10:00',
           "EN1-0#{class_num}",
           tutor,
           campus,
-          STUDENTS_PER_GRADE * GRADES.length,
+          students_per_grade * grades.length,
           tutorial_abbrev
         )
 
         student_index = 0
 
-        GRADES.each do |target_grade|
-          STUDENTS_PER_GRADE.times do |i|
+        grades.each do |target_grade|
+          students_per_grade.times do |i|
             student_index += 1
             username = "ppi_u#{unit_num}c#{class_num}s#{student_index.to_s.rjust(2, '0')}"
-            student = ppi_find_or_create_user(username, "Student#{student_index}", GRADE_LABELS[target_grade], Role.student_id)
+            student = ppi_find_or_create_user(username, "Student#{student_index}", grade_labels[target_grade], Role.student_id)
 
             project = unit.enrol_student(student, campus)
             project.update!(target_grade: target_grade)
@@ -105,10 +105,10 @@ namespace :db do
               task = project.task_for_task_definition(td)
               next unless task.task_status_id == TaskStatus.not_started.id # skip on re-run
 
-              base_completion = (target_grade + 1) / GRADES.length.to_f # 0.25, 0.5, 0.75, 1.0
-              task_decay = 1.0 - (td_idx.to_f / task_defs.length) * 0.4
-              student_jitter = (i - (STUDENTS_PER_GRADE - 1) / 2.0) * 0.05
-              completion_chance = [[base_completion * task_decay + student_jitter, 0.05].max, 0.98].min
+              base_completion = (target_grade + 1) / grades.length.to_f # 0.25, 0.5, 0.75, 1.0
+              task_decay = 1.0 - ((td_idx.to_f / task_defs.length) * 0.4)
+              student_jitter = (i - ((students_per_grade - 1) / 2.0)) * 0.05
+              completion_chance = ((base_completion * task_decay) + student_jitter).clamp(0.05, 0.98)
 
               seed = (student_index * 13) + (td_idx * 7) + (unit_num * 31) + (class_num * 17)
               roll = (seed % 100) / 100.0
