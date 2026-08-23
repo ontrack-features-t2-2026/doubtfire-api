@@ -23,6 +23,6 @@ class ReadinessCheck
   end
 
   def redis_ready?
-    @redis.redis { |connection| connection.ping } == 'PONG'
+    @redis.redis(&:ping) == 'PONG'
   end
 end
