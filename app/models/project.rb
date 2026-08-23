@@ -35,6 +35,10 @@ class Project < ApplicationRecord
   has_many :staff_notes, dependent: :destroy
   has_many :engagements, dependent: :destroy, inverse_of: :project
 
+  before_create :record_target_grade_change
+  before_update :record_target_grade_change,
+                if: :will_save_change_to_target_grade?
+
   # Callbacks - methods called are private
   before_destroy :can_destroy?
 
@@ -717,6 +721,10 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def record_target_grade_change
+    self.target_grade_changed_at = Time.current
+  end
 
   def can_destroy?
     return true if tutorial_enrolments.count == 0
