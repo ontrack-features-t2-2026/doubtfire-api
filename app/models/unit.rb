@@ -270,7 +270,15 @@ class Unit < ApplicationRecord
   end
 
   def ordered_task_definitions
-    task_definitions.order('start_date ASC, abbreviation ASC')
+    return task_definitions.order('start_date ASC, abbreviation ASC') unless task_definitions.loaded?
+
+    task_definitions.sort_by do |task_definition|
+      [
+        task_definition.start_date.nil? ? 0 : 1,
+        task_definition.start_date,
+        task_definition.abbreviation.to_s
+      ]
+    end
   end
 
   def convenors
