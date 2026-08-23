@@ -5,6 +5,45 @@ class NotificationsMailer < ApplicationMailer
     @unsubscribe_url = "#{@doubtfire_host}/edit_profile"
   end
 
+  # Sends a single in-system notification as an email. Called by
+  # NotificationEmailJob, which lets delivery failures reach Sidekiq so they can
+  # be retried without blocking the request that created the notification.
+  def single_notification(notification)
+    add_general
+
+    @notification = notification
+    @user = notification.user
+
+    # Use the deployment's SMTP-authorised sender, with a development-safe
+    # fallback for older installations that have not configured one yet.
+    from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
+
+    email_with_name = %("#{@user.name}" <#{@user.email}>)
+    subject = "#{@doubtfire_product_name}: New notification"
+
+    # An event may ship its own pair of templates named after it, for example
+    # task_comment_created.html.erb and task_comment_created.text.erb. Events
+    # without them fall back to the generic single_notification pair.
+    #
+    # This is why a new event ticket only ever adds files and never edits this
+    # method: eight event tickets can run in parallel without touching each
+    # other's work.
+    mail(
+      to: email_with_name,
+      from: from_address,
+      subject: subject,
+      template_name: event_template_name(notification.event)
+    )
+  end
+
+  # The event's own template if it exists, otherwise the generic one.
+  def event_template_name(event)
+    return 'single_notification' if event.blank?
+    return 'single_notification' unless lookup_context.exists?(event, [self.class.mailer_name], false)
+
+    event
+  end
+
   def weekly_staff_summary(unit_role, summary_stats)
     return nil if unit_role.nil?
 

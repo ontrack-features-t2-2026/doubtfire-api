@@ -124,3 +124,14 @@ gem "sys-filesystem"
 
 gem "sentry-rails"
 gem "sentry-ruby"
+
+# Web push notifications. Signs and encrypts payloads for the browser push
+# services (VAPID). See docs/notifications/push-setup.md.
+#
+# Pinned exactly, on purpose. web-push 3.0.1 and later require jwt ~> 3.0, and
+# taking that drags jwt from 2.10 to a new major version and forces oauth2 from
+# 2.0.9 to 2.0.25 with it, because the older oauth2 caps jwt below 3. That would
+# make this change touch LTI (lib/../lti_helper.rb calls JWT.decode) and the D2L
+# OAuth integration, neither of which has anything to do with push. 3.0.0 works
+# against the jwt already in the lockfile and keeps the diff to one gem.
+gem 'web-push', '3.0.0'

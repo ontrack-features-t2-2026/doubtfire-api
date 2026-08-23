@@ -1634,7 +1634,9 @@ class Unit < ApplicationRecord
           project.enrol_in(grp.tutorial)
         end
 
-        grp.add_member(project)
+        # Bulk imports can add many students in one request. Do not send a
+        # separate notification for every CSV row.
+        grp.add_member(project, notify: false)
 
         success << { row: row, message: "Added #{username} to #{grp.name}." }
       rescue Exception => e
