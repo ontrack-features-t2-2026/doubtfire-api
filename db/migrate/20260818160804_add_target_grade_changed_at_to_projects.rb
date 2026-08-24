@@ -8,7 +8,7 @@ class AddTargetGradeChangedAtToProjects < ActiveRecord::Migration[8.0]
     add_column :projects,
                :target_grade_changed_at,
                :datetime,
-               default: -> { 'CURRENT_TIMESTAMP()' }
+               default: -> { 'CURRENT_TIMESTAMP(6)' }
 
     # Existing projects have no trustworthy record of when their current
     # target grade was selected. Backfill to now so existing snapshots fail

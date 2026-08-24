@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class EnsureTargetGradeChangedAtDefault < ActiveRecord::Migration[8.0]
-  CURRENT_TIMESTAMP_DEFAULT = /\Acurrent_timestamp(?:\(\d*\))?\z/i
+  CURRENT_TIMESTAMP_DEFAULT = /\Acurrent_timestamp\(6\)\z/i
 
   def up
     column = connection.columns(:projects).find do |candidate|
@@ -13,7 +13,7 @@ class EnsureTargetGradeChangedAtDefault < ActiveRecord::Migration[8.0]
 
     change_column_default :projects,
                           :target_grade_changed_at,
-                          -> { 'CURRENT_TIMESTAMP()' }
+                          -> { 'CURRENT_TIMESTAMP(6)' }
   end
 
   def down

@@ -498,7 +498,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000002) do
     t.integer "spec_con_days", default: 0, null: false
     t.bigint "assessor_id"
     t.datetime "portfolio_submission_date"
-    t.datetime "target_grade_changed_at", default: -> { "current_timestamp()" }, null: false
+    t.datetime "target_grade_changed_at", default: -> { "current_timestamp(6)" }, null: false
     t.index ["assessor_id"], name: "index_projects_on_assessor_id"
     t.index ["campus_id"], name: "index_projects_on_campus_id"
     t.index ["enrolled"], name: "index_projects_on_enrolled"

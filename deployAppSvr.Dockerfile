@@ -3,7 +3,7 @@
 FROM docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d AS docker_cli
 
 # Build the app-worker from the same exact Ruby base and API source as the API.
-FROM ruby:3.4.8-bookworm@sha256:414d93f64867bcb587aefa61cb77141a2464f0bb9cff30a05044c6341c0a9450
+FROM ruby:3.4.10-bookworm@sha256:56e0c9fdbf64d090e45072d32f0d3be7f2e392e733444f7d176a50881e6c325a
 
 ARG DEBIAN_FRONTEND=noninteractive
 

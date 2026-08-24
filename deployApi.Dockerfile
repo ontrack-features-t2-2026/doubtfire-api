@@ -1,6 +1,6 @@
 # Production API image. Refresh the exact base digest only through a reviewed
 # dependency update and rebuild both API/app-worker images from the same commit.
-FROM ruby:3.4.8-bookworm@sha256:414d93f64867bcb587aefa61cb77141a2464f0bb9cff30a05044c6341c0a9450
+FROM ruby:3.4.10-bookworm@sha256:56e0c9fdbf64d090e45072d32f0d3be7f2e392e733444f7d176a50881e6c325a
 
 ARG DEBIAN_FRONTEND=noninteractive
 
