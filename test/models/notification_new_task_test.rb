@@ -278,6 +278,7 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
 
     assert_difference 'Notification.count', 1 do
       NewTaskAvailableNotificationJob.new.perform(replacement.id)
+      NotificationEmailJob.drain
     end
 
     assert_equal 2, ActionMailer::Base.deliveries.count
