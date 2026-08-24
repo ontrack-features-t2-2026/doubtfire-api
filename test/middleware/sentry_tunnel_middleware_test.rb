@@ -17,6 +17,7 @@ class SentryTunnelMiddlewareTest < Minitest::Test
 
   def teardown
     @original_dsn.nil? ? ENV.delete('SENTRY_DSN') : ENV['SENTRY_DSN'] = @original_dsn
+    super
   end
 
   def test_envelope_at_limit_is_forwarded
