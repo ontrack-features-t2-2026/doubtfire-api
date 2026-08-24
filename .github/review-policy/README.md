@@ -28,8 +28,11 @@ Its private key is held in `ONTRACK_REVIEW_APP_PRIVATE_KEY` in the
 `ontrack-review-policy` environment, which only permits the protected `11.0.x`
 branch. Its numeric App ID is held in `ONTRACK_REVIEW_APP_ID`.
 
-The evaluator reports on GitHub's per-PR test merge commit when available, so two
-pull requests that share a head commit cannot accidentally share a passing result.
+The evaluator reports on the pull-request head commit. GitHub gates on the test merge
+commit whenever that commit carries a status and only falls back to the head when it
+carries none, so reporting on the test merge commit would move the merge gate onto a
+commit that carries none of this repository's other checks. The head is also stable,
+where the test merge commit is recomputed every time the base branch moves.
 A five-minute reconciliation covers team membership and base-branch changes that
 do not emit a pull-request review event. Unchanged results are not republished,
 which avoids GitHub's per-commit status limit.

@@ -290,13 +290,13 @@ async function setPolicyStatus(api, owner, repo, sha, state, description, target
 
 export { setPolicyStatus };
 
-async function statusShaForPullRequest(api, owner, repo, initialPullRequest) {
-  let current = initialPullRequest;
-  if (!current.merge_commit_sha && current.state === 'open') {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    current = await pullRequest(api, owner, repo, current.number);
-  }
-  return current.merge_commit_sha || current.head?.sha;
+// Report on the pull-request head. GitHub gates on the test merge commit whenever that
+// commit carries a status and only falls back to the head when it carries none, and the
+// test merge commit carries none of this repository's checks. Reporting there would move
+// the whole merge gate onto a commit that CI never sees. The head is also stable while
+// the test merge commit is recomputed every time the base branch moves.
+export function statusShaForPullRequest(pullRequestToReport) {
+  return pullRequestToReport.head?.sha;
 }
 
 function reviewDigest(reviews) {
@@ -316,7 +316,6 @@ function samePullRequestVersion(left, right) {
     && left.head?.sha === right.head?.sha
     && left.base?.ref === right.base?.ref
     && left.base?.sha === right.base?.sha
-    && left.merge_commit_sha === right.merge_commit_sha
     && left.mergeable === right.mergeable
   );
 }
@@ -338,7 +337,7 @@ async function evaluatePullRequest({
     return;
   }
 
-  const statusSha = await statusShaForPullRequest(api, owner, repo, current);
+  const statusSha = statusShaForPullRequest(current);
   if (current.draft) {
     await setPolicyStatus(
       api,
@@ -360,7 +359,7 @@ async function evaluatePullRequest({
   if (checked.state !== 'open' || live.state !== 'open') {
     return;
   }
-  const liveStatusSha = await statusShaForPullRequest(api, owner, repo, live);
+  const liveStatusSha = statusShaForPullRequest(live);
   if (
     !samePullRequestVersion(current, checked)
     || !samePullRequestVersion(checked, live)
@@ -466,7 +465,7 @@ export async function main() {
     const targetUrl = runUrl(repository, process.env.GITHUB_RUN_ID);
     for (const current of pullRequests) {
       try {
-        const sha = await statusShaForPullRequest(api, owner, repo, current);
+        const sha = statusShaForPullRequest(current);
         await setPolicyStatus(
           api,
           owner,
@@ -499,7 +498,7 @@ export async function main() {
     } catch (error) {
       failures.push(error);
       try {
-        const sha = await statusShaForPullRequest(api, owner, repo, current);
+        const sha = statusShaForPullRequest(current);
         await setPolicyStatus(
           api,
           owner,

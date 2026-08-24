@@ -8,6 +8,7 @@ import {
   evaluatePolicy,
   pullRequestNumbersFromWorkflowRun,
   setPolicyStatus,
+  statusShaForPullRequest,
 } from './evaluate.mjs';
 
 function review({
@@ -218,4 +219,18 @@ test('status-history failure does not suppress a fail-closed write', async () =>
   } finally {
     console.warn = originalWarn;
   }
+});
+
+test('the status is reported on the head, never on the test merge commit', () => {
+  assert.equal(
+    statusShaForPullRequest({ head: { sha: 'head' }, merge_commit_sha: 'test-merge' }),
+    'head',
+  );
+});
+
+test('a conflicting pull request with no test merge commit still reports on its head', () => {
+  assert.equal(
+    statusShaForPullRequest({ head: { sha: 'head' }, merge_commit_sha: null }),
+    'head',
+  );
 });
