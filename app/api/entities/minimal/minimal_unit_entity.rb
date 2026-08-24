@@ -20,6 +20,7 @@ module Entities
       end
 
       expose :active
+      expose :allow_flexible_dates
       expose :ordered_task_definitions,
              as: :task_definitions,
              using: Entities::TaskDefinitionEntity,

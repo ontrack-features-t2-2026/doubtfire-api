@@ -108,16 +108,7 @@ class TaskDefinitionsApi < Grape::API
     end
 
     task_def.save!
-
-    # Notifications are best-effort and must not break task creation.
-    begin
-      NewTaskAvailableNotificationJob.perform_async(task_def.id)
-    rescue StandardError => e
-      Rails.logger.error(
-        "Failed to enqueue new-task notification for TaskDefinition #{task_def.id}: " \
-        "#{e.class} - #{e.message}"
-      )
-    end
+    NewTaskAvailableNotificationJob.track_and_enqueue(task_def)
 
     present task_def,
             with: Entities::TaskDefinitionEntity,
