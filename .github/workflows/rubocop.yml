@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   build:
+    name: RuboCop
     runs-on: ubuntu-latest
     env:
       BUNDLE_WITHOUT: default doc job cable storage ujs test db
