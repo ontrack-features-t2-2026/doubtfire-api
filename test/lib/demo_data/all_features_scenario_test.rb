@@ -216,8 +216,13 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert_equal DemoData::AllFeaturesScenario::SUBMITTED_COUNT,
                  snapshot.submitted_count
     assert_equal 60.0, snapshot.submitted_percentage.to_f
-    assert_equal DemoData::AllFeaturesScenario::PPI_STATUS_COUNTS.stringify_keys,
-                 snapshot.status_counts
+    expected_status_counts = PeerProgressDistributionPolicy::STATUS_KEYS
+                             .index_with { 0 }
+                             .merge(
+                               DemoData::AllFeaturesScenario::PPI_STATUS_COUNTS
+                                 .stringify_keys
+                             )
+    assert_equal expected_status_counts, snapshot.status_counts
 
     ENV['DF_PPI_MINIMUM_COHORT_SIZE'] =
       PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE.to_s

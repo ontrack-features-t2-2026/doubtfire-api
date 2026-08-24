@@ -11,14 +11,15 @@ class PeerProgressDistributionPolicyTest < ActiveSupport::TestCase
 
     assert_equal PeerProgressDistributionPolicy::STATUS_KEYS,
                  distribution.pluck(:status)
-    assert_equal 10.0,
-                 distribution.find do |entry|
-                   entry.fetch(:status) == 'redo'
-                 end.fetch(:percentage)
-    assert_equal 10.0,
-                 distribution.find do |entry|
-                   entry.fetch(:status) == 'fix_and_resubmit'
-                 end.fetch(:percentage)
+    redo_entry = distribution.find do |entry|
+      entry.fetch(:status) == 'redo'
+    end
+    resubmit_entry = distribution.find do |entry|
+      entry.fetch(:status) == 'fix_and_resubmit'
+    end
+
+    assert_equal 10.0, redo_entry.fetch(:percentage)
+    assert_equal 10.0, resubmit_entry.fetch(:percentage)
   end
 
   test 'suppresses a jointly identifying vector even though each bucket is independently ambiguous' do
