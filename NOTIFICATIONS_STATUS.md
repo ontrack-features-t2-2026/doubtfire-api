@@ -1,5 +1,11 @@
 # Unified Notifications - Status
 
+> Historical implementation record. The unified in-app, email and Web Push
+> paths described as future stages below are now implemented on the integration
+> branch. Use `NOTIFICATIONS.md`, `docs/notifications/push-setup.md`, and the
+> review evidence under `docs/notifications/reviews/` for current operation and
+> release status.
+
 Feature: unified notifications (in-app, email, push) for OnTrack.
 Base: `11.0.x`. Branch: `feature/notifications` (api and web), off `origin/11.0.x`.
 Merge and demo target: `integration`.
@@ -12,8 +18,8 @@ in the working tree and the exact commands to run.
 One hub, many channels:
 
     event happens -> NotificationService.notify(...) -> in-app record
-                                                     -> email (existing mailer)
-                                                     -> push (Stage 4, stubbed now)
+                                                     -> email job -> mailer
+                                                     -> push job -> Web Push (when configured)
 
 A single category toggle gates every channel. The three existing user
 preference columns (`receive_task_notifications`, `receive_feedback_notifications`,
@@ -26,8 +32,8 @@ in-app. Per-channel granularity (a type x channel matrix) is deferred to v2.
 New files:
 - `app/models/notification.rb` - hub model. Types task/feedback/portfolio/extension/general. `unread` and `recent_first` scopes, `mark_read!`.
 - `db/migrate/20260722000001_create_notifications.rb` - notifications table (user_id, notification_type, message, link, read_at, timestamps). Ticket EN-F01 later added `event` and widened `message` to text.
-- `app/services/notification_service.rb` - the fan-out entry point. Respects the category preference, creates the in-app record, sends email, calls push.
-- `app/services/push_notification_service.rb` - push channel stub. No-op until VAPID keys exist, so it is safe to call today.
+- `app/services/notification_service.rb` - the fan-out entry point. Respects the category preference, creates the in-app record, and queues ID-only email and push jobs.
+- `app/services/push_notification_service.rb` - push channel delivery. No-op until VAPID keys exist, so it is safe to run today.
 - `app/api/notifications_api.rb` - REST endpoints (list, unread_count, mark read, mark all read, delete). All scoped to `current_user`, so no IDOR.
 - `app/api/entities/notification_entity.rb` - response shape.
 - `app/views/notifications_mailer/single_notification.{html,text}.erb` - email templates.

@@ -8,16 +8,17 @@ Before, each type of message did its own thing. Emails were sent from many
 places. There was no single system.
 
 Now there is one system. You send a notification once. It goes out on all the
-channels the user has turned on. Today those channels are in-app and email. Push
-is planned next.
+channels the user has turned on: in-app, email, and Web Push when the deployment
+has VAPID keys and the user has subscribed a browser.
 
 ## The flow
 
     something happens in the app
         -> you call NotificationService.notify(...)
             -> saves an in-app notification (the bell)
-            -> sends an email
-            -> sends a push (later, off for now)
+            -> queues an ID-only email job
+            -> queues an ID-only push job
+                -> Sidekiq workers reload the notification and contact providers
 
 You only call one thing. The system handles the rest.
 
@@ -71,9 +72,13 @@ per-channel switches later if we want.
 - app/models/notification.rb: the notification record. Has the type, message,
   link, and whether it has been read.
 - app/services/notification_service.rb: the one entry point. Checks the setting,
-  saves the record, sends the email, calls push.
-- app/services/push_notification_service.rb: the push channel. It is a safe
-  placeholder for now. It does nothing until push keys are set up.
+  saves the record, and queues the email and push channel jobs.
+- app/sidekiq/notification_email_job.rb: reloads a notification by id and sends
+  its email.
+- app/sidekiq/push_notification_delivery_job.rb: reloads a notification by id
+  and hands it to the Web Push delivery channel.
+- app/services/push_notification_service.rb: the Web Push delivery channel. It
+  remains a safe no-op until both VAPID keys are configured.
 - app/mailers/notifications_mailer.rb: the email. New method single_notification
   with templates in app/views/notifications_mailer.
 - app/api/notifications_api.rb: the endpoints the web app calls.
@@ -87,6 +92,10 @@ per-channel switches later if we want.
     PUT    /api/notifications/read_all          mark all as read
     DELETE /api/notifications/:id              delete one
 
+    GET    /api/push_subscriptions              list my browser subscriptions
+    POST   /api/push_subscriptions              register or update a browser
+    DELETE /api/push_subscriptions              remove the browser identified by endpoint
+
 Every endpoint only ever touches the current user's own notifications.
 
 ## What is on now
@@ -94,5 +103,6 @@ Every endpoint only ever touches the current user's own notifications.
 - In-app: working. The record is saved and the endpoints return it.
 - Email: working. Best effort. If email fails, the in-app notification is still
   saved.
-- Push: not on yet. The code path is there but does nothing until push keys are
-  set up.
+- Push: implemented and deliberately configuration-gated. It sends only when
+  VAPID keys are set and that user has opted in from a supported browser. Keep
+  the production keys blank until browser/device acceptance testing is complete.

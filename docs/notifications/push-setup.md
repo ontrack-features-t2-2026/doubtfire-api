@@ -46,13 +46,18 @@ re-subscribe.**
 
 Changing the keys does not migrate anything. The `push_subscriptions` rows stay,
 but pushes signed with the new key are rejected for browsers that subscribed
-under the old one, and those rows get cleaned up as 403s arrive.
+under the old one. The delivery service deliberately retains generic failures,
+including 403 responses, because they can also be transient configuration
+errors. When rotating a VAPID pair, explicitly delete all existing
+`push_subscriptions` rows and tell users to enable push again.
 
 ## How a notification becomes a push
 
-`NotificationService.notify` already calls `PushNotificationService.deliver`, so
-**every event that sends an email sends a push, with no per-event work**. Nothing
-in an event ticket has to know push exists.
+`NotificationService.notify` queues `PushNotificationDeliveryJob` with only the
+notification id. A Sidekiq worker reloads the notification and calls
+`PushNotificationService.deliver`, so **every event that queues an email also
+queues a push, with no per-event work**. Provider network I/O never blocks the
+request or runs under the notification hand-off lock.
 
 `deliver` loops over `notification.user.push_subscriptions` and sends this
 payload to each:
@@ -72,6 +77,8 @@ for exactly that and displays the notification itself. **Change the shape and
 somebody has to write a service worker by hand.**
 
 `data.link` is what MN-C03 reads to decide where to send the user on click.
+Delivery uses normal urgency and a one-hour TTL so a short disconnect can
+recover without a push service surfacing workflow alerts days or weeks late.
 
 ## Failure handling
 
@@ -81,8 +88,12 @@ somebody has to write a service worker by hand.**
   payload) is logged and skipped. The subscription is kept, because those are
   temporary and deleting on them would silently unsubscribe people the first time
   a push service had a bad day.
-- Nothing propagates to the caller. A push failure must never block the in-app
-  notification or the email.
+- The delivery job is configured for three Sidekiq retries when loading the
+  notification or invoking the delivery service raises. Per-subscription
+  provider failures are logged and skipped inside the service so one broken
+  browser never blocks the rest.
+- Nothing propagates to the request caller. A push failure must never block the
+  in-app notification or the email hand-off.
 
 ## Checking it works
 
@@ -104,9 +115,9 @@ somebody has to write a service worker by hand.**
 Empty means nothing has subscribed yet. That is the usual reason a push does not
 arrive, and it looks identical to push being broken.
 
-**Subscribe this browser by hand.** Until MN-C01 adds the opt-in button, paste
-this into the dev tools console on a page where you are signed in. It needs
-MN-F03 done first, or `navigator.serviceWorker.ready` never resolves.
+**Subscribe this browser by hand for diagnostics.** The normal path is the
+in-app opt-in control. To isolate that UI from the API and service worker, paste
+this into the dev tools console on a page where you are signed in.
 
 ```js
 const VAPID = '<the public key>'
@@ -146,9 +157,8 @@ fails:
 
 ## Why the gem is pinned
 
-`Gemfile` pins `web-push` to exactly `3.0.0`. Versions from 3.0.1 require
-`jwt ~> 3.0`, and taking that forces `jwt` to a new major version and drags
-`oauth2` from 2.0.9 to 2.0.25 with it, because the older `oauth2` caps `jwt`
-below 3. That would put LTI (`app/helpers/lti_helper.rb` calls `JWT.decode`) and
-the D2L OAuth integration inside the blast radius of a push change. Unpinning is
-a separate piece of work with its own testing.
+`Gemfile` pins `web-push` to exactly `3.0.1`. This release still depends on
+`jwt ~> 2.0`, so it remains compatible with the authentication dependencies in
+this release, while replacing the separate `hkdf` gem with `OpenSSL::KDF`.
+`web-push` 3.0.2 is the release that moves to JWT 3; upgrading beyond 3.0.1
+therefore needs authentication and OAuth regression testing.

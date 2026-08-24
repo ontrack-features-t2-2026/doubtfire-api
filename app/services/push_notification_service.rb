@@ -1,15 +1,15 @@
 # Web Push delivery channel.
 #
-# NotificationService calls this for every notification it creates, straight
-# after the email. Two properties make that safe:
+# PushNotificationDeliveryJob calls this for every notification handed off by
+# NotificationService. Two properties make that safe:
 #
 #   * without VAPID keys it is a no-op, so the app behaves exactly as it did
 #     before push existed for anyone who has not configured them
 #   * one browser failing never stops the others and never reaches the caller,
 #     so a push problem cannot block an in-app notification or an email
 #
-# Because the fan-out already calls this, every event that sends an email now
-# sends a push too, with no per-event work.
+# Because the shared fan-out queues the job, every event that queues an email
+# also queues a push, with no per-event work.
 #
 # Key generation and setup: docs/notifications/push-setup.md.
 class PushNotificationService
@@ -38,17 +38,22 @@ class PushNotificationService
   SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z}x
   # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
-  # service that accepts a connection and then never answers holds the request
-  # thread open until the app server kills it. NotificationService calls this
-  # inline from the request path, so that stall is a stall for the person who
-  # posted the comment.
+  # service that accepts a connection and then never answers holds a Sidekiq
+  # worker thread and reduces delivery capacity until the process kills it.
   #
-  # Both are passed together on purpose. web-push 3.0.0 guards read_timeout on
+  # Both are passed together on purpose. web-push 3.0.1 guards read_timeout on
   # open_timeout being present (lib/web_push/request.rb line 15), so passing
   # read_timeout alone silently does nothing.
   OPEN_TIMEOUT = 5
   READ_TIMEOUT = 5
   SSL_TIMEOUT = 5
+
+  # Push services otherwise retain messages for the gem default of four weeks.
+  # OnTrack notifications describe current workflow state, so delivering one
+  # days or weeks later is misleading. One hour tolerates a short disconnect
+  # without surfacing stale due-date or status alerts.
+  MESSAGE_TTL = 1.hour.to_i
+  MESSAGE_URGENCY = 'normal'.freeze
 
   def self.deliver(notification)
     return unless configured?
@@ -158,6 +163,8 @@ class PushNotificationService
       p256dh: subscription.p256dh,
       auth: subscription.auth,
       vapid: vapid_details,
+      ttl: MESSAGE_TTL,
+      urgency: MESSAGE_URGENCY,
       open_timeout: OPEN_TIMEOUT,
       read_timeout: READ_TIMEOUT,
       ssl_timeout: SSL_TIMEOUT

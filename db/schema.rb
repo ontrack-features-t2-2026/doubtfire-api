@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_24_000001) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_24_000002) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -498,7 +498,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000001) do
     t.integer "spec_con_days", default: 0, null: false
     t.bigint "assessor_id"
     t.datetime "portfolio_submission_date"
-    t.datetime "target_grade_changed_at", null: false
+    t.datetime "target_grade_changed_at", default: -> { "current_timestamp()" }, null: false
     t.index ["assessor_id"], name: "index_projects_on_assessor_id"
     t.index ["campus_id"], name: "index_projects_on_campus_id"
     t.index ["enrolled"], name: "index_projects_on_enrolled"

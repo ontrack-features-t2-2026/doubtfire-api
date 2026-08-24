@@ -19,6 +19,7 @@ class PushSubscriptionTest < ActiveSupport::TestCase
     'https://android.googleapis.com/gcm/send/abc123',
     'https://updates.push.services.mozilla.com/wpush/v2/abc123',
     'https://web.push.apple.com/abc123',
+    'https://webcourier.push.apple.com/abc123',
     'https://par02p.notify.windows.com/w/?token=abc123',
     'https://wns2-by3p.push.services.microsoft.com/w/?token=abc123'
   ].freeze
@@ -44,6 +45,9 @@ class PushSubscriptionTest < ActiveSupport::TestCase
     'userinfo redirect trick' => 'https://fcm.googleapis.com@evil.example.com/push',
     'non standard port' => 'https://fcm.googleapis.com:8080/fcm/send/abc',
     'suffix lookalike' => 'https://evil-notify.windows.com/w/?token=abc',
+    'apple suffix without boundary' => 'https://evilpush.apple.com/abc',
+    'apple suffix followed by another domain' => 'https://web.push.apple.com.evil.example/abc',
+    'bare apple parent domain' => 'https://push.apple.com/abc',
     'host substring lookalike' => 'https://fcm.googleapis.com.evil.example.com/push',
     'not a url at all' => 'not a url',
     'file scheme' => 'file:///etc/passwd'

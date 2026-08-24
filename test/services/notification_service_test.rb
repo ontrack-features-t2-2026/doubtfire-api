@@ -5,23 +5,23 @@ class NotificationServiceTest < ActiveSupport::TestCase
   setup do
     ActionMailer::Base.deliveries.clear
     NotificationEmailJob.clear
+    PushNotificationDeliveryJob.clear
   end
 
-  def test_notify_creates_a_notification_and_queues_one_id_only_email_job
+  def test_notify_creates_a_notification_and_queues_id_only_channel_jobs
     user = FactoryBot.create(:user)
     notification = nil
 
-    assert_difference(
-      -> { NotificationEmailJob.jobs.size },
-      1
-    ) do
-      notification = NotificationService.notify(
-        user: user,
-        type: 'task',
-        event: 'task_comment_created',
-        message: 'Your tutor commented on your task.',
-        link: "/projects/#{user.id}"
-      )
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+        notification = NotificationService.notify(
+          user: user,
+          type: 'task',
+          event: 'task_comment_created',
+          message: 'Your tutor commented on your task.',
+          link: "/projects/#{user.id}"
+        )
+      end
     end
 
     assert notification.persisted?
@@ -32,6 +32,11 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal 'NotificationEmailJob', job['class']
     assert_equal 'default', job['queue']
     assert_equal [notification.id], job['args']
+
+    push_job = PushNotificationDeliveryJob.jobs.last
+    assert_equal 'PushNotificationDeliveryJob', push_job['class']
+    assert_equal 'default', push_job['queue']
+    assert_equal [notification.id], push_job['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
@@ -53,6 +58,7 @@ class NotificationServiceTest < ActiveSupport::TestCase
     end
 
     assert_empty NotificationEmailJob.jobs
+    assert_empty PushNotificationDeliveryJob.jobs
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
@@ -89,6 +95,7 @@ class NotificationServiceTest < ActiveSupport::TestCase
     end
 
     assert_empty NotificationEmailJob.jobs
+    assert_empty PushNotificationDeliveryJob.jobs
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
@@ -97,16 +104,19 @@ class NotificationServiceTest < ActiveSupport::TestCase
     notification = nil
 
     assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
-      assert_difference 'Notification.count', 1 do
-        notification = NotificationService.notify(
-          user: user, type: 'feedback', event: 'feedback_available', message: 'Feedback available.'
-        )
+      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+        assert_difference 'Notification.count', 1 do
+          notification = NotificationService.notify(
+            user: user, type: 'feedback', event: 'feedback_available', message: 'Feedback available.'
+          )
 
-        assert notification.persisted?
+          assert notification.persisted?
+        end
       end
     end
 
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
@@ -115,25 +125,30 @@ class NotificationServiceTest < ActiveSupport::TestCase
     notification = nil
 
     assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
-      assert_difference 'Notification.count', 1 do
-        notification = NotificationService.notify(
-          user: user, type: 'task', event: 'task_due_date_changed', message: 'Task date changed.'
-        )
+      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+        assert_difference 'Notification.count', 1 do
+          notification = NotificationService.notify(
+            user: user, type: 'task', event: 'task_due_date_changed', message: 'Task date changed.'
+          )
 
-        assert notification.persisted?
+          assert notification.persisted?
+        end
       end
     end
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
 
     user.update!(receive_task_notifications: false)
 
     assert_no_difference -> { NotificationEmailJob.jobs.size } do
-      assert_no_difference 'Notification.count' do
-        result = NotificationService.notify(
-          user: user, type: 'task', event: 'task_due_date_changed', message: 'Suppressed task change.'
-        )
+      assert_no_difference -> { PushNotificationDeliveryJob.jobs.size } do
+        assert_no_difference 'Notification.count' do
+          result = NotificationService.notify(
+            user: user, type: 'task', event: 'task_due_date_changed', message: 'Suppressed task change.'
+          )
 
-        assert_nil result
+          assert_nil result
+        end
       end
     end
     assert_equal 0, ActionMailer::Base.deliveries.count
@@ -144,25 +159,30 @@ class NotificationServiceTest < ActiveSupport::TestCase
     notification = nil
 
     assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
-      assert_difference 'Notification.count', 1 do
-        notification = NotificationService.notify(
-          user: user, type: 'portfolio', event: 'portfolio_received', message: 'Portfolio received.'
-        )
+      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+        assert_difference 'Notification.count', 1 do
+          notification = NotificationService.notify(
+            user: user, type: 'portfolio', event: 'portfolio_received', message: 'Portfolio received.'
+          )
 
-        assert notification.persisted?
+          assert notification.persisted?
+        end
       end
     end
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
 
     user.update!(receive_portfolio_notifications: false)
 
     assert_no_difference -> { NotificationEmailJob.jobs.size } do
-      assert_no_difference 'Notification.count' do
-        result = NotificationService.notify(
-          user: user, type: 'portfolio', event: 'portfolio_received', message: 'Suppressed portfolio receipt.'
-        )
+      assert_no_difference -> { PushNotificationDeliveryJob.jobs.size } do
+        assert_no_difference 'Notification.count' do
+          result = NotificationService.notify(
+            user: user, type: 'portfolio', event: 'portfolio_received', message: 'Suppressed portfolio receipt.'
+          )
 
-        assert_nil result
+          assert_nil result
+        end
       end
     end
     assert_equal 0, ActionMailer::Base.deliveries.count
@@ -177,17 +197,17 @@ class NotificationServiceTest < ActiveSupport::TestCase
     )
     notification = nil
 
-    assert_difference(
-      -> { NotificationEmailJob.jobs.size },
-      1
-    ) do
-      notification = NotificationService.notify(
-        user: user, type: 'general', event: 'always_sent', message: 'General notice.'
-      )
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+        notification = NotificationService.notify(
+          user: user, type: 'general', event: 'always_sent', message: 'General notice.'
+        )
+      end
     end
 
     assert notification.persisted?
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
@@ -201,13 +221,16 @@ class NotificationServiceTest < ActiveSupport::TestCase
     notification = nil
 
     assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
-      notification = NotificationService.notify(
-        user: user, type: 'extension', event: 'extension_decided', message: 'Extension decision available.'
-      )
+      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+        notification = NotificationService.notify(
+          user: user, type: 'extension', event: 'extension_decided', message: 'Extension decision available.'
+        )
+      end
     end
 
     assert notification.persisted?
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
@@ -224,6 +247,8 @@ class NotificationServiceTest < ActiveSupport::TestCase
     end
 
     assert_equal 0, NotificationEmailJob.jobs.size
+    assert_equal 1, PushNotificationDeliveryJob.jobs.size
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
     assert_nil notification.reload.delivered_at
   end
@@ -247,10 +272,11 @@ class NotificationServiceTest < ActiveSupport::TestCase
     end
 
     assert_equal 1, NotificationEmailJob.jobs.size
+    assert_equal 1, PushNotificationDeliveryJob.jobs.size
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
-  def test_failed_channel_delivery_is_retried_at_least_once
+  def test_failed_channel_handoff_is_retried_at_least_once
     user = FactoryBot.create(:user)
     attributes = {
       user: user,
@@ -259,15 +285,16 @@ class NotificationServiceTest < ActiveSupport::TestCase
       message: 'A task is available.',
       dedupe_key: 'new_task_available:task-definition:456'
     }
-    failure = ->(_notification) { raise StandardError, 'push interrupted' }
+    failure = ->(_notification_id) { raise StandardError, 'redis unavailable' }
 
-    PushNotificationService.stub(:deliver, failure) do
-      assert_raises(StandardError) { NotificationService.notify(**attributes) }
+    PushNotificationDeliveryJob.stub(:perform_async, failure) do
+      NotificationService.notify(**attributes)
     end
 
     notification = Notification.find_by!(dedupe_key: attributes[:dedupe_key])
     assert_nil notification.delivered_at
     assert_equal 1, NotificationEmailJob.jobs.size
+    assert_equal 0, PushNotificationDeliveryJob.jobs.size
     assert_equal 0, ActionMailer::Base.deliveries.count
 
     assert_no_difference 'Notification.count' do
@@ -276,6 +303,8 @@ class NotificationServiceTest < ActiveSupport::TestCase
 
     assert_not_nil notification.reload.delivered_at
     assert_equal 2, NotificationEmailJob.jobs.size
+    assert_equal 1, PushNotificationDeliveryJob.jobs.size
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 end

@@ -1,8 +1,14 @@
 require_all 'lib/helpers'
+require Rails.root.join('lib/demo_data/all_features_scenario')
 
 namespace :db do
   desc 'Create deterministic, privacy-threshold-ready demo data for the Peer Progress Indicator dashboard'
-  task ppi_sample_data: [:skip_prod, :environment] do
+  task ppi_sample_data: :environment do
+    # This task creates hundreds of synthetic users, enrolments and tasks. Use
+    # the same non-interactive triple guard as the all-features demo instead of
+    # permitting a typed confirmation against an arbitrary production database.
+    DemoData::AllFeaturesScenario.new(reference_time: Time.zone.now).guard!
+
     Rails.logger.level = :info
 
     # ---- configuration -------------------------------------------------

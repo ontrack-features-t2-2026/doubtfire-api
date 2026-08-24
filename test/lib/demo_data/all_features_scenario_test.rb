@@ -108,7 +108,7 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
       raise 'demo scenario must not invoke an external delivery channel'
     end
 
-    PushNotificationService.stub(:deliver, no_delivery) do
+    PushNotificationDeliveryJob.stub(:perform_async, no_delivery) do
       NotificationEmailJob.stub(:perform_async, no_delivery) do
         with_demo_safety { @scenario.run! }
       end

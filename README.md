@@ -23,6 +23,12 @@ Doubtfire is a feedback-driven learning support system.
 
 See [Doubtfire Deploy](https://github.com/doubtfire-lms/doubtfire-deploy) for instructions on deploying, and contributing, to the Doubtfire project.
 
+The legacy root `docker-compose.yml` defaults to local database authentication.
+Optional AAF development must use a dedicated non-production registration
+supplied through an ignored `.env` file copied from `.env.example`. Any AAF
+secret ever committed to Git must be treated as compromised and rotated by its
+identity owner.
+
 ## Environment variables
 
 Doubtfire requires multiple environment variables that help define settings about the Doubtfire instance running. Whilst these will default to other values, you may want to override them in production.

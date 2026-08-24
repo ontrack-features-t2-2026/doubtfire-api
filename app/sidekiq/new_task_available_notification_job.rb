@@ -59,8 +59,8 @@ class NewTaskAvailableNotificationJob
     notification = nil
 
     # Recheck mutable eligibility under a short row lock. The reservation is
-    # committed before synchronous email/push delivery starts, so network I/O
-    # never holds the project lock.
+    # committed before channel jobs are handed off; provider network I/O occurs
+    # in workers and never holds the project lock.
     project.with_lock do
       project.reload
       unit = project.unit

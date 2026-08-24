@@ -70,14 +70,15 @@ event when it exists. Adding this event never required editing the mailer.
 
 ## Known limitations and deliberate choices
 
-- **Bulk marking sends one email per task, inline.** `Project#trigger_week_end`
+- **Bulk marking queues one email and one push job per task.** `Project#trigger_week_end`
   (`app/models/project.rb`) loops `trigger_transition(trigger: 'complete',
   bulk: true)` over a student's discuss/demonstrate tasks, and this event ignores
-  the `bulk:` flag, so a single request can send several near-identical emails
-  (NotificationService delivers inline by design). The path is latent today — no
+  the `bulk:` flag, so a single request can enqueue several near-identical
+  notifications. Provider delivery occurs in Sidekiq, but the queue hand-offs
+  still happen in that request. The path is latent today — no
   `doubtfire-web` caller drives `trigger_week_end`. Left un-suppressed on purpose
   so bulk-marked tasks still notify; batching many into one email belongs with the
-  queue work (EN-F03), not here.
+  event design, not here.
 
 - **The fix-and-resubmit cascade does not raise this event.** Inside `assess`, the
   `recursive_fix` cascade calls `assess` directly on dependent tasks instead of

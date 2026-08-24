@@ -15,12 +15,10 @@ class PushSubscription < ApplicationRecord
   #   fcm.googleapis.com                  Chrome, Edge, Opera, Brave
   #   android.googleapis.com              older Chrome on Android
   #   updates.push.services.mozilla.com   Firefox
-  #   web.push.apple.com                  Safari, iOS 16.4+
   PUSH_SERVICE_HOSTS = %w[
     fcm.googleapis.com
     android.googleapis.com
     updates.push.services.mozilla.com
-    web.push.apple.com
   ].freeze
 
   # Suffixes, for the services that shard across per-region subdomains. Matched
@@ -29,9 +27,11 @@ class PushSubscription < ApplicationRecord
   #
   #   *.notify.windows.com               WNS, legacy Edge
   #   *.push.services.microsoft.com      WNS, current
+  #   *.push.apple.com                    Safari, iOS 16.4+
   PUSH_SERVICE_HOST_SUFFIXES = %w[
     .notify.windows.com
     .push.services.microsoft.com
+    .push.apple.com
   ].freeze
 
   belongs_to :user

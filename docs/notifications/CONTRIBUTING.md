@@ -249,18 +249,23 @@ request.
 
 ---
 
-## The one domain rule: notification delivery is inline
+## The one domain rule: channel delivery belongs in Sidekiq
 
-`NotificationService.notify` sends the email and the push **synchronously** in
-the process that calls it. If a request calls it directly, delivery blocks the
-request thread. If a Sidekiq job calls it, delivery blocks that worker instead.
-There is no Sidekiq worker process in the normal dev stack, so queued
-notification fan-out will sit in Redis unless you run a worker separately.
-`app/services/notification_service.rb` explains the delivery trade-off.
+`NotificationService.notify` persists the in-app record, then queues separate
+ID-only email and push jobs. Sidekiq workers reload the notification and perform
+provider network I/O; a request only waits for the short Redis hand-offs. Both
+jobs use the default queue, so every deployed environment that should deliver
+notifications must run a Sidekiq worker for that queue.
 
-The consequence matters more than the mechanism. **Never loop over a whole
-cohort and call `NotificationService.notify` directly from a web request.** That
-would send one email plus one push per person before the request can finish. The
+The hand-off is at-least-once. If either job cannot be queued, `delivered_at`
+stays empty so a later event retry can try again. That retry may enqueue the
+other channel twice if its first hand-off succeeded before the failure. Channel
+jobs must therefore continue to accept only stable ids and tolerate duplicate
+delivery.
+
+**Never loop over a whole cohort and call `NotificationService.notify` directly
+from a web request.** Even without provider I/O, that would create one record
+and make two queue round trips per recipient before the request can finish. The
 current new-task and due-date events avoid that by enqueueing
 `NewTaskAvailableNotificationJob` and `TaskDueDateChangedNotificationJob`; group
 CSV import suppresses notifications. Follow those current patterns rather than
@@ -269,9 +274,7 @@ reintroducing request-path fan-out.
 So before you wire an event to a hook, ask who it reaches when the hook fires in
 the worst case, not the normal case. Three separate tickets have hit this
 independently. If the answer is "everyone in the unit", inspect the existing
-fan-out jobs and talk to the lead before you build it. The general delivery-queue
-work in EN-F03 is not done yet: some fan-out jobs exist, but channel delivery is
-still synchronous and the normal dev stack still has no worker.
+fan-out jobs and talk to the lead before you build it.
 
 Two related habits worth having:
 

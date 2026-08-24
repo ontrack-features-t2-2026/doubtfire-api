@@ -400,22 +400,23 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_operator body.length, :<=, PushNotificationService::MAX_BODY_LENGTH
   end
 
-  # The whole point of MN-F02: the fan-out already calls this service, so an
-  # event that sends an email now sends a push with no extra work.
-  def test_raising_a_notification_through_the_hub_sends_a_push
+  # The shared fan-out queues an ID-only job, and the worker calls this service
+  # with no per-event push wiring.
+  def test_raising_a_notification_through_the_hub_queues_and_delivers_a_push
     create_subscription
     request = stub_request(:post, ENDPOINT).to_return(status: 201)
+    notification = NotificationService.notify(
+      user: @user,
+      type: 'feedback',
+      event: 'task_comment_created',
+      message: 'Raised through the hub.',
+      link: '/projects/2/dashboard/1.1P'
+    )
 
-    with_keys do
-      NotificationService.notify(
-        user: @user,
-        type: 'feedback',
-        event: 'task_comment_created',
-        message: 'Raised through the hub.',
-        link: '/projects/2/dashboard/1.1P'
-      )
-    end
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
+    assert_not_requested request
 
+    with_keys { PushNotificationDeliveryJob.new.perform(notification.id) }
     assert_requested request
   end
 
@@ -455,7 +456,7 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
   # because the gem only applies read_timeout when open_timeout is also present
   # (lib/web_push/request.rb line 15), so passing one without the other silently
   # does nothing.
-  def test_both_timeouts_are_passed_to_the_gem
+  def test_delivery_limits_and_timeouts_are_passed_to_the_gem
     create_subscription
     captured = nil
 
@@ -466,5 +467,7 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_equal PushNotificationService::OPEN_TIMEOUT, captured[:open_timeout]
     assert_equal PushNotificationService::READ_TIMEOUT, captured[:read_timeout]
     assert_equal PushNotificationService::SSL_TIMEOUT, captured[:ssl_timeout]
+    assert_equal PushNotificationService::MESSAGE_TTL, captured[:ttl]
+    assert_equal PushNotificationService::MESSAGE_URGENCY, captured[:urgency]
   end
 end

@@ -1,1 +1,5 @@
-:concurrency: 1
+# Keep the historical single-worker default for small installations. Production
+# deployments can raise this after sizing the database pool and worker memory.
+<% sidekiq_concurrency = Integer(ENV.fetch('DF_SIDEKIQ_CONCURRENCY', '1'), 10) %>
+<% raise ArgumentError, 'DF_SIDEKIQ_CONCURRENCY must be positive' unless sidekiq_concurrency.positive? %>
+:concurrency: <%= sidekiq_concurrency %>

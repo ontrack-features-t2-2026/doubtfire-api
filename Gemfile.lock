@@ -199,7 +199,6 @@ GEM
     hashery (2.1.2)
     hashie (5.0.0)
     hirb (0.7.3)
-    hkdf (1.0.0)
     http-accept (1.7.0)
     http-cookie (1.0.8)
       domain_name (~> 0.5)
@@ -557,8 +556,7 @@ GEM
     version_gem (1.1.15)
     warden (1.2.9)
       rack (>= 2.0.9)
-    web-push (3.0.0)
-      hkdf (~> 1.0)
+    web-push (3.0.1)
       jwt (~> 2.0)
       openssl (~> 3.0)
     webmock (3.25.1)
@@ -642,7 +640,7 @@ DEPENDENCIES
   sprockets-rails
   sys-filesystem
   tca_client
-  web-push (= 3.0.0)
+  web-push (= 3.0.1)
   webmock
 
 RUBY VERSION

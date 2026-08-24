@@ -1,6 +1,7 @@
-FROM debian:bookworm-slim AS texlive-builder
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS texlive-builder
 
-ARG TL_MIRROR="https://mirror.aarnet.edu.au/pub/CTAN/systems/texlive/tlnet"
+ARG TL_MIRROR="https://texlive.info/historic/systems/texlive/2025/tlnet-final"
+ARG TL_INSTALLER_SHA512="a307d7d11bcbd1f054ad0b0d476f7f12bc1a40d07445020edef8713b44453831d18a2f1722c3d2b0ea2e4fe6c06183a79d1c4049495113f412a9f5a570a8614d"
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
@@ -11,7 +12,8 @@ RUN apt-get update && \
   xz-utils && \
   rm -rf /var/lib/apt/lists/* && \
   mkdir /tmp/texlive && cd /tmp/texlive && \
-  wget "$TL_MIRROR/install-tl-unx.tar.gz" && \
+  wget --https-only "$TL_MIRROR/install-tl-unx.tar.gz" && \
+  echo "$TL_INSTALLER_SHA512  install-tl-unx.tar.gz" | sha512sum --check - && \
   tar xzvf ./install-tl-unx.tar.gz && \
   ( \
   echo "selected_scheme scheme-basic" && \
@@ -63,7 +65,7 @@ RUN tlmgr install \
   enumitem
 
 # Final image
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -49,7 +49,7 @@ test. MN-Q01 and MN-Q02 own observed delivery evidence.
 | Firefox | Desktop    | Supported                                                                   | Current Firefox, secure context, service worker, and user-granted permission                                            | Firefox uses Mozilla's push service. OnTrack accepts `updates.push.services.mozilla.com`. Firefox must be running for desktop delivery according to Mozilla's user documentation.                                                          |
 | Firefox | Android    | Supported                                                                   | Current Firefox for Android, site notification permission, Android notification permission, and the common requirements | Mozilla routes Firefox Android Web Push through its service plus Google Cloud Messaging. The subscription endpoint still needs to be one OnTrack accepts; record it during device testing.                                                 |
 | Firefox | iOS/iPadOS | Supported only through an installed Home Screen web app on 16.4+            | Add from the Share menu, open the installed web app, then enable push from a user gesture                               | Do not treat Firefox's ordinary iOS tab as the receiver. Once installed, the Home Screen web app is a separate WebKit app and uses Apple's Web Push path.                                                                                  |
-| Safari  | Desktop    | Supported on macOS Ventura with Safari 16.1 or later                        | Secure context, service worker, standards-based Web Push/VAPID, and user permission                                     | No Apple Developer Program membership is required. Apple's guidance says senders should permit `*.push.apple.com`; OnTrack currently accepts only `web.push.apple.com`, so a future Apple endpoint on another subdomain would be rejected. |
+| Safari  | Desktop    | Supported on macOS Ventura with Safari 16.1 or later                        | Secure context, service worker, standards-based Web Push/VAPID, and user permission                                     | No Apple Developer Program membership is required. OnTrack accepts Apple's documented `*.push.apple.com` endpoint namespace.                                                                                                             |
 | Safari  | Android    | Not available                                                               | Safari is not released for Android                                                                                      | Use Chrome, Edge, or Firefox and verify the endpoint host.                                                                                                                                                                                 |
 | Safari  | iOS/iPadOS | Supported only as an installed Home Screen web app on 16.4+                 | Share → Add to Home Screen, open the installed app, tap OnTrack's enable control, then grant permission                 | This is the key platform limitation. No installed app means no Push API permission prompt and no delivery. Focus, Lock Screen, and per-app notification settings can still suppress display.                                               |
 
@@ -61,12 +61,12 @@ unless its HTTPS host is one of these exact hosts:
 - `fcm.googleapis.com` — Chrome and Chromium-family delivery.
 - `android.googleapis.com` — older Chrome on Android.
 - `updates.push.services.mozilla.com` — Firefox.
-- `web.push.apple.com` — current Safari and iOS/iPadOS Web Push.
 
 It also accepts subdomains ending in:
 
 - `.notify.windows.com` — legacy Windows Notification Service endpoints.
 - `.push.services.microsoft.com` — current Microsoft push-service endpoints.
+- `.push.apple.com` — Safari and iOS/iPadOS Web Push endpoints.
 
 The suffix check includes the leading dot, so a lookalike such as
 `evil-notify.windows.com` does not pass. Delivery repeats the check for rows
@@ -79,11 +79,9 @@ in every manual browser/device test. Review a new host against vendor
 documentation before adding it; never broaden the validation just to make a
 test pass.
 
-The Apple difference deserves monitoring: WebKit tells server operators to
-allow `*.push.apple.com`, while OnTrack currently permits the single known host
-`web.push.apple.com`. That is compatible with the endpoint observed when the
-allowlist was written, but it is not equivalent to Apple's whole documented
-namespace.
+Apple endpoints are matched with the boundary-aware `.push.apple.com` suffix.
+That accepts hosts in Apple's documented namespace without accepting lookalikes
+such as `evilpush.apple.com` or `web.push.apple.com.example.org`.
 
 ## What this table does not claim
 

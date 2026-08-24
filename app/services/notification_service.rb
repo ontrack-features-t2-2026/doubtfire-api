@@ -1,7 +1,7 @@
 # Central entry point for raising a notification.
 #
 # Creates the in-app record and fans out to the enabled delivery channels
-# (email through Sidekiq, push immediately). A single category toggle (the user's
+# (email and push through Sidekiq). A single category toggle (the user's
 # receive_*_notifications preference) gates every channel: if the category is
 # off, the notification is suppressed entirely. Per-channel granularity
 # (a type x channel matrix) is deferred to a future iteration.
@@ -37,7 +37,8 @@ class NotificationService
 
   # Persist a notification without running its delivery channels. Callers that
   # need a short eligibility lock can commit this reservation, release the
-  # lock, and then call `deliver` without holding a row lock across network I/O.
+  # lock, and then call `deliver` without holding a row lock across provider
+  # network I/O.
   def self.reserve(user:, type:, event:, message:, link: nil, dedupe_key: nil)
     type = type.to_s
     return nil unless deliver_to?(user, type)
@@ -57,15 +58,15 @@ class NotificationService
 
     # Concurrent or retried fan-outs can reserve the same immutable event. A
     # lock on that notification (not on the student's project) serializes only
-    # its channel hand-off. If the email cannot be queued or push delivery
-    # raises, delivered_at remains nil so a later availability sweep can retry.
+    # its channel hand-off. If either channel cannot be queued, delivered_at
+    # remains nil so a later availability sweep can retry.
     # External channels are at-least-once: a process crash after a provider
     # accepts a message can repeat that message on retry.
     notification.with_lock do
       unless notification.delivered_at?
         email_queued = queue_email(notification)
-        PushNotificationService.deliver(notification)
-        notification.update!(delivered_at: Time.current) if email_queued
+        push_queued = queue_push(notification)
+        notification.update!(delivered_at: Time.current) if email_queued && push_queued
       end
     end
 
@@ -98,8 +99,9 @@ class NotificationService
 
   # Email channel. Queue only the stable Notification id; message content,
   # recipient details and other student data remain in the database. Queue
-  # connection errors are best-effort so the in-app record and push delivery are
-  # not blocked. Delivery failures are raised by the job for Sidekiq to retry.
+  # connection errors are best-effort so the in-app record and other channel
+  # hand-offs are not blocked. Delivery failures are raised by the job for
+  # Sidekiq to retry.
   def self.queue_email(notification)
     NotificationEmailJob.perform_async(notification.id)
   rescue StandardError => e
@@ -109,4 +111,18 @@ class NotificationService
     false
   end
   private_class_method :queue_email
+
+  # Push channel. Queue only the stable Notification id so no student or
+  # notification content is copied into Redis. A failed hand-off leaves
+  # delivered_at unset, allowing the existing availability retry to try both
+  # channels again.
+  def self.queue_push(notification)
+    PushNotificationDeliveryJob.perform_async(notification.id)
+  rescue StandardError => e
+    Rails.logger.error(
+      "Failed to queue notification push for Notification #{notification.id}: #{e.class}"
+    )
+    false
+  end
+  private_class_method :queue_push
 end
