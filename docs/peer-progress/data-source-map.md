@@ -1,7 +1,7 @@
 # Peer Progress Indicator — Backend Data-Source Map
 
 **Ticket:** PPI-D02 — Publish the peer-progress backend data-source and field-ownership map
-**Status:** Documentation only. No production code is implemented or modified by this ticket.
+**Status:** Updated for the production API PR #60 contract.
 **Builds on:** [PPI API discovery](./task-completion-data-discovery.md) — the earlier starter task that
 located existing task-completion data (`Task`, `TaskStatus`, `Project#task_stats`,
 `Unit#student_task_completion_stats`) and found it was not reachable by students. This document goes
@@ -15,8 +15,8 @@ PPI-B01 was developed on `ppi/student-progress-endpoint` and merged into the sha
 has since been deleted. Everything marked "available" below is therefore available on the shared
 objective branch; the PR #16 head (`91d4db95`) remains the useful review snapshot for the implementation.
 
-This document does not implement or modify that backend code. It records what the merged implementation
-contains so the rest of the team can build against it without re-discovering it.
+This document records that baseline plus the additive detailed lifecycle,
+completion, privacy, and profile-preference work in API PR #60.
 
 ---
 
@@ -25,8 +25,10 @@ contains so the rest of the team can build against it without re-discovering it.
 | File | Class / method | Branch | Role |
 |---|---|---|---|
 | `app/api/peer_progress_api.rb` | `PeerProgressApi` (Grape API), `get '/projects/:id/task_def_id/:task_definition_id/peer_progress'` | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Student-facing endpoint. Authorises the request, looks up the stored snapshot, applies suppression/staleness rules, returns the allowlisted response. |
-| `app/models/peer_progress_snapshot.rb` | `PeerProgressSnapshot` | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | One row per `(unit, task_definition, target_grade)`. Stores `cohort_size`, `submitted_percentage`, `calculated_at`. Validates target grade is enabled for the unit and covers the task. |
-| `app/services/peer_progress_aggregation_service.rb` | `PeerProgressAggregationService.call(unit:, calculated_at:)` | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Batch job logic. For each grade value in the unit, selects the eligible cohort and counts submissions per task, then upserts `PeerProgressSnapshot` rows. |
+| `app/models/peer_progress_snapshot.rb` | `PeerProgressSnapshot` | API PR #60 | One row per `(unit, task_definition, target_grade)`. Stores internal whole-cohort `cohort_size`, exact `submitted_count`, all 15 raw `status_counts`, compatibility `submitted_percentage`, and `calculated_at`. Validates exact counts fit/cover the cohort. Raw counts never cross the student API boundary. |
+| `app/services/peer_progress_aggregation_service.rb` | `PeerProgressAggregationService.call(unit:, calculated_at:)` | API PR #60 | Batch job logic. For each grade value, counts uploads and every canonical current task status. A missing task row contributes to `not_started`, so each cohort member contributes exactly once per task. |
+| `app/services/peer_progress_viewer_policy.rb` | `PeerProgressViewerPolicy.build`, `.public_metrics` | API PR #60 | Subtracts the authenticated viewer's project, exact upload contribution, and status before applying the remaining-peer floor, compact quantisation, or detailed-vector policy. Fails closed if the viewer project/task changed after the snapshot or an exact aggregate is incomplete. |
+| `app/services/peer_progress_distribution_policy.rb` | `PeerProgressDistributionPolicy` | API PR #60 | Defines the 15-key canonical order, 10-point quantisation, and the vector-wide feasible-count ambiguity check. A detailed vector is released only when every status retains at least two possible raw counts even if the observer knows the cohort size. |
 | `app/sidekiq/aggregate_peer_progress_job.rb` | `AggregatePeerProgressJob#perform(unit_id = nil)` | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Scheduled dispatcher selects active, PPI-enabled units and enqueues one job per unit. Each per-unit job rechecks active/enabled state before calling the aggregation service. Scheduled via `config/schedule.yml` — `"every day at 11:45pm"`. |
 | `db/migrate/20260809153000_create_peer_progress_snapshots.rb` | — | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Creates `peer_progress_snapshots` table. Comment in the migration explicitly flags `cohort_size` as "Internal only. Never expose this raw value through the student API." |
 | `db/migrate/20260810033824_add_peer_progress_enabled_to_units.rb` | — | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Adds `units.peer_progress_enabled` boolean, `default: false, null: false`. |
@@ -38,7 +40,9 @@ contains so the rest of the team can build against it without re-discovering it.
 | `app/models/project.rb` | `Project#target_grade_changed_at`, `#record_target_grade_change` (`before_create`/`before_update` callback) | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | New column + callback. Records when a student's target grade last changed, so a snapshot calculated *before* a grade change is never shown as if it applied to the new grade. Backfill migration sets it to "now" for all existing projects — see §5. |
 | `db/migrate/20260818160804_add_target_grade_changed_at_to_projects.rb` | — | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Adds `projects.target_grade_changed_at` with a retained database `CURRENT_TIMESTAMP` default for rolling-deploy compatibility, backfills existing rows to the migration run time, then applies `NOT NULL`. |
 | `db/migrate/20260824000002_ensure_target_grade_changed_at_default.rb` | — | Release readiness | Idempotently restores the retained `CURRENT_TIMESTAMP` default for development or staging databases that recorded the earlier migration before its rolling-deploy fix was added. Fresh databases already satisfy the invariant, so this migration performs no schema change there. |
+| `db/migrate/20260824000003_add_detailed_peer_progress.rb` | — | API PR #60 | Adds internal exact `peer_progress_snapshots.submitted_count`, `status_counts` JSON, and `users.display_peer_progress` with `default: true, null: false`. Existing snapshot rows retain null exact aggregates and fail closed until re-aggregated. |
 | `app/api/units_api.rb`, `app/api/entities/unit_entity.rb` | `PUT /units/:id` accepts `peer_progress_enabled`; `UnitEntity` exposes it gated by `can_read_unit_config?` | `feature/peer-progress-indicator` (PPI-B01, merged via #16) | Convenors can toggle PPI on/off through the normal unit-update endpoint. Visibility remains staff-only, matching the "students never see raw config" pattern. |
+| `app/api/users_api.rb`, `app/api/entities/user_entity.rb` | `PUT /users/:id`, `Entities::UserEntity` | API PR #60 | Persists and exposes the user's `display_peer_progress` opt-out. It defaults on; when false, the PPI endpoint returns no metrics. |
 
 ### Divergence from the original discovery task
 
@@ -46,43 +50,48 @@ The [earlier discovery](./task-completion-data-discovery.md) found `Unit#student
 and `Project#task_stats` as existing, reusable aggregation infrastructure, built on `TaskStatus.complete`.
 **PPI-B01 does not reuse either of them.** It introduces a parallel, PPI-specific path instead:
 
-- Completion signal: `Task.where(...).where.not(file_uploaded_at: nil)` (a file has been uploaded), not
-  `task_status_id == TaskStatus.complete.id`. Note this changed mid-development from an earlier
-  `submission_date`-based check to `file_uploaded_at` — if you're comparing against an older read of
-  this branch, that's the difference.
+- Compatibility submission signal: `Task.where(...).where.not(file_uploaded_at: nil)`.
+- Compact completion signal: the current status is exactly `TaskStatus.complete`.
+- Advanced signal: one mutually exclusive count for each of all 15 canonical statuses.
 - Storage: a new `PeerProgressSnapshot` table, calculated nightly, not the ad-hoc per-request
   `Unit#student_task_completion_stats` calculation.
 
 This looks like a deliberate design choice (a stored nightly snapshot makes the suppression/staleness
 checks in the student-facing endpoint cheap and simple), not an oversight. It's recorded here so nobody
 assumes the two paths are the same thing, and so **PPI-T01** (calculation rules) has an accurate
-starting point if "submitted" vs "complete" needs revisiting.
+starting point. API PR #60 now exposes both meanings explicitly rather than
+labelling upload presence as task completion.
 
 ---
 
 ## 2. PPI field-ownership table
 
 Response contract as implemented in `PeerProgressApi#peer_progress_payload` on
-`feature/peer-progress-indicator`. All 9 fields are implemented and merged; **none are conceptually
-missing from the task-level response design**.
+API PR #60. It is an additive 15-field allowlist; the canonical, deployment
+contract is maintained in [`docs/peer-progress-api.md`](../peer-progress-api.md).
 
 | Field | Purpose | Current backend source | Available / Calculated / Missing | Transformation | Owning ticket |
 |---|---|---|---|---|---|
 | `task_definition_id` | Task context | Request param, validated via `unit.task_definitions.find_by(id:)` | Available | Passthrough of the validated ID | PPI-B01 |
 | `unit_id` | Unit context | `project.unit_id` | Available | Passthrough | PPI-B01 |
 | `target_grade` | Authorised-project target-grade lookup | `Project#target_grade`, validated through `Unit#grade_value?` inside `safe_target_grade` | Available (validated, not a raw column read) | Returns `nil` if the project has no target grade or it isn't enabled for the unit. This route accepts only `:id` and `:task_definition_id`, so a grade cannot be supplied directly to this request. However, `Project#target_grade` is student-writable through the existing project-update API: it is server-stored, not server-controlled. The timestamp guard withholds older snapshots until the next aggregation, but does not permanently bind a student to one grade band. See §5. | PPI-B01 / PPI-S01 |
-| `submitted_percentage` | Anonymous submitted percentage | `PeerProgressSnapshot#submitted_percentage`, computed nightly by `PeerProgressAggregationService#percentage` from `file_uploaded_at` presence counts; the PPI demo seed also refreshes these snapshots before it finishes | Calculated (batch, not live) | Stored rounded to 2 dp; **quantised to the nearest 10 percentage points** at request time (`quantised_percentage`, `PeerProgressApi`) before being returned. The 10-point bucket is paired with a hard cohort floor of 21 and the relationship is pinned by API tests that reject singleton buckets. Forced to `nil` (never `0` used as a sentinel) whenever suppressed, stale, disabled, unavailable, or the snapshot predates the student's last target-grade change. A stored genuine zero remains distinct from `nil`, but a client-facing `0.0` can also mean a small non-zero percentage rounded into the zero bucket. | PPI-B01 (endpoint) / PPI-T01 (whether submission-based is the right definition, and whether 10-point buckets are the agreed granularity) |
-| `is_suppressed` | Small-cohort suppression | Computed per-request: `snapshot.cohort_size < minimum_cohort_size!` (env-configured, but hard-floored at `MINIMUM_SAFE_COHORT_SIZE = 21` regardless of config) | Calculated | `cohort_size` itself is read internally but **never included** in the response. An empty cohort (0 students) is deliberately treated identically to "below threshold" — the response can't distinguish "nobody's in this grade band" from "too few to show," by design. **Can be `true` at the same time as `is_stale`** — suppression and staleness are not mutually exclusive branches. The count includes the requesting student's project, so a cohort of 21 means 20 peers plus the reader. | PPI-S01 (approve the threshold) / PPI-B01 (implementation) |
+| `submitted_percentage` | Anonymous peer submitted percentage | Exact internal `submitted_count`, minus the viewer's upload contribution | Calculated (batch plus request-time viewer subtraction) | Quantised to the nearest 10 points over remaining peers. The stored compatibility percentage is not used to reconstruct an exact count. Null for suppressed/stale/disabled/unavailable or legacy snapshots. | API PR #60 |
+| `completed_percentage` | Truthful compact peer completion percentage | Internal `status_counts['complete']`, minus the viewer if complete | Calculated | Independently quantised to 10 points over remaining peers; `nil` for suppressed/stale/disabled/unavailable states or incomplete exact snapshots. | API PR #60 |
+| `status_distribution` | Advanced full lifecycle bar | Internal exact 15-key `status_counts` | Calculated | Ordered array of `{status, percentage}`. Entire vector is `null` unless above the cohort floor and every status retains at least two feasible counts after considering all buckets together. | API PR #60 |
+| `distribution_available`, `distribution_unavailable_reason` | Detailed-mode availability | Distribution privacy policy and overall state | Calculated | Reasons are neutral (`privacy_protection`, `detailed_data_unavailable`, or the applicable overall reason) and never identify a sensitive category. | API PR #60 |
+| `is_suppressed` | Small-cohort suppression | Computed per-request after subtracting the viewer: `peer_cohort_size < minimum_cohort_size!` (hard floor 21) | Calculated | Raw whole/peer cohort sizes are never returned. The default requires at least 22 stored active projects so 21 other students remain. Empty and small peer cohorts share the same response. Can be true with `is_stale`. | API PR #60 / PPI-S01 |
 | `is_stale` | Data freshness | Computed per-request: `snapshot.calculated_at < ENV['DF_PPI_STALE_AFTER_HOURS'].hours.ago` | Calculated | Computed once and threaded through every branch, so it can appear alongside `is_suppressed: true` in the same response — see above. | PPI-T01 (approve the freshness window) / PPI-B01 (implementation) |
 | `is_feature_enabled` | Whether PPI is on for this unit | `units.peer_progress_enabled` column, `default: false`; settable via `PUT /units/:id` | Available | None | Unit-level config remains convenor-controlled for normal units. The demo-only `db:ppi_sample_data` task opts its synthetic `PPI1001` / `PPI1002` units in on both first run and rerun. See §5. |
+| `is_user_enabled` | Whether this user wants PPI displayed | `users.display_peer_progress`, default true/non-null; settable via `PUT /users/:id` | Available | False gates all peer metrics even when the unit feature is enabled. | API PR #60 |
 | `last_updated_at` | Snapshot freshness display | `snapshot.calculated_at.utc.iso8601` | Available when a snapshot exists, else `nil` | ISO 8601 UTC string | PPI-B01 / PPI-F01 (display formatting) |
 | `unavailable_message` | Safe unavailable message | Hardcoded Ruby constants in `PeerProgressApi` (`UNAVAILABLE_MESSAGE`, etc.) | Available, but **placeholder wording** | None | PPI-D01 — user-facing wording is explicitly out of scope for PPI-B01; the current strings are implementation placeholders, not approved copy. |
+| `unavailable_reason` | Safe machine-readable compact state | `PeerProgressApi#peer_progress_result` | Calculated | One of `user_disabled`, `feature_disabled`, `target_grade_unavailable`, `snapshot_unavailable`, `insufficient_cohort`, `aggregation_incomplete`, or `stale`; `null` on compact success. | API PR #60 |
 
 ### Fields the response must never include (confirmed by code review)
 
-`peer_progress_payload` is an allowlist — it only ever builds the 9 fields above. Confirmed absent:
-peer names, usernames, student IDs, peer project IDs, marks, feedback, individual task statuses, raw
-cohort records, and raw `cohort_size` / submitted counts. The migration comment on `cohort_size`
+`peer_progress_payload` is an allowlist — it only ever builds the 15 public fields. Confirmed absent:
+peer names, usernames, student IDs, peer project IDs, marks, feedback, individual peer task records,
+raw `status_counts`, raw `cohort_size`, and submitted/completed counts. The migration comment on `cohort_size`
 explicitly flags it as internal-only. This satisfies acceptance criterion 6 based on the code merged
 through API PR #16. That PR received a privacy-focused independent review and corrective commit; the
 dedicated PPI-S01 ticket should still decide the explicitly retained risks listed in §5 against the
@@ -107,110 +116,40 @@ flowchart TD
       G["Unit.active_units.where<br/>peer_progress_enabled: true"] --> G1["enqueue one AggregatePeerProgressJob<br/>per enabled active unit"]
       G1 --> H["PeerProgressAggregationService.call"]
       H --> I["Unit#active_projects.where target_grade: ...<br/>= eligible cohort selection"]
-      I --> J["Task.where project in cohort,<br/>file_uploaded_at not null<br/>= aggregate calculation"]
-      J --> K[("PeerProgressSnapshot row<br/>cohort_size, submitted_percentage, calculated_at")]
+      I --> J["Task.where project in cohort<br/>= upload count + all 15 current statuses;<br/>missing task = not_started"]
+      J --> K[("PeerProgressSnapshot row<br/>whole cohort_size + exact submitted_count,<br/>15-key status_counts, calculated_at")]
     end
 
     K -.snapshot read at request time.-> F
     F -->|"no snapshot yet"| F1b["200 OK, unavailable<br/>target_grade: present<br/>= no snapshot for a valid target grade"]
     F -->|found| R{"snapshot.calculated_at older than<br/>project.target_grade_changed_at ?"}
     R -->|yes| F1b
-    R -->|no| L{"cohort_size below hard floor of 21,<br/>or below DF_PPI_MINIMUM_COHORT_SIZE ?"}
+    R -->|no| V["PeerProgressViewerPolicy<br/>verify viewer project/task snapshot age;<br/>subtract viewer cohort/upload/status"]
+    V --> L{"remaining peers below hard floor of 21,<br/>or below DF_PPI_MINIMUM_COHORT_SIZE ?"}
     L -->|yes| M1["200 OK<br/>is_suppressed: true<br/>(is_stale may ALSO be true)<br/>= small-cohort suppression"]
     L -->|no| N{"calculated_at older than<br/>DF_PPI_STALE_AFTER_HOURS ?"}
-    N -->|yes| M2["200 OK<br/>is_stale: true, percentage: null"]
-    N -->|no| M3["quantised_percentage<br/>round to nearest 10 points"]
-    M3 --> M4["200 OK<br/>submitted_percentage, last_updated_at<br/>= safe API response"]
+    N -->|yes| M2["200 OK<br/>is_stale: true, all metrics null"]
+    N -->|no| M3["10-point compact quantisation<br/>+ vector-wide lifecycle privacy policy"]
+    M3 --> M4["200 OK<br/>submitted_percentage, completed_percentage,<br/>optional 15-status distribution, availability metadata"]
 
     F1a --> O
     F1b --> O
     M1 --> O
     M2 --> O
-    M4 --> O["PeerProgressIndicatorService.getIndicator<br/>frontend adapter (PPI-F01)<br/>currently returns MOCK data only"]
+    M4 --> O["PeerProgressIndicatorService.getIndicator<br/>frontend adapter (PPI-F01)"]
     O --> P["resolvePeerProgressState<br/>PPI-F03 - UI state mapping"]
-    P --> Q["PpiWidgetComponent  (f-ppi-widget)<br/>existing PPI component<br/>rendered inside task-description-card"]
+    P --> Q["PpiWidgetComponent (f-ppi-widget)<br/>rendered by task-dashboard<br/>after task-submission-card"]
 ```
 
 ---
 
 ## 4. Safe example responses
 
-Reproduced from the merged `docs/peer-progress-api.md` (PPI-B01), which documents these in more state
-variations than required here. Shown in the backend's snake_case; the task-widget frontend model
-(`PeerProgressIndicator`) uses the corresponding camelCase names (`submittedPercentage`,
-`isSuppressed`, etc.). Its current `targetGrade` and `lastUpdatedAt` types are incorrectly non-nullable
-for this response contract and must be widened before the live adapter lands — see §5.
-
-### Normal aggregate result
-
-Note `submitted_percentage` is quantised to the nearest 10 — the raw stored aggregate (e.g. 62.5) is
-never returned; this example shows the quantised value the client actually receives.
-
-```json
-{
-  "task_definition_id": 12,
-  "unit_id": 5,
-  "target_grade": 2,
-  "submitted_percentage": 60.0,
-  "is_suppressed": false,
-  "is_stale": false,
-  "is_feature_enabled": true,
-  "last_updated_at": "2026-08-10T03:15:00Z",
-  "unavailable_message": ""
-}
-```
-
-### Small-cohort-suppressed result
-
-```json
-{
-  "task_definition_id": 12,
-  "unit_id": 5,
-  "target_grade": 2,
-  "submitted_percentage": null,
-  "is_suppressed": true,
-  "is_stale": false,
-  "is_feature_enabled": true,
-  "last_updated_at": "2026-08-10T03:15:00Z",
-  "unavailable_message": "Peer progress is currently unavailable."
-}
-```
-
-### Unavailable result — no valid target grade
-
-```json
-{
-  "task_definition_id": 12,
-  "unit_id": 5,
-  "target_grade": null,
-  "submitted_percentage": null,
-  "is_suppressed": false,
-  "is_stale": false,
-  "is_feature_enabled": true,
-  "last_updated_at": null,
-  "unavailable_message": "Peer progress is currently unavailable."
-}
-```
-
-### Unavailable result — valid target grade, no usable snapshot yet
-
-This is also what a student sees after changing their target grade, until the next successful
-aggregation creates a snapshot newer than that change. Environments that already contain PPI snapshots
-when the target-grade timestamp migration runs see the same state until aggregation is rerun — see §5.
-
-```json
-{
-  "task_definition_id": 12,
-  "unit_id": 5,
-  "target_grade": 2,
-  "submitted_percentage": null,
-  "is_suppressed": false,
-  "is_stale": false,
-  "is_feature_enabled": true,
-  "last_updated_at": null,
-  "unavailable_message": "Peer progress is currently unavailable."
-}
-```
+The canonical 15-field normal response, lifecycle order, nullability, state
+reasons, preference semantics, and privacy explanation are maintained in
+[`docs/peer-progress-api.md`](../peer-progress-api.md). Keeping a second JSON copy
+here previously allowed the handover map to drift behind the production
+contract, so this document now links to the tested source of truth.
 
 ---
 
@@ -219,12 +158,12 @@ when the target-grade timestamp migration runs see the same state until aggregat
 | # | Gap / decision | Detail | Owner |
 |---|---|---|---|
 | 1 | **Backend merged** | PPI-B01 merged through API PR #16 at `1e011b12`; the implementation is present on `feature/peer-progress-indicator` and the source branch was deleted. | PPI-B01 (complete) |
-| 2 | **Frontend live-adapter mismatch** | The current mock widget calls `getIndicator(taskDefId, unitId, targetGrade, mockState)`. The real route expects an authorised project ID (`:id`) plus `:task_definition_id`; it derives unit and grade from that project. PPI-F01 should replace the mock signature with a project/task request, not forward `unitId`, `targetGrade`, or `mockState`. It must also widen `PeerProgressIndicator.targetGrade` and `.lastUpdatedAt` to accept `null`, as the backend contract does. | PPI-F01 |
-| 3 | **Two distinct frontend PPI contracts** | Both contracts are now merged into the web objective branch. `PeerProgressIndicator` / `PeerProgressIndicatorService` represents the task-level percentage widget. `PeerProgressResponse` / `PeerProgressService` represents a weekly burndown median with different fields. This is not a rename conflict and the types are not interchangeable; both services remain mock-backed pending their respective live API work. | PPI-F01 / burndown API owner |
+| 2 | **Frontend task adapter is live** | `PeerProgressIndicatorService.getIndicator(projectId, taskDefinitionId)` calls the authorised project/task route and maps the additive 15-field response. Unit, grade, mock state, and raw cohort values are not client-supplied. | PPI-F01 (implemented) |
+| 3 | **Two distinct frontend PPI contracts** | `PeerProgressIndicator` / `PeerProgressIndicatorService` is the live task-level API adapter. `PeerProgressResponse` / `PeerProgressService` is the separate weekly burndown contract. They are intentionally not interchangeable; weekly demo fixtures remain separate from the live task request. | PPI-F01 / burndown API owner |
 | 4 | **Production config still needs approval** | `doubtfire-deploy` 11.0.x supplies local-development values in `development/api.env` and both Compose files: `DF_PPI_MINIMUM_COHORT_SIZE=21` and `DF_PPI_STALE_AFTER_HOURS=48`. Production must supply separately reviewed values. The API rejects a cohort setting below the hard floor of 21, and the floor is coupled to the 10-point percentage bucket by tests. | PPI-T01 / PPI-S01 (approve production values) |
-| 5 | **Demo sample units are privacy-floor ready** | `units.peer_progress_enabled` still defaults `false` for normal units. The demo-only `db:ppi_sample_data` task runs only in Rails development against the dedicated `doubtfire-all-features-demo` database with `DF_DEMO_DATA_PROFILE=all-features`; it no longer accepts a typed production confirmation. It opts its synthetic `PPI1001` / `PPI1002` units in and derives the students per class from `DF_PPI_MINIMUM_COHORT_SIZE`, rounding up so every exact-grade cohort meets or exceeds any valid configured threshold. With the local floor of 21, that is 2 classes × 11 students per grade (22 per cohort). It validates configuration, enrolments, released tasks, cohort sizes, and fresh snapshots before returning. Reruns repair current seed-owned roles and enrolments, unit/task definitions, tutorial capacity, required cohorts, and snapshots in an existing sample database. | PPI test-data / integration owner |
+| 5 | **Demo sample units are privacy-floor and advanced-mode ready** | Both demo tasks remain triple-guarded. `db:all_features_demo` creates 25 total students, leaving 24 peers for the demo viewer, with seven visible lifecycle states. Read-only verify uses the production viewer and public-metrics policies. `db:ppi_sample_data` provisions at least configured peer floor + 1 total and validates public metrics for every viewer/snapshot. | API PR #60 / deploy PR #12 |
 | 6 | **Placeholder wording** | `unavailable_message` strings are hardcoded in Ruby, written by whoever built PPI-B01, not reviewed for tone/wording. | PPI-D01 |
-| 7 | **Privacy follow-ups remain** | API PR #16 received an independent privacy/authorisation review and the blocking count-recovery issue was fixed before merge. Two accepted follow-ups remain: students can change `Project#target_grade` and read the new band after the next aggregation, so the timestamp guard rate-limits band enumeration rather than closing it; and `cohort_size` includes the requesting student, so the floor of 21 can mean 20 peers plus the reader. | PPI-S01 |
+| 7 | **Detailed distribution is vector-checked** | Independent 10-point status buckets can jointly reveal exact counts even though each bucket alone is ambiguous (for example, cohort 24 split 6/18). API PR #60 therefore withholds the entire vector unless every status retains at least two feasible raw counts when all buckets and a known cohort size are considered. Compact values remain independently protected. Target-grade switching remains timestamp-gated as described below. | API PR #60 / PPI-S01 |
 | 8 | **Backfill invalidates snapshots in already-running PPI environments** | `add_target_grade_changed_at_to_projects` backfills existing projects to migration time, so any snapshot calculated before that time is withheld until aggregation runs again. On the first deployment of the complete PPI migration series the snapshot table is created empty, so there is nothing to invalidate. This matters to development or staging environments that ran the earlier snapshot migration and aggregation before applying the later timestamp migration. | PPI-B01 (deploy sequencing) |
 | 9 | **Suppression and staleness are not mutually exclusive** | `is_suppressed` and `is_stale` can both be `true`. The current frontend `resolvePeerProgressState` checks `isSuppressed` before `isStale`, so a suppressed-and-stale response resolves to the "hidden" UI state. PPI-F01/PPI-F03 should confirm that priority is intentional. | PPI-F01 / PPI-F03 |
 

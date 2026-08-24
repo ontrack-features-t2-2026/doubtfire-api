@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_24_000002) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_24_000003) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -469,9 +469,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000002) do
     t.datetime "calculated_at", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "submitted_count"
+    t.text "status_counts", size: :long, collation: "utf8mb4_bin"
     t.index ["task_definition_id"], name: "index_peer_progress_snapshots_on_task_definition_id"
     t.index ["unit_id", "task_definition_id", "target_grade"], name: "idx_peer_progress_unit_task_grade", unique: true
     t.index ["unit_id"], name: "index_peer_progress_snapshots_on_unit_id"
+    t.check_constraint "json_valid(`status_counts`)", name: "status_counts"
   end
 
   create_table "projects", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -1002,6 +1005,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000002) do
     t.string "tii_eula_version"
     t.datetime "tii_eula_date"
     t.boolean "tii_eula_version_confirmed", default: false, null: false
+    t.boolean "display_peer_progress", default: true, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["login_id"], name: "index_users_on_login_id", unique: true
     t.index ["role_id"], name: "index_users_on_role_id"

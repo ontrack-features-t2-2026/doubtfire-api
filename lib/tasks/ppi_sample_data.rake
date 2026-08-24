@@ -1,6 +1,46 @@
 require_all 'lib/helpers'
 require Rails.root.join('lib/demo_data/all_features_scenario')
 
+PPI_SAMPLE_LIFECYCLE_STATUSES = %i[
+  not_started
+  working_on_it
+  ready_for_feedback
+  fix_and_resubmit
+  redo
+  complete
+  fail
+].freeze
+PPI_SAMPLE_UPLOADED_STATUSES = %i[
+  ready_for_feedback
+  fix_and_resubmit
+  redo
+  complete
+  fail
+].freeze
+
+def ppi_viewer_vectors_safe?(unit:, snapshot:, minimum_cohort_size:)
+  viewers = unit.active_projects.where(
+    target_grade: snapshot.target_grade
+  )
+
+  viewers.all? do |project|
+    viewer_task = project.tasks.find_by!(
+      task_definition_id: snapshot.task_definition_id
+    )
+    peer_progress = PeerProgressViewerPolicy.build(
+      snapshot: snapshot,
+      viewer_project: project,
+      viewer_task: viewer_task
+    )
+    peer_progress.present? &&
+      peer_progress.fetch(:cohort_size) >= minimum_cohort_size &&
+      PeerProgressViewerPolicy
+        .public_metrics(peer_progress)
+        .fetch(:status_distribution)
+        .present?
+  end
+end
+
 namespace :db do
   desc 'Create deterministic, privacy-threshold-ready demo data for the Peer Progress Indicator dashboard'
   task ppi_sample_data: :environment do
@@ -61,10 +101,13 @@ namespace :db do
             "DF_PPI_MINIMUM_COHORT_SIZE must be at least #{PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE}"
     end
 
-    # Round up per class so the combined exact-grade cohort meets any valid
-    # configured threshold. Local development uses 11 + 11 = 22 for a floor of 21.
-    students_per_grade = minimum_cohort_size.fdiv(classes_per_unit).ceil
-    baseline_students_per_grade = PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE.fdiv(classes_per_unit).ceil
+    # The authenticated viewer is removed before the threshold is applied, so
+    # each exact-grade cohort needs at least one more student than the peer floor.
+    required_total_cohort = minimum_cohort_size + 1
+    students_per_grade = required_total_cohort.fdiv(classes_per_unit).ceil
+    baseline_students_per_grade =
+      (PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE + 1)
+      .fdiv(classes_per_unit).ceil
     sample_start_date = Time.zone.now - 6.weeks
     sample_end_date = Time.zone.now + 7.weeks
 
@@ -80,6 +123,7 @@ namespace :db do
         start_date: sample_start_date,
         end_date: sample_end_date,
         active: true,
+        send_notifications: false,
         allow_flexible_dates: false,
         peer_progress_enabled: true
       )
@@ -150,31 +194,29 @@ namespace :db do
             project.enrol_in(tutorial)
             seeded_projects << project
 
-            # Vary completion so percentages differ meaningfully both between tasks
-            # and between target-grade bands:
-            #  - higher target grade -> higher base completion rate
-            #  - later tasks -> lower completion rate (fewer students have reached them)
-            #  - a small per-student jitter spreads students within a grade band
+            # Populate the full lifecycle on every task/grade cohort. Rotating
+            # the extra members across tasks keeps the advanced bars varied,
+            # while ensuring redo and resubmission states are always demoable.
             task_defs.each_with_index do |td, td_idx|
               task = project.task_for_task_definition(td)
               seeded_tasks << task
-              next unless task.task_status_id == TaskStatus.not_started.id # skip on re-run
 
-              base_completion = (target_grade + 1) / grades.length.to_f # 0.25, 0.5, 0.75, 1.0
-              task_decay = 1.0 - ((td_idx.to_f / task_defs.length) * 0.4)
-              student_jitter = (i - ((students_per_grade - 1) / 2.0)) * 0.05
-              completion_chance = ((base_completion * task_decay) + student_jitter).clamp(0.05, 0.98)
+              cohort_ordinal = ((class_num - 1) * students_per_grade) + i
+              status_key = PPI_SAMPLE_LIFECYCLE_STATUSES.fetch(
+                (cohort_ordinal + td_idx + target_grade + unit_num) %
+                  PPI_SAMPLE_LIFECYCLE_STATUSES.length
+              )
+              status = TaskStatus.public_send(status_key)
+              uploaded = PPI_SAMPLE_UPLOADED_STATUSES.include?(status_key)
+              submitted_at = uploaded ? Time.zone.now - 1.day : nil
 
-              seed = (student_index * 13) + (td_idx * 7) + (unit_num * 31) + (class_num * 17)
-              roll = (seed % 100) / 100.0
-
-              if roll < completion_chance
-                complete_date = [unit.start_date + (td_idx + 1).weeks + rand(0..3).days, Time.zone.now].min
-                DatabasePopulator.assess_task(project, task, tutor, TaskStatus.complete, complete_date)
-              elsif roll < completion_chance + 0.15
-                DatabasePopulator.assess_task(project, task, tutor, TaskStatus.working_on_it, Time.zone.now)
-              end
-              # otherwise left as not_started (the Task.create! default)
+              task.update!(
+                task_status: status,
+                file_uploaded_at: submitted_at,
+                submission_date: submitted_at,
+                completion_date:
+                  status_key == :complete ? 1.day.ago.to_date : nil
+              )
             end
 
             project.update_task_stats
@@ -188,7 +230,9 @@ namespace :db do
       cohort_sizes = grades.index_with do |target_grade|
         unit.active_projects.where(target_grade: target_grade).count
       end
-      unless cohort_sizes.values.all? { |size| size >= minimum_cohort_size }
+      unless cohort_sizes.values.all? do |size|
+        size - 1 >= minimum_cohort_size
+      end
         raise "#{unit.code} PPI cohorts are below the configured threshold: #{cohort_sizes.inspect}"
       end
 
@@ -225,14 +269,21 @@ namespace :db do
                         demo_snapshots.all? do |snapshot|
                           latest_change = latest_grade_changes.fetch(snapshot.target_grade)
                           snapshot.cohort_size == cohort_sizes.fetch(snapshot.target_grade) &&
+                            snapshot.submitted_count.is_a?(Integer) &&
                             !snapshot.submitted_percentage.nil? &&
+                            ppi_viewer_vectors_safe?(
+                              unit: unit,
+                              snapshot: snapshot,
+                              minimum_cohort_size: minimum_cohort_size
+                            ) &&
                             snapshot.calculated_at >= fresh_after &&
                             (latest_change.nil? || snapshot.calculated_at >= latest_change)
                         end
       raise "#{unit.code} PPI demo snapshots failed post-seed validation" unless snapshots_valid
 
       puts "-> #{unit.code}: #{unit.tutorials.count} classes, #{unit.projects.count} students, " \
-           "#{task_defs.count} tasks, cohorts #{cohort_sizes.inspect}, #{demo_snapshots.count} demo snapshots"
+           "#{task_defs.count} tasks, peer-safe cohorts verified, " \
+           "#{demo_snapshots.count} demo snapshots"
     end
 
     puts 'PPI sample dashboard data ready.'

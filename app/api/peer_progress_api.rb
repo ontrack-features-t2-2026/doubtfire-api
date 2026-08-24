@@ -11,16 +11,17 @@ class PeerProgressApi < Grape::API
   # These two constants are a pair and must not be changed independently.
   #
   # The zero and hundred edge buckets only hide the underlying submitted count
-  # while half a bucket is wider than one student's share of the cohort. At a
-  # cohort of 20, one student is exactly five percentage points and zero becomes
-  # a singleton bucket, revealing that nobody has submitted. A floor of 21 makes
-  # one student's share smaller than the five-point bucket boundary, so every
-  # returned bucket represents at least two possible submitted counts.
+  # while half a bucket is wider than one student's share of the peer-only
+  # cohort. At 20 remaining peers, one peer is exactly five percentage points
+  # and zero becomes a singleton bucket. A floor of 21 remaining peers makes
+  # one peer's share smaller than the boundary, so every returned bucket
+  # represents at least two possible peer counts.
   #
   # 21 and 10.0 leave no cohort size at or above the floor from which the count
   # can be recovered. peer_progress_api_test.rb asserts the relationship holds.
   MINIMUM_SAFE_COHORT_SIZE = 21
-  PERCENTAGE_BUCKET_SIZE = 10.0
+  PERCENTAGE_BUCKET_SIZE =
+    PeerProgressDistributionPolicy::PERCENTAGE_BUCKET_SIZE
 
   before do
     header 'Cache-Control', 'private, no-store'
@@ -52,25 +53,11 @@ class PeerProgressApi < Grape::API
       start_date.present? && start_date <= Time.zone.now
     end
 
-    def snapshot_predates_target_grade?(project, snapshot)
-      changed_at = project.target_grade_changed_at
-
-      changed_at.present? && snapshot.calculated_at < changed_at
-    end
-
-    def quantised_percentage(value)
-      bucket_size = PeerProgressApi::PERCENTAGE_BUCKET_SIZE
-
-      ((value.to_f / bucket_size).round * bucket_size).to_f
-    end
-
     def safe_target_grade(project)
       target_grade = project.target_grade
 
-      return nil if target_grade.nil?
-      return nil unless project.unit.grade_value?(target_grade)
-
-      target_grade
+      target_grade if target_grade.present? &&
+                      project.unit.grade_value?(target_grade)
     end
 
     def positive_integer_env!(name)
@@ -95,37 +82,68 @@ class PeerProgressApi < Grape::API
       )
     end
 
-    def peer_progress_payload(
-      project:,
-      task_definition:,
-      snapshot: nil,
-      submitted_percentage: nil,
-      is_suppressed: false,
-      is_stale: false,
-      is_feature_enabled: true,
-      unavailable_message: ''
-    )
+    def peer_progress_payload(project:, task_definition:, **overrides)
+      state = {
+        snapshot: nil,
+        submitted_percentage: nil,
+        completed_percentage: nil,
+        status_distribution: nil,
+        distribution_unavailable_reason: nil,
+        is_suppressed: false,
+        is_stale: false,
+        is_feature_enabled: true,
+        is_user_enabled: current_user.display_peer_progress?,
+        unavailable_reason: nil,
+        unavailable_message: ''
+      }
+      overrides.assert_valid_keys(*state.keys)
+      state.merge!(overrides)
+
+      distribution_available = state[:status_distribution].present?
+      if !distribution_available &&
+         state[:distribution_unavailable_reason].nil?
+        state[:distribution_unavailable_reason] = state[:unavailable_reason]
+      end
+
       {
         task_definition_id: task_definition.id,
         unit_id: project.unit_id,
         target_grade: safe_target_grade(project),
-        submitted_percentage: submitted_percentage,
-        is_suppressed: is_suppressed,
-        is_stale: is_stale,
-        is_feature_enabled: is_feature_enabled,
-        last_updated_at: snapshot&.calculated_at&.utc&.iso8601,
-        unavailable_message: unavailable_message
+        submitted_percentage: state[:submitted_percentage],
+        completed_percentage: state[:completed_percentage],
+        status_distribution: state[:status_distribution],
+        distribution_available: distribution_available,
+        distribution_unavailable_reason:
+          state[:distribution_unavailable_reason],
+        is_suppressed: state[:is_suppressed],
+        is_stale: state[:is_stale],
+        is_feature_enabled: state[:is_feature_enabled],
+        is_user_enabled: state[:is_user_enabled],
+        last_updated_at: state[:snapshot]&.calculated_at&.utc&.iso8601,
+        unavailable_reason: state[:unavailable_reason],
+        unavailable_message: state[:unavailable_message]
       }
     end
 
     def peer_progress_result(project:, task_definition:)
       unit = project.unit
 
+      unless current_user.display_peer_progress?
+        return peer_progress_payload(
+          project: project,
+          task_definition: task_definition,
+          is_user_enabled: false,
+          unavailable_reason: 'user_disabled',
+          unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
+        )
+      end
+
       unless unit.peer_progress_enabled?
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
           is_feature_enabled: false,
+          unavailable_reason: 'feature_disabled',
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
@@ -135,6 +153,7 @@ class PeerProgressApi < Grape::API
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
+          unavailable_reason: 'target_grade_unavailable',
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
@@ -145,10 +164,30 @@ class PeerProgressApi < Grape::API
       )
 
       if snapshot.nil? ||
-         snapshot_predates_target_grade?(project, snapshot)
+         (project.target_grade_changed_at.present? &&
+           snapshot.calculated_at < project.target_grade_changed_at)
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
+          unavailable_reason: 'snapshot_unavailable',
+          unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
+        )
+      end
+
+      viewer_task = effective_task(
+        project: project,
+        task_definition: task_definition
+      )
+      unless PeerProgressViewerPolicy.viewer_context_current?(
+        snapshot: snapshot,
+        viewer_project: project,
+        viewer_task: viewer_task
+      )
+        return peer_progress_payload(
+          project: project,
+          task_definition: task_definition,
+          snapshot: snapshot,
+          unavailable_reason: 'snapshot_unavailable',
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
@@ -163,23 +202,31 @@ class PeerProgressApi < Grape::API
       # Treat an empty cohort exactly like every other cohort below the
       # privacy threshold. This prevents the response from revealing
       # whether a target-grade group is empty or merely small.
-      if snapshot.cohort_size < minimum_cohort_size
+      peer_cohort_size = [snapshot.cohort_size - 1, 0].max
+      if peer_cohort_size < minimum_cohort_size
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
           snapshot: snapshot,
           is_suppressed: true,
           is_stale: is_stale,
+          unavailable_reason: 'insufficient_cohort',
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
 
-      if snapshot.submitted_percentage.nil?
+      peer_progress = PeerProgressViewerPolicy.build(
+        snapshot: snapshot,
+        viewer_project: project,
+        viewer_task: viewer_task
+      )
+      if peer_progress.nil?
         return peer_progress_payload(
           project: project,
           task_definition: task_definition,
           snapshot: snapshot,
           is_stale: is_stale,
+          unavailable_reason: 'aggregation_incomplete',
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
@@ -190,6 +237,7 @@ class PeerProgressApi < Grape::API
           task_definition: task_definition,
           snapshot: snapshot,
           is_stale: true,
+          unavailable_reason: 'stale',
           unavailable_message: PeerProgressApi::UNAVAILABLE_MESSAGE
         )
       end
@@ -198,9 +246,7 @@ class PeerProgressApi < Grape::API
         project: project,
         task_definition: task_definition,
         snapshot: snapshot,
-        submitted_percentage: quantised_percentage(
-          snapshot.submitted_percentage
-        )
+        **PeerProgressViewerPolicy.public_metrics(peer_progress)
       )
     end
   end

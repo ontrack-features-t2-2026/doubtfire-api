@@ -59,6 +59,7 @@ class UsersApi < Grape::API
       optional :receive_task_notifications, type: Boolean, desc: 'Allow user to be sent task notifications'
       optional :receive_portfolio_notifications, type: Boolean, desc: 'Allow user to be sent portfolio notifications'
       optional :receive_feedback_notifications, type: Boolean, desc: 'Allow user to be sent feedback notifications'
+      optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
       optional :has_run_first_time_setup, type: Boolean, desc: 'Whether or not user has run first-time setup'
     end
@@ -71,6 +72,10 @@ class UsersApi < Grape::API
     # top-level params instead of the nested :user hash, so it never applied.)
     %i[receive_task_notifications receive_portfolio_notifications receive_feedback_notifications].each do |pref|
       params[:user][pref] = true if params[:user].key?(pref) && params[:user][pref].nil?
+    end
+    if params[:user].key?(:display_peer_progress) &&
+       params[:user][:display_peer_progress].nil?
+      params[:user][:display_peer_progress] = true
     end
 
     # can only modify if current_user.id is same as :id provided
@@ -90,6 +95,7 @@ class UsersApi < Grape::API
                                                       :receive_task_notifications,
                                                       :receive_portfolio_notifications,
                                                       :receive_feedback_notifications,
+                                                      :display_peer_progress,
                                                       :opt_in_to_research,
                                                       :has_run_first_time_setup
                                                     )

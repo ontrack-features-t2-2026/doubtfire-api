@@ -88,6 +88,76 @@ class PeerProgressSnapshotTest < ActiveSupport::TestCase
     assert_not decimal.valid?
   end
 
+  test 'accepts an exact submitted count within the cohort' do
+    snapshot = build_snapshot(
+      submitted_count: 4,
+      cohort_size: 10
+    )
+
+    assert snapshot.valid?
+  end
+
+  test 'rejects an invalid exact submitted count' do
+    negative = build_snapshot(submitted_count: -1)
+    decimal = build_snapshot(submitted_count: 1.5)
+    above_cohort = build_snapshot(
+      submitted_count: 11,
+      cohort_size: 10
+    )
+
+    assert_not negative.valid?
+    assert_not decimal.valid?
+    assert_not above_cohort.valid?
+  end
+
+  test 'accepts complete internal status counts that sum to the cohort' do
+    snapshot = build_snapshot(
+      cohort_size: 10,
+      status_counts: empty_status_counts.merge(
+        'not_started' => 6,
+        'complete' => 4
+      )
+    )
+
+    assert snapshot.valid?, snapshot.errors.full_messages.to_sentence
+  end
+
+  test 'persists lifecycle JSON as a hash on MariaDB compatible text columns' do
+    counts = empty_status_counts.merge('not_started' => 10)
+    snapshot = create(
+      :peer_progress_snapshot,
+      unit: @unit,
+      task_definition: @task_definition,
+      cohort_size: 10,
+      submitted_count: 0,
+      status_counts: counts
+    )
+    snapshot.reload
+
+    assert_instance_of Hash, snapshot.status_counts
+    assert_equal counts, snapshot.status_counts
+    assert_equal 0, snapshot.submitted_count
+  end
+
+  test 'rejects incomplete invalid or inconsistent internal status counts' do
+    missing = build_snapshot(
+      status_counts: empty_status_counts.except('redo')
+    )
+    negative = build_snapshot(
+      status_counts: empty_status_counts.merge(
+        'not_started' => 11,
+        'redo' => -1
+      )
+    )
+    wrong_total = build_snapshot(
+      status_counts: empty_status_counts.merge('not_started' => 9)
+    )
+
+    assert_not missing.valid?
+    assert_not negative.valid?
+    assert_not wrong_total.valid?
+  end
+
   test 'does not allow a percentage when cohort size is zero' do
     snapshot = build_snapshot(
       submitted_percentage: 0,
@@ -222,5 +292,9 @@ class PeerProgressSnapshotTest < ActiveSupport::TestCase
       task_definition: @task_definition,
       **overrides
     )
+  end
+
+  def empty_status_counts
+    PeerProgressDistributionPolicy::STATUS_KEYS.index_with { 0 }
   end
 end

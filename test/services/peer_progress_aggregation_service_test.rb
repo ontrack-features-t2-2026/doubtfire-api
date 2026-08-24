@@ -79,8 +79,87 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     )
 
     assert_equal 4, snapshot.cohort_size
+    assert_equal 3, snapshot.submitted_count
     assert_equal 75.0, snapshot.submitted_percentage.to_f
+    assert_equal 1, snapshot.status_counts.fetch('not_started')
+    assert_equal 3,
+                 snapshot.status_counts.fetch('ready_for_feedback')
+    assert_equal PeerProgressDistributionPolicy::STATUS_KEYS.sort,
+                 snapshot.status_counts.keys.sort
+    assert_equal 4, snapshot.status_counts.values.sum
     assert_equal @calculated_at, snapshot.calculated_at
+  end
+
+  def test_aggregates_every_canonical_task_status
+    projects = create_list(
+      :project,
+      PeerProgressDistributionPolicy::STATUS_KEYS.length,
+      unit: @unit,
+      target_grade: 0,
+      enrolled: true
+    )
+
+    projects.each_with_index do |project, index|
+      create(
+        :task,
+        project: project,
+        task_definition: @pass_task,
+        task_status: TaskStatus.find(index + 1)
+      )
+    end
+
+    run_service
+
+    snapshot = find_snapshot(
+      task_definition: @pass_task,
+      target_grade: 0
+    )
+
+    assert_equal(
+      PeerProgressDistributionPolicy::STATUS_KEYS.index_with { 1 },
+      snapshot.status_counts
+    )
+  end
+
+  def test_rejects_an_unknown_task_status_instead_of_counting_it_as_not_started
+    unsupported_status = TaskStatus.create!(
+      id: PeerProgressDistributionPolicy::STATUS_KEYS.length + 1,
+      name: 'Future lifecycle state',
+      description: 'Not yet included in the public peer-progress contract'
+    )
+    project = create(
+      :project,
+      unit: @unit,
+      target_grade: 0,
+      enrolled: true
+    )
+    create(
+      :task,
+      project: project,
+      task_definition: @pass_task,
+      task_status: unsupported_status
+    )
+
+    assert_raises(
+      PeerProgressAggregationService::UnsupportedTaskStatusError
+    ) { run_service }
+  end
+
+  def test_indexes_status_counts_by_task_definition_id_for_snapshot_upsert
+    create(
+      :project,
+      unit: @unit,
+      target_grade: 0,
+      enrolled: true
+    )
+
+    assert_nothing_raised { run_service }
+
+    snapshot = find_snapshot(
+      task_definition: @pass_task,
+      target_grade: 0
+    )
+    assert_equal 1, snapshot.status_counts.fetch('not_started')
   end
 
   def test_returns_a_genuine_zero_when_the_cohort_exists_but_nobody_has_submitted
@@ -100,6 +179,7 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     )
 
     assert_equal 4, snapshot.cohort_size
+    assert_equal 0, snapshot.submitted_count
     assert_equal 0.0, snapshot.submitted_percentage.to_f
   end
 
@@ -112,7 +192,12 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     )
 
     assert_equal 0, snapshot.cohort_size
+    assert_equal 0, snapshot.submitted_count
     assert_nil snapshot.submitted_percentage
+    assert_equal(
+      PeerProgressDistributionPolicy::STATUS_KEYS.index_with { 0 },
+      snapshot.status_counts
+    )
   end
 
   def test_only_creates_snapshots_for_tasks_applicable_to_the_target_grade
@@ -189,6 +274,7 @@ class PeerProgressAggregationServiceTest < ActiveSupport::TestCase
     )
 
     assert_equal statuses.length, snapshot.cohort_size
+    assert_equal statuses.length, snapshot.submitted_count
     assert_equal 100.0, snapshot.submitted_percentage.to_f
   end
 

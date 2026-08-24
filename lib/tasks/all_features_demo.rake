@@ -11,6 +11,13 @@ namespace :db do
     puts "All-features demo data is ready: #{result.inspect}"
   end
 
+  desc 'Verify the guarded all-features demo dataset without changing it'
+  task all_features_demo_verify: :environment do
+    result = DemoData::AllFeaturesScenario.verify!
+
+    puts "All-features demo data passed verification: #{result.inspect}"
+  end
+
   desc 'Remove only the guarded all-features demo dataset'
   task all_features_demo_cleanup: :environment do
     Rails.logger.level = Logger::INFO

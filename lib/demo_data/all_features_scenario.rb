@@ -31,7 +31,30 @@ module DemoData
     PPI_UNIT_CODE = 'DEMO10001'
     PPI_TASK_ABBREVIATION = 'DUE7'
     COHORT_SIZE = 25
-    SUBMITTED_COUNT = 10
+    PPI_STATUS_COUNTS = {
+      not_started: 5,
+      working_on_it: 5,
+      ready_for_feedback: 4,
+      fix_and_resubmit: 3,
+      redo: 3,
+      complete: 3,
+      fail: 2
+    }.freeze
+    PPI_REQUIRED_VISIBLE_STATUSES = PPI_STATUS_COUNTS.keys.freeze
+    PPI_UPLOADED_STATUSES = %i[
+      ready_for_feedback
+      fix_and_resubmit
+      redo
+      complete
+      fail
+    ].freeze
+    PPI_PEER_STATUS_KEYS = PPI_STATUS_COUNTS.flat_map do |status, count|
+      peer_count = status == :not_started ? count - 1 : count
+      [status] * peer_count
+    end.freeze
+    SUBMITTED_COUNT = PPI_UPLOADED_STATUSES.sum do |status|
+      PPI_STATUS_COUNTS.fetch(status)
+    end
     NOTIFICATION_COUNT = 7
 
     TASK_BLUEPRINTS = [
@@ -105,6 +128,10 @@ module DemoData
       new(reference_time: Time.zone.now).cleanup!
     end
 
+    def self.verify!(reference_time: Time.zone.now)
+      new(reference_time: reference_time).verify!
+    end
+
     def initialize(reference_time:)
       @reference_time = reference_time.in_time_zone.beginning_of_day
     end
@@ -126,6 +153,102 @@ module DemoData
 
       ActiveRecord::Base.transaction { cleanup_records! }
       true
+    end
+
+    def verify!
+      guard!
+
+      minimum_cohort_size = configured_positive_integer!(
+        'DF_PPI_MINIMUM_COHORT_SIZE'
+      )
+      stale_after_hours = configured_positive_integer!(
+        'DF_PPI_STALE_AFTER_HOURS'
+      )
+      if minimum_cohort_size < PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE
+        raise SafetyError,
+              'DF_PPI_MINIMUM_COHORT_SIZE is below the API privacy floor.'
+      end
+
+      student = User.find_by!(username: DEMO_USERNAME)
+      unit = Unit.find_by!(code: PPI_UNIT_CODE)
+      definition = unit.task_definitions.find_by!(
+        abbreviation: PPI_TASK_ABBREVIATION
+      )
+      project = student.projects.find_by!(unit: unit)
+      viewer_task = project.tasks.find_by!(task_definition: definition)
+      snapshot = unit.peer_progress_snapshots.find_by!(
+        task_definition: definition,
+        target_grade: project.target_grade
+      )
+
+      cohort_size = unit.active_projects.where(
+        target_grade: project.target_grade
+      ).count
+      unless unit.active? && unit.peer_progress_enabled? &&
+             student.display_peer_progress? && project.enrolled? &&
+             cohort_size == COHORT_SIZE &&
+             cohort_size - 1 >= minimum_cohort_size
+        raise SafetyError,
+              'All-features peer-progress cohort or display settings are invalid.'
+      end
+
+      unless definition.target_grade <= project.target_grade &&
+             definition.start_date.present? &&
+             definition.start_date <= Time.zone.now
+        raise SafetyError,
+              'All-features peer-progress task is not released for the demo student.'
+      end
+
+      latest_grade_change = unit.active_projects.where(
+        target_grade: project.target_grade
+      ).maximum(:target_grade_changed_at)
+      unless snapshot.cohort_size == cohort_size &&
+             snapshot.submitted_count.is_a?(Integer) &&
+             snapshot.submitted_percentage.present? &&
+             snapshot.calculated_at >= stale_after_hours.hours.ago &&
+             (latest_grade_change.nil? ||
+               snapshot.calculated_at >= latest_grade_change)
+        raise SafetyError,
+              'All-features peer-progress snapshot is stale or inconsistent.'
+      end
+
+      peer_progress = PeerProgressViewerPolicy.build(
+        snapshot: snapshot,
+        viewer_project: project,
+        viewer_task: viewer_task
+      )
+      if peer_progress.nil?
+        raise SafetyError,
+              'All-features peer-progress snapshot cannot exclude the demo viewer.'
+      end
+
+      public_metrics = PeerProgressViewerPolicy.public_metrics(peer_progress)
+      distribution = public_metrics.fetch(:status_distribution)
+      unless distribution&.length ==
+             PeerProgressDistributionPolicy::STATUS_KEYS.length
+        raise SafetyError,
+              'All-features detailed peer-progress distribution is suppressed.'
+      end
+
+      percentages = distribution.index_by do |entry|
+        entry.fetch(:status).to_sym
+      end
+      unless PPI_REQUIRED_VISIBLE_STATUSES.all? do |status|
+        percentages.fetch(status).fetch(:percentage).positive?
+      end
+        raise SafetyError,
+              'All-features peer-progress lifecycle statuses are not visible.'
+      end
+
+      {
+        profile: PROFILE_NAME,
+        submitted_percentage: public_metrics.fetch(:submitted_percentage),
+        completed_percentage: public_metrics.fetch(:completed_percentage),
+        status_distribution: distribution
+      }
+    rescue ActiveRecord::RecordNotFound => e
+      raise SafetyError,
+            "All-features demo data is incomplete: #{e.message}"
     end
 
     def guard!
@@ -153,6 +276,15 @@ module DemoData
 
     def connected_database_name
       ActiveRecord::Base.connection_db_config.database.to_s
+    end
+
+    def configured_positive_integer!(name)
+      value = Integer(ENV.fetch(name), 10)
+      raise ArgumentError unless value.positive?
+
+      value
+    rescue KeyError, ArgumentError
+      raise SafetyError, "#{name} must be a positive integer."
     end
 
     def create_scenario!
@@ -229,6 +361,7 @@ module DemoData
         receive_task_notifications: notifications_enabled,
         receive_feedback_notifications: notifications_enabled,
         receive_portfolio_notifications: notifications_enabled,
+        display_peer_progress: true,
         opt_in_to_research: false,
         has_run_first_time_setup: true
       )
@@ -325,13 +458,18 @@ module DemoData
           notifications_enabled: false
         )
         project = enrol!(unit: unit, student: student, campus: campus)
-        uploaded = index < SUBMITTED_COUNT
+        status_key = PPI_PEER_STATUS_KEYS.fetch(index)
+        status = TaskStatus.public_send(status_key)
+        uploaded = PPI_UPLOADED_STATUSES.include?(status_key)
+        submitted_at = uploaded ? reference_time - 1.day : nil
         Task.create!(
           project: project,
           task_definition: ppi_definition,
-          task_status: uploaded ? TaskStatus.ready_for_feedback : TaskStatus.not_started,
-          file_uploaded_at: uploaded ? reference_time - 1.day : nil,
-          submission_date: uploaded ? reference_time - 1.day : nil
+          task_status: status,
+          file_uploaded_at: submitted_at,
+          submission_date: submitted_at,
+          completion_date:
+            status_key == :complete ? (reference_time - 1.day).to_date : nil
         )
         project.update_task_stats
       end
@@ -421,6 +559,17 @@ module DemoData
         task_definition: ppi_definition,
         target_grade: 0
       )
+      demo_project = User.find_by!(username: DEMO_USERNAME)
+                         .projects.find_by!(unit: ppi_unit)
+      viewer_task = demo_project.tasks.find_by!(
+        task_definition: ppi_definition
+      )
+      peer_progress = PeerProgressViewerPolicy.build(
+        snapshot: snapshot,
+        viewer_project: demo_project,
+        viewer_task: viewer_task
+      )
+      public_metrics = PeerProgressViewerPolicy.public_metrics(peer_progress)
 
       {
         profile: PROFILE_NAME,
@@ -435,8 +584,10 @@ module DemoData
         peer_progress: {
           unit_code: PPI_UNIT_CODE,
           task_abbreviation: PPI_TASK_ABBREVIATION,
-          cohort_size: snapshot.cohort_size,
-          submitted_percentage: snapshot.submitted_percentage.to_f
+          submitted_percentage: public_metrics.fetch(:submitted_percentage),
+          completed_percentage: public_metrics.fetch(:completed_percentage),
+          distribution_available:
+            public_metrics.fetch(:status_distribution).present?
         }
       }
     end

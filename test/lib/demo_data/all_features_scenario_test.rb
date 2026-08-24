@@ -87,8 +87,11 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert_equal counts_after_first_run, namespace_counts
     assert_equal first_summary.except(:peer_progress),
                  second_summary.except(:peer_progress)
-    assert_equal 40.0,
+    assert_equal 60.0,
                  second_summary.dig(:peer_progress, :submitted_percentage)
+    assert_equal 10.0,
+                 second_summary.dig(:peer_progress, :completed_percentage)
+    assert second_summary.dig(:peer_progress, :distribution_available)
     assert_equal DemoData::AllFeaturesScenario::NOTIFICATION_COUNT,
                  demo_student.notifications.count
 
@@ -210,7 +213,11 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
                  unit.tasks.where.not(file_uploaded_at: nil).count
     assert_equal DemoData::AllFeaturesScenario::COHORT_SIZE,
                  snapshot.cohort_size
-    assert_equal 40.0, snapshot.submitted_percentage.to_f
+    assert_equal DemoData::AllFeaturesScenario::SUBMITTED_COUNT,
+                 snapshot.submitted_count
+    assert_equal 60.0, snapshot.submitted_percentage.to_f
+    assert_equal DemoData::AllFeaturesScenario::PPI_STATUS_COUNTS.stringify_keys,
+                 snapshot.status_counts
 
     ENV['DF_PPI_MINIMUM_COHORT_SIZE'] =
       PeerProgressApi::MINIMUM_SAFE_COHORT_SIZE.to_s
@@ -220,8 +227,19 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     get "/api/projects/#{project.id}/task_def_id/#{definition.id}/peer_progress"
 
     assert_equal 200, last_response.status, last_response.body
-    assert_equal 40.0, last_response_body.fetch('submitted_percentage')
+    assert_equal 60.0, last_response_body.fetch('submitted_percentage')
+    assert_equal 10.0, last_response_body.fetch('completed_percentage')
+    assert_equal true,
+                 last_response_body.fetch('distribution_available')
+    assert_equal PeerProgressDistributionPolicy::STATUS_KEYS,
+                 last_response_body.fetch('status_distribution').pluck('status')
     assert_equal false, last_response_body.fetch('is_suppressed')
+
+    verification = with_demo_safety { @scenario.verify! }
+    assert_equal 60.0, verification.fetch(:submitted_percentage)
+    assert_equal 10.0, verification.fetch(:completed_percentage)
+    assert_equal PeerProgressDistributionPolicy::STATUS_KEYS,
+                 verification.fetch(:status_distribution).pluck(:status)
   end
 
   def assert_notifications_are_curated
@@ -269,6 +287,7 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert(peers.all? { |peer| !peer.receive_task_notifications? })
     assert(peers.all? { |peer| !peer.receive_feedback_notifications? })
     assert(peers.all? { |peer| !peer.receive_portfolio_notifications? })
+    assert users.all?(&:display_peer_progress?)
   end
 
   def namespace_counts
