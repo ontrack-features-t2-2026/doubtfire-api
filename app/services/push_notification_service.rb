@@ -5,14 +5,16 @@
 #
 #   * without VAPID keys it is a no-op, so the app behaves exactly as it did
 #     before push existed for anyone who has not configured them
-#   * one browser failing never stops the others and never reaches the caller,
-#     so a push problem cannot block an in-app notification or an email
+#   * one browser failing never stops attempts to the others; transient failures
+#     are raised only after fan-out so Sidekiq can retry the delivery job
 #
 # Because the shared fan-out queues the job, every event that queues an email
 # also queues a push, with no per-event work.
 #
 # Key generation and setup: docs/notifications/push-setup.md.
 class PushNotificationService
+  class DeliveryError < StandardError; end
+
   # Push services reject a payload much over 4KB once encrypted. Nothing here
   # comes close, but the message is user-facing text assembled from names and
   # task titles, so it is trimmed rather than trusted.
@@ -63,7 +65,21 @@ class PushNotificationService
 
     payload = payload_for(notification)
 
-    subscriptions.each { |subscription| deliver_to(subscription, payload) }
+    failures = []
+    subscriptions.each do |subscription|
+      deliver_to(subscription, payload)
+    rescue StandardError => e
+      # Finish the fan-out before raising. This preserves delivery to healthy
+      # browsers while ensuring a provider outage reaches Sidekiq's retry path.
+      Rails.logger.error "Failed to push to subscription #{subscription.id}: #{e.class}"
+      failures << e
+    end
+
+    return if failures.empty?
+
+    raise DeliveryError,
+          "Push delivery failed for #{failures.length} subscription(s)",
+          cause: failures.first
   end
 
   # The shape Angular's own ngsw-worker.js understands. It looks for a top level
@@ -175,11 +191,6 @@ class PushNotificationService
     # it on every notification from here to the end of time.
     Rails.logger.info "Removing dead push subscription #{subscription.id}: #{e.class}"
     subscription.destroy
-  rescue StandardError => e
-    # Rate limits, the push service being down, a rejected payload. Somebody
-    # else's outage, and not a reason to fail the notification. Log and move on
-    # to the next browser.
-    Rails.logger.error "Failed to push to subscription #{subscription.id}: #{e.class}: #{e.message}"
   end
 
   def self.vapid_details

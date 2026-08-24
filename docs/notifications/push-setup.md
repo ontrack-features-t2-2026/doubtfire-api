@@ -85,13 +85,13 @@ recover without a push service surfacing workflow alerts days or weeks late.
 - **404 or 410** means the browser threw the registration away. The row is
   deleted, because nothing will ever reach it again.
 - **Anything else** (429 rate limit, the push service being down, a rejected
-  payload) is logged and skipped. The subscription is kept, because those are
-  temporary and deleting on them would silently unsubscribe people the first time
-  a push service had a bad day.
-- The delivery job is configured for three Sidekiq retries when loading the
-  notification or invoking the delivery service raises. Per-subscription
-  provider failures are logged and skipped inside the service so one broken
-  browser never blocks the rest.
+  payload) is logged and retained. Delivery continues to the user's remaining
+  browsers, then the aggregate failure is raised so Sidekiq can retry. The
+  subscription is kept because deleting on a temporary outage would silently
+  unsubscribe people the first time a push service had a bad day.
+- The delivery job is configured for three Sidekiq retries. A missing
+  notification row is also retryable because a fast worker may run before an
+  enclosing producer transaction commits.
 - Nothing propagates to the request caller. A push failure must never block the
   in-app notification or the email hand-off.
 

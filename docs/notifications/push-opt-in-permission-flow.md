@@ -142,8 +142,9 @@ If the button stays disabled:
 ### The subscription expired or was invalidated
 
 When a push service answers `404` or `410`, the api treats the registration as
-dead and deletes its `push_subscriptions` row. Delivery failures are swallowed
-so the original in-app notification and email are not blocked.
+dead and deletes its `push_subscriptions` row. Temporary failures stay inside
+the asynchronous delivery path: they are raised to Sidekiq for retry and never
+propagate to the original request, in-app record, or email hand-off.
 
 There is currently no message back to the open browser when this cleanup
 happens. Its local `SwPush.subscription` can therefore still make Profile say

@@ -32,8 +32,10 @@ RUN apt-get update && \
 
 ENV PATH=$PATH:/opt/texlive/bin/x86_64-linux:/opt/texlive/bin/aarch64-linux
 
-# Install required TeX Live packages for lualatex compilation
-RUN tlmgr install \
+# Install required TeX Live packages for lualatex compilation. Keep the frozen
+# repository explicit here as well as in install-tl so a local tlmgr setting
+# cannot make this second phase mutable.
+RUN tlmgr --repository "$TL_MIRROR" install \
   catchfile \
   csvsimple \
   environ \
@@ -55,7 +57,7 @@ RUN tlmgr install \
   paralist \
   pdfcol \
   pdflscape \
-  pdfmanagement \
+  pdfmanagement-testphase \
   pdfpages \
   tagpdf \
   tcolorbox \
@@ -81,6 +83,16 @@ ENV PATH=$PATH:/opt/texlive/bin/x86_64-linux:/opt/texlive/bin/aarch64-linux
 
 # Preload fonts
 RUN luaotfload-tool --update
+
+# Exercise the same PDF-management ordering used by application.pdf.erbtex in
+# the final image. This proves the separately installed implementation and its
+# Hyperref integration survived the builder-to-runtime copy.
+RUN kpsewhich pdfmanagement-testphase.sty && \
+  lualatex --halt-on-error --interaction=nonstopmode \
+    --jobname=pdfmanagement-smoke --output-directory=/tmp \
+    '\DocumentMetadata{uncompress}\documentclass{article}\usepackage[colorlinks]{hyperref}\begin{document}OnTrack smoke. \href{https://example.invalid}{link}\end{document}' && \
+  test -s /tmp/pdfmanagement-smoke.pdf && \
+  rm -f /tmp/pdfmanagement-smoke.*
 
 # Copy in Latex build script, along with asset images
 COPY ./lib/shell/latex_build.sh /texlive/shell/latex_build.sh

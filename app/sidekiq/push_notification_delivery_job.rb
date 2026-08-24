@@ -8,9 +8,10 @@ class PushNotificationDeliveryJob
   # Redis carries only the stable database id. The worker reloads the current
   # notification and subscription state immediately before delivery.
   def perform(notification_id)
-    notification = Notification.find_by(id: notification_id)
-    return if notification.nil?
-
+    # A producer may enqueue from inside a wider database transaction. Raising
+    # on a not-yet-visible row makes Sidekiq retry after that transaction commits
+    # instead of acknowledging and permanently dropping the delivery.
+    notification = Notification.find(notification_id)
     PushNotificationService.deliver(notification)
   end
 end

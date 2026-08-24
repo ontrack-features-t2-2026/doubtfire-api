@@ -124,13 +124,36 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
 
   # A rate limit or an outage is temporary. Deleting on those would silently
   # unsubscribe people the first time a push service had a bad day.
-  def test_a_temporary_push_service_failure_keeps_the_subscription
+  def test_a_temporary_push_service_failure_is_raised_for_retry_and_keeps_the_subscription
     create_subscription
     stub_request(:post, ENDPOINT).to_return(status: 429)
 
     assert_no_difference 'PushSubscription.count' do
-      with_keys { assert_nothing_raised { PushNotificationService.deliver(@notification) } }
+      with_keys do
+        assert_raises(PushNotificationService::DeliveryError) do
+          PushNotificationService.deliver(@notification)
+        end
+      end
     end
+  end
+
+  def test_a_temporary_failure_does_not_stop_the_other_browsers
+    failing_endpoint = "#{ENDPOINT}-unavailable"
+    healthy_endpoint = "#{ENDPOINT}-healthy"
+    create_subscription(endpoint: failing_endpoint)
+    create_subscription(endpoint: healthy_endpoint)
+
+    stub_request(:post, failing_endpoint).to_return(status: 503)
+    healthy = stub_request(:post, healthy_endpoint).to_return(status: 201)
+
+    with_keys do
+      assert_raises(PushNotificationService::DeliveryError) do
+        PushNotificationService.deliver(@notification)
+      end
+    end
+
+    assert_requested healthy
+    assert_equal 2, @user.push_subscriptions.reload.count
   end
 
   def test_one_dead_browser_does_not_stop_the_others

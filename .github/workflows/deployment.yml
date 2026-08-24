@@ -1,13 +1,5 @@
-name: create-doubtfire-deployment
+name: Legacy image validation (non-publishing)
 on:
-  push:
-    tags:
-      - "v*"
-    # branches:
-    #   - '*.x'
-    #   - 'development'
-    #   - 'main'
-  deployment:
   workflow_dispatch:
 
 permissions:
@@ -23,12 +15,6 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: github.event_name != 'pull_request'
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Setup meta for development image
         id: docker_meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
@@ -36,12 +22,13 @@ jobs:
           images: lmsdoubtfire/doubtfire-api
           tags: |
             type=semver,pattern={{major}}.{{minor}}.x-dev
+            type=sha,prefix=manual-
       - name: Build and push api server
         id: docker_build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
       - name: Image digest
@@ -55,12 +42,6 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: github.event_name != 'pull_request'
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Setup meta for api server
         id: docker_meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
@@ -72,13 +53,14 @@ jobs:
             type=semver,pattern=prod-{{version}}
             type=semver,pattern=prod-{{major}}.{{minor}}
             type=semver,pattern=prod-{{major}}
+            type=sha,prefix=manual-
       - name: Build and push api server
         id: docker_build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: deployApi.Dockerfile
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           sbom: true
@@ -94,12 +76,6 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: github.event_name != 'pull_request'
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Setup meta for app server
         id: docker_meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
@@ -111,6 +87,7 @@ jobs:
             type=semver,pattern=prod-{{version}}
             type=semver,pattern=prod-{{major}}.{{minor}}
             type=semver,pattern=prod-{{major}}
+            type=sha,prefix=manual-
       - name: Build and push app server
         id: docker_build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -119,7 +96,7 @@ jobs:
           context: .
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           sbom: true
           provenance: mode=max
       - name: Image digest

@@ -36,11 +36,13 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     assert_includes body, notification.message
   end
 
-  def test_missing_notification_is_a_no_op
+  def test_missing_notification_is_raised_so_a_pre_commit_race_is_retried
     assert_no_difference(
       -> { ActionMailer::Base.deliveries.count }
     ) do
-      NotificationEmailJob.new.perform(-1)
+      assert_raises(ActiveRecord::RecordNotFound) do
+        NotificationEmailJob.new.perform(-1)
+      end
     end
   end
 

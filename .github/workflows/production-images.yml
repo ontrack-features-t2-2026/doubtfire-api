@@ -2,27 +2,9 @@ name: Production image builds
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/production-images.yml"
-      - "deployApi.Dockerfile"
-      - "deployAppSvr.Dockerfile"
-      - "Gemfile"
-      - "Gemfile.lock"
-      - "app/**"
-      - "config/**"
-      - "lib/**"
   push:
     branches:
       - "*.x"
-    paths:
-      - ".github/workflows/production-images.yml"
-      - "deployApi.Dockerfile"
-      - "deployAppSvr.Dockerfile"
-      - "Gemfile"
-      - "Gemfile.lock"
-      - "app/**"
-      - "config/**"
-      - "lib/**"
   workflow_dispatch:
 
 permissions:
@@ -36,7 +18,7 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -47,6 +29,12 @@ jobs:
           - name: app worker
             dockerfile: deployAppSvr.Dockerfile
             cache_scope: production-app
+          - name: TeX Live helper
+            dockerfile: texlive.Dockerfile
+            cache_scope: production-texlive
+          - name: JPlag helper
+            dockerfile: jplag.Dockerfile
+            cache_scope: production-jplag
 
     steps:
       - name: Check out source
@@ -62,5 +50,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: false
+          sbom: true
+          provenance: mode=max
           cache-from: type=gha,scope=${{ matrix.cache_scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}

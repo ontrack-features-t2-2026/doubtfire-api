@@ -263,6 +263,12 @@ other channel twice if its first hand-off succeeded before the failure. Channel
 jobs must therefore continue to accept only stable ids and tolerate duplicate
 delivery.
 
+Both channel jobs must raise when their notification id is not yet visible.
+Producers can run inside wider database transactions, so a fast worker may read
+before commit; treating that lookup as a successful no-op permanently loses the
+channel. Push provider failures are attempted across all registered browsers
+and then raised as an aggregate error so Sidekiq's retry policy is effective.
+
 **Never loop over a whole cohort and call `NotificationService.notify` directly
 from a web request.** Even without provider I/O, that would create one record
 and make two queue round trips per recipient before the request can finish. The

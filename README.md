@@ -29,6 +29,11 @@ supplied through an ignored `.env` file copied from `.env.example`. Any AAF
 secret ever committed to Git must be treated as compromised and rotated by its
 identity owner.
 
+Image publication is coordinated from the exact API/web revisions pinned by
+`doubtfire-deploy` and its `production/publish-release.sh` release gate. The
+legacy API image workflow is intentionally build-only and cannot publish a
+tagged image independently of the cross-repository handover checks.
+
 ## Environment variables
 
 Doubtfire requires multiple environment variables that help define settings about the Doubtfire instance running. Whilst these will default to other values, you may want to override them in production.
