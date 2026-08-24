@@ -39,6 +39,7 @@ class AuthenticationCallbackSecurityTest < ActiveSupport::TestCase
   test 'authentication helper source does not interpolate presented tokens into logs' do
     source = File.read(Rails.root.join('app/helpers/authentication_helpers.rb'))
 
-    refute_includes source, '#{auth_param}'
+    literal_interpolation = ['#', '{auth_param}'].join
+    assert_equal false, source.include?(literal_interpolation)
   end
 end

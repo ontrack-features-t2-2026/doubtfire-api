@@ -63,25 +63,25 @@ class ReadinessCheckUnitTest < Minitest::Test
   end
 
   def test_not_ready_when_database_returns_an_unexpected_result
-    refute build_check(database: DatabaseConnection.new(result: 0)).ready?
+    assert_equal false, build_check(database: DatabaseConnection.new(result: 0)).ready?
   end
 
   def test_not_ready_when_database_raises
     database = DatabaseConnection.new(error: RuntimeError.new('database details'))
 
-    refute build_check(database: database).ready?
+    assert_equal false, build_check(database: database).ready?
   end
 
   def test_not_ready_when_redis_returns_an_unexpected_result
     redis = RedisConnection.new(result: 'NOT PONG')
 
-    refute build_check(redis: redis).ready?
+    assert_equal false, build_check(redis: redis).ready?
   end
 
   def test_not_ready_when_redis_raises
     redis = RedisConnection.new(error: RuntimeError.new('redis details'))
 
-    refute build_check(redis: redis).ready?
+    assert_equal false, build_check(redis: redis).ready?
   end
 
   private

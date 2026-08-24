@@ -1,4 +1,5 @@
 require 'test_helper'
+require 'minitest/mock'
 
 class ReadinessControllerTest < ActionDispatch::IntegrationTest
   StaticReadinessCheck = Struct.new(:result) do

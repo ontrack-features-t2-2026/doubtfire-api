@@ -17,12 +17,12 @@ class ReleaseConfigurationTest < Minitest::Test
     )
 
     [api, worker].each do |dockerfile|
-      assert_no_match(/\b(?:docker-ce|containerd\.io)\b/, dockerfile)
-      assert_no_match(/^\s*redis\s*\\?$/m, dockerfile)
+      assert_equal false, /\b(?:docker-ce|containerd\.io)\b/.match?(dockerfile)
+      assert_equal false, /^\s*redis\s*\\?$/m.match?(dockerfile)
       assert_match(/bundle config set deployment true/, dockerfile)
     end
 
-    assert_no_match(/db:migrate/, api)
+    assert_equal false, /db:migrate/.match?(api)
     assert_match(
       /CMD \["bundle", "exec", "rails", "server", "-b", "0\.0\.0\.0"\]/,
       api
@@ -41,14 +41,14 @@ class ReleaseConfigurationTest < Minitest::Test
 
     assert_match(/^FROM alpine:3\.23\.3@sha256:[0-9a-f]{64}$/m, jplag)
     assert_includes jplag, 'JPLAG_SHA256='
-    assert_includes jplag, 'sha256sum --check'
+    assert_includes jplag, 'sha256sum -c -'
   end
 
   def test_development_compose_has_no_literal_institution_credential
     compose = read('docker-compose.yml')
 
     assert_match(/DF_SECRET_KEY_AAF:\s*\$\{DF_SECRET_KEY_AAF:-\}/, compose)
-    assert_no_match(%r{https?://[^\s$]*(?:aaf\.edu\.au|deakin\.edu\.au)}i, compose)
+    assert_equal false, %r{https?://[^\s$]*(?:aaf\.edu\.au|deakin\.edu\.au)}i.match?(compose)
   end
 
   def test_production_image_workflow_actions_are_immutable

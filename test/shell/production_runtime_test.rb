@@ -54,15 +54,15 @@ class ProductionRuntimeTest < Minitest::Test
       assert_includes contents, 'DF_SECRET_KEY_BASE'
       assert_includes contents, 'DOCKER_HOST'
       assert_includes contents, 'DOCKER_TLS_VERIFY'
-      refute_includes contents, 'DOCKER_AUTH_CONFIG'
-      refute_includes contents, 'must-not-be-persisted-docker-auth'
-      refute_includes contents, 'UNRELATED_SECRET'
-      refute_includes contents, 'must-not-be-persisted'
+      assert_equal false, contents.include?('DOCKER_AUTH_CONFIG')
+      assert_equal false, contents.include?('must-not-be-persisted-docker-auth')
+      assert_equal false, contents.include?('UNRELATED_SECRET')
+      assert_equal false, contents.include?('must-not-be-persisted')
 
       restore_command = [
         'source "$1"',
         'printf "%s\\0%s\\0%s\\0%s" "$DF_SECRET_KEY_BASE" "$RAILS_ENV" ' \
-          '"$RAILS_MASTER_KEY" "$BUNDLE_APP_CONFIG"'
+        '"$RAILS_MASTER_KEY" "$BUNDLE_APP_CONFIG"'
       ].join('; ')
       restored, restore_stderr, restore_status = Open3.capture3(
         {},
@@ -82,7 +82,7 @@ class ProductionRuntimeTest < Minitest::Test
         '/usr/local/bundle'
       ].join("\0")
       assert_equal expected, restored
-      refute File.exist?(marker_file), 'sourcing the escaped value executed shell syntax'
+      assert_equal false, File.exist?(marker_file), 'sourcing the escaped value executed shell syntax'
     end
   end
 
@@ -91,8 +91,8 @@ class ProductionRuntimeTest < Minitest::Test
     sidekiq_entry_point = File.read(SIDEKIQ_ENTRY_POINT)
 
     assert_match(/^exec cron -f$/, pdfgen_entry_point)
-    refute_match(/\bcat\s+\/container\.env\b/, pdfgen_entry_point)
-    refute_match(/declare\s+-p/, pdfgen_entry_point)
+    assert_equal false, %r{\bcat\s+/container\.env\b}.match?(pdfgen_entry_point)
+    assert_equal false, /declare\s+-p/.match?(pdfgen_entry_point)
     assert_match(/^exec bundle exec sidekiq$/, sidekiq_entry_point)
   end
 
