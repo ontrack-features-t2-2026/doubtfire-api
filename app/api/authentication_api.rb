@@ -154,7 +154,11 @@ class AuthenticationApi < Grape::API
         protocol = Rails.env.development? ? 'http' : 'https'
         host = "#{protocol}://#{host}"
       end
-      redirect "#{host}/sign_in?authToken=#{onetime_token.authentication_token}&username=#{user.username}"
+      redirect AuthenticationHelpers.frontend_sign_in_url(
+        host: host,
+        auth_token: onetime_token.authentication_token,
+        username: user.username
+      )
     end
 
     # Saml 2 logout callback
@@ -344,7 +348,11 @@ class AuthenticationApi < Grape::API
         protocol = Rails.env.development? ? 'http' : 'https'
         host = "#{protocol}://#{host}"
       end
-      redirect "#{host}/sign_in?authToken=#{onetime_token.authentication_token}&username=#{user.username}"
+      redirect AuthenticationHelpers.frontend_sign_in_url(
+        host: host,
+        auth_token: onetime_token.authentication_token,
+        username: user.username
+      )
     end
   end
 
