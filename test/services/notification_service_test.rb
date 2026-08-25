@@ -30,8 +30,43 @@ class NotificationServiceTest < ActiveSupport::TestCase
 
     job = NotificationEmailJob.jobs.last
     assert_equal 'NotificationEmailJob', job['class']
-    assert_equal 'default', job['queue']
+    assert_equal 'mailers', job['queue']
     assert_equal [notification.id], job['args']
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_email_is_not_queued_until_the_creating_transaction_commits
+    user = FactoryBot.create(:user)
+    notification = nil
+
+    ActiveRecord::Base.transaction do
+      notification = NotificationService.notify(
+        user: user, type: 'general', event: 'group_membership_changed', message: 'In a transaction.'
+      )
+
+      assert notification.persisted?
+      # A worker picking the job up here could not see the row yet, so nothing
+      # may be queued before the transaction commits.
+      assert_empty NotificationEmailJob.jobs
+    end
+
+    assert_equal 1, NotificationEmailJob.jobs.size
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_a_rolled_back_transaction_queues_no_email
+    user = FactoryBot.create(:user)
+
+    ActiveRecord::Base.transaction do
+      NotificationService.notify(
+        user: user, type: 'general', event: 'rolled_back_event', message: 'Never happened.'
+      )
+      raise ActiveRecord::Rollback
+    end
+
+    assert_equal 0, Notification.where(event: 'rolled_back_event').count
+    assert_empty NotificationEmailJob.jobs
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 

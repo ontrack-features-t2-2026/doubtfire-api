@@ -34,7 +34,8 @@ class NotificationService
       link: link
     )
 
-    queue_email(notification)
+    # The email is queued by Notification's after_commit hook, so the row is
+    # committed before a worker can look for it.
     PushNotificationService.deliver(notification)
 
     notification
@@ -48,10 +49,13 @@ class NotificationService
     user.public_send(pref)
   end
 
-  # Email channel. Queue only the stable Notification id; message content,
-  # recipient details and other student data remain in the database. Queue
-  # connection errors are best-effort so the in-app record and push delivery are
-  # not blocked. Delivery failures are raised by the job for Sidekiq to retry.
+  # Email channel. Called from Notification's after_commit hook, never directly
+  # from notify, so the notification is committed before the job exists.
+  #
+  # Queue only the stable Notification id; message content, recipient details
+  # and other student data remain in the database. Queue connection errors are
+  # best-effort so the in-app record and push delivery are not blocked. Delivery
+  # failures are raised by the job for Sidekiq to retry.
   def self.queue_email(notification)
     NotificationEmailJob.perform_async(notification.id)
   rescue StandardError => e
@@ -59,5 +63,4 @@ class NotificationService
       "Failed to queue notification email for Notification #{notification.id}: #{e.class}"
     )
   end
-  private_class_method :queue_email
 end

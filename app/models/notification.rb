@@ -24,6 +24,13 @@ class Notification < ApplicationRecord
   validates :event, presence: true, length: { maximum: 255 }
   validates :message, presence: true, length: { maximum: 500 }
 
+  # Queue the email only once the transaction that created the notification has
+  # committed. Several callers raise notifications from inside a transaction,
+  # for example a tutorial enrolment being destroyed removes the student from
+  # their group, and a worker that picked the job up before the commit would not
+  # find the row. The job's nil guard would then drop the email with no retry.
+  after_commit :queue_email_delivery, on: :create
+
   scope :unread, -> { where(read_at: nil) }
   scope :recent_first, -> { order(created_at: :desc) }
 
@@ -33,5 +40,11 @@ class Notification < ApplicationRecord
 
   def mark_read!
     update!(read_at: Time.zone.now) unless read?
+  end
+
+  private
+
+  def queue_email_delivery
+    NotificationService.queue_email(self)
   end
 end

@@ -44,6 +44,54 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     end
   end
 
+  def test_the_job_runs_on_the_mailers_queue
+    # Student facing email must not queue behind PDF and CSV work on default.
+    # The worker has to be listening on this queue, see doubtfire-deploy#10.
+    assert_equal 'mailers', NotificationEmailJob.get_sidekiq_options['queue'].to_s
+  end
+
+  def test_no_delivery_when_the_preference_was_turned_off_after_queueing
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    notification = FactoryBot.create(
+      :notification,
+      :feedback,
+      user: user,
+      event: 'task_comment_created',
+      message: 'Queued while the category was still on.'
+    )
+
+    # retry: 3 means the job can run well after it was queued.
+    user.update!(receive_feedback_notifications: false)
+
+    assert_no_difference(
+      -> { ActionMailer::Base.deliveries.count }
+    ) do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+  end
+
+  def test_a_type_without_a_preference_is_still_delivered
+    user = FactoryBot.create(
+      :user,
+      receive_task_notifications: false,
+      receive_feedback_notifications: false,
+      receive_portfolio_notifications: false
+    )
+    notification = FactoryBot.create(
+      :notification,
+      user: user,
+      event: 'general',
+      message: 'General notices ignore the category toggles.'
+    )
+
+    assert_difference(
+      -> { ActionMailer::Base.deliveries.count },
+      1
+    ) do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+  end
+
   def test_delivery_failure_is_raised_so_sidekiq_can_retry
     notification = FactoryBot.create(
       :notification,
@@ -75,7 +123,7 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
 
     assert_not_nil job
     assert_equal 'NotificationEmailJob', job['class']
-    assert_equal 'default', job['queue']
+    assert_equal 'mailers', job['queue']
     assert_equal [notification.id], job['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
