@@ -37,7 +37,8 @@ class NotificationGroupTest < ActiveSupport::TestCase
     )
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/groups"
+      expected_link: "/projects/#{@project.id}/groups",
+      expected_body: 'Your group membership changed.'
     )
 
     assert_equal 1, ActionMailer::Base.deliveries.count
@@ -45,6 +46,7 @@ class NotificationGroupTest < ActiveSupport::TestCase
 
     # Confirms the event-specific template is being used.
     assert_includes delivered_body, 'group membership changed'
+    assert_includes delivered_body, notification.message
   end
 
   def test_removing_a_member_notifies_that_student

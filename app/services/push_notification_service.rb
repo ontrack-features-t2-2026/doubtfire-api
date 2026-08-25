@@ -18,6 +18,18 @@ class PushNotificationService
   # task titles, so it is trimmed rather than trusted.
   MAX_BODY_LENGTH = 400
 
+  # Lock-screen copy is a separate channel from the richer in-app notification
+  # and email. These v2 events contain free-form names or precise schedule data
+  # in Notification#message, so use bounded, reviewed copy whenever the payload
+  # is rendered. Keeping the decision here means direct delivery and any future
+  # payload regeneration cannot accidentally bypass the privacy boundary.
+  LOCK_SCREEN_BODY_OVERRIDES = {
+    'tutorial_changed' => 'Your tutorial details changed.',
+    'group_membership_changed' => 'Your group membership changed.',
+    'task_submitted' => 'A task is ready for marking.',
+    'portfolio_received' => 'Your portfolio submission was received.'
+  }.freeze
+
   # MN-C03 BEGIN: safe click route constants
   SAFE_CLICK_FALLBACK = '/notifications'.freeze
   MAX_CLICK_LINK_LENGTH = 256
@@ -65,7 +77,7 @@ class PushNotificationService
     {
       notification: {
         title: Doubtfire::Application.config.institution[:product_name],
-        body: notification.message.to_s.truncate(MAX_BODY_LENGTH),
+        body: body_for(notification),
         tag: tag_for(notification),
         # False, so a replacement updates the banner without making a sound or
         # vibrating again.
@@ -105,6 +117,12 @@ class PushNotificationService
     return link if link.match?(SAFE_PROJECT_TASK_LINK)
 
     SAFE_CLICK_FALLBACK
+  end
+
+  def self.body_for(notification)
+    LOCK_SCREEN_BODY_OVERRIDES
+      .fetch(notification.event.to_s, notification.message.to_s)
+      .truncate(MAX_BODY_LENGTH)
   end
 
   # Use the event and validated destination as the collapse key so repeated
@@ -178,5 +196,5 @@ class PushNotificationService
     ENV['DOUBTFIRE_VAPID_PUBLIC_KEY'].present? && ENV['DOUBTFIRE_VAPID_PRIVATE_KEY'].present?
   end
 
-  private_class_method :safe_click_link, :deliver_to, :vapid_details, :vapid_subject
+  private_class_method :body_for, :safe_click_link, :deliver_to, :vapid_details, :vapid_subject
 end
