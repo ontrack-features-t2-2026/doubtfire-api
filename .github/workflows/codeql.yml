@@ -13,10 +13,10 @@ name: "CodeQL"
 
 on:
   push:
-    branches: ["development"]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: ["development"]
+    branches: ["11.0.x", "development"]
+  # CodeQL is a required check, so it must report for pull requests targeting
+  # any protected shared branch rather than only the development branch.
+  pull_request: {}
   schedule:
     - cron: "45 20 * * 3"
 
