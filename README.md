@@ -142,6 +142,13 @@ To run unit tests, execute:
 $ rake test
 ```
 
+Code coverage is disabled during normal test runs to keep feedback fast. To
+generate the SimpleCov report explicitly, run:
+
+```bash
+$ COVERAGE=true rake test
+```
+
 Unit tests are located in the `test` directory, where **model** tests are under
 the `model` subdirectory and **API** tests are under the `api` subdirectory.
 

@@ -18,7 +18,6 @@ gem 'rails', '~> 8.0.0', '>= 8.0.5.1'
 group :development, :test do
   gem 'better_errors'
   gem 'byebug'
-  gem 'database_cleaner-active_record'
   gem 'listen'
   gem 'rails_best_practices'
   gem 'rubocop'
