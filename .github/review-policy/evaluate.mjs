@@ -120,9 +120,9 @@ export function pullRequestNumbersFromWorkflowRun(workflowRun) {
   return [...numbers];
 }
 
-function safeError(error) {
+export function safeError(error) {
   return String(error?.message || error || 'Unknown error')
-    .replace(/gh[opsu]_[A-Za-z0-9_]+/g, '[redacted token]')
+    .replace(/gh[opsu]_[A-Za-z0-9.\-_]{36,}/g, '[redacted token]')
     .replace(
       /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
       '[redacted private key]',
