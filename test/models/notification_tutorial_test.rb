@@ -7,6 +7,7 @@ class NotificationTutorialTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -45,6 +46,7 @@ class NotificationTutorialTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       @project.enrol_in(@new_tutorial)
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -56,7 +58,8 @@ class NotificationTutorialTest < ActiveSupport::TestCase
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard"
+      expected_link: "/projects/#{@project.id}/dashboard",
+      expected_body: 'Your tutorial details changed.'
     )
   end
 
@@ -65,6 +68,7 @@ class NotificationTutorialTest < ActiveSupport::TestCase
 
     ActionMailer::Base.deliveries.clear
     @project.enrol_in(@new_tutorial)
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
     body = delivered_body
