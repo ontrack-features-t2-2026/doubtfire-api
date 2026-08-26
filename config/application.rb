@@ -255,9 +255,15 @@ module Doubtfire
     config.i18n.enforce_available_locales = true
     # Ensure that auth tokens do not appear in log files
     config.filter_parameters += %i(
+      authToken
       auth_token
+      ltiToken
+      lti_token
+      ltik
       password
       password_confirmation
+      refresh_token
+      SAMLResponse
     )
     # Grape Serialization
 
