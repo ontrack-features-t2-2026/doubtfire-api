@@ -121,27 +121,55 @@ class AggregatePeerProgressJobTest < ActiveSupport::TestCase
     assert_empty calls
   end
 
-  def test_raises_when_requested_unit_does_not_exist
+  def test_sanitizes_the_error_when_requested_unit_does_not_exist
     missing_unit_id = Unit.maximum(:id).to_i + 10_000
 
-    assert_raises(ActiveRecord::RecordNotFound) do
+    error = assert_raises(AggregatePeerProgressJob::AggregationError) do
       AggregatePeerProgressJob.new.perform(missing_unit_id)
     end
+
+    assert_equal(
+      "Peer progress aggregation failed for unit_id=#{missing_unit_id}: " \
+      'ActiveRecord::RecordNotFound',
+      error.message
+    )
+    assert_nil error.cause
   end
 
-  def test_reraises_aggregation_errors
+  def test_sanitizes_aggregation_errors_before_sidekiq_handles_them
+    sensitive_message =
+      'peer_username=private-peer name=Private Student ' \
+      'email=private-peer@example.invalid student_id=987654321'
+    start_log =
+      "Starting peer progress aggregation for unit_id=#{@active_unit.id}..."
+    failure_message =
+      "Peer progress aggregation failed for unit_id=#{@active_unit.id}: " \
+      'StandardError'
+    logger = Minitest::Mock.new
+    logger.expect(:info, nil, [start_log])
+    logger.expect(:error, nil, [failure_message])
+    job = AggregatePeerProgressJob.new
+
     PeerProgressAggregationService.stub(
       :call,
       lambda do |**_kwargs|
-        raise StandardError, 'aggregation failed'
+        raise StandardError, sensitive_message
       end
     ) do
-      error = assert_raises(StandardError) do
-        AggregatePeerProgressJob.new.perform(@active_unit.id)
+      error = assert_raises(AggregatePeerProgressJob::AggregationError) do
+        job.stub(:logger, logger) do
+          job.perform(@active_unit.id)
+        end
       end
 
-      assert_equal 'aggregation failed', error.message
+      assert_equal failure_message, error.message
+      assert_nil error.cause
+      assert_not_includes error.message, sensitive_message
+      assert_not_includes error.full_message, sensitive_message
     end
+
+    assert_mock logger
+    assert_equal 3, AggregatePeerProgressJob.get_sidekiq_options['retry']
   end
 
   def test_enqueues_only_the_unit_id

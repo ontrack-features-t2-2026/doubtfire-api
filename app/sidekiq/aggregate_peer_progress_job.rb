@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AggregatePeerProgressJob
+  class AggregationError < StandardError; end
+
   include Sidekiq::Job
   include Sidekiq::Status::Worker
   include LogHelper
@@ -18,10 +20,13 @@ class AggregatePeerProgressJob
 
     aggregate_unit(Unit.find(unit_id))
   rescue StandardError => e
-    logger.error(
-      "Peer progress aggregation failed: #{e.class}: #{e.message}"
-    )
-    raise
+    log_unit_id = unit_id.presence || 'all-active-units'
+    failure_message =
+      "Peer progress aggregation failed for unit_id=#{log_unit_id}: " \
+      "#{e.class.name}"
+
+    logger.error(failure_message)
+    raise AggregationError, failure_message, cause: nil
   end
 
   private
