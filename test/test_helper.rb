@@ -34,6 +34,7 @@ Sidekiq::Testing.fake!
 # Require minitest extensions
 require 'minitest/pride'
 require 'minitest/around'
+require 'minitest/mock'
 
 require 'webmock/minitest'
 
