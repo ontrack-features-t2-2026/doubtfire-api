@@ -62,11 +62,108 @@ class ProjectsApiTest < ActiveSupport::TestCase
 
       assert_json_limit_keys_to_exactly keys, data
 
-      assert_json_matches_model(project, data, %w(campus_id target_grade campus_id))
-      assert_json_matches_model(project.unit, data['unit'], %w(id code name active))
+      assert_json_matches_model(project, data, %w[campus_id target_grade campus_id])
+      assert_json_matches_model(project.unit, data['unit'], %w[id code name active])
 
       assert_json_matches_model project, data, key_test
     end
+  end
+
+  def test_projects_with_task_definitions_uses_student_safe_serialization
+    unit = FactoryBot.create(
+      :unit,
+      with_students: false,
+      task_count: 0,
+      allow_flexible_dates: true
+    )
+    common_start_date = unit.start_date + 1.week
+    later_task = FactoryBot.create(
+      :task_definition,
+      unit: unit,
+      abbreviation: 'CROSS-Z',
+      start_date: common_start_date,
+      plagiarism_report_url: 'https://staff.invalid/report',
+      plagiarism_warn_pct: 99,
+      tii_group_id: 'staff-only-group',
+      similarity_language: 'staff-only-language',
+      use_resources_for_jplag_base_code: true,
+      lock_assessments_to_tutorial_stream: true,
+      upload_requirements: [
+        {
+          'key' => 'file0',
+          'name' => 'Student report',
+          'type' => 'document',
+          'tii_check' => true,
+          'tii_pct' => 35
+        }
+      ]
+    )
+    earlier_task = FactoryBot.create(
+      :task_definition,
+      unit: unit,
+      abbreviation: 'CROSS-A',
+      start_date: common_start_date
+    )
+    grade_due_date = FactoryBot.create(
+      :task_definition_grade_due_date,
+      task_definition: later_task,
+      target_grade: 1,
+      target_due_date: later_task.target_date + 2.days,
+      start_date: later_task.start_date + 1.day
+    )
+    student = FactoryBot.create(:user, :student)
+    unit.enrol_student(student, unit.tutorials.first.campus)
+
+    add_auth_header_for(user: student)
+
+    get '/api/projects'
+    assert_equal 200, last_response.status, last_response_body
+    assert_not last_response_body.first.key?('tasks')
+    assert_not last_response_body.first.fetch('unit').key?('task_definitions')
+
+    get '/api/projects?include_task_definitions=true'
+    assert_equal 200, last_response.status, last_response_body
+
+    project_data = last_response_body.first
+    assert project_data.key?('tasks')
+    unit_data = project_data.fetch('unit')
+    assert_equal true, unit_data.fetch('allow_flexible_dates')
+
+    task_definitions = unit_data.fetch('task_definitions')
+    assert_equal [earlier_task.id, later_task.id], task_definitions.pluck('id')
+
+    task_definitions.each do |task_definition|
+      %w[id abbreviation name description weighting target_grade upload_requirements].each do |key|
+        assert task_definition.key?(key), "Expected student-safe task definition to include #{key}"
+      end
+
+      %w[
+        plagiarism_report_url plagiarism_warn_pct tii_group_id similarity_language
+        overseer_image_id use_resources_for_jplag_base_code
+        lock_assessments_to_tutorial_stream restrict_status_updates created_at updated_at
+      ].each do |key|
+        assert_not task_definition.key?(key), "Student response exposed staff-only field #{key}"
+      end
+    end
+
+    student_requirements = task_definitions.find do |task_definition|
+      task_definition['id'] == later_task.id
+    end.fetch('upload_requirements')
+    assert_equal(
+      [{ 'key' => 'file0', 'name' => 'Student report', 'type' => 'document' }],
+      student_requirements
+    )
+
+    student_later_task = task_definitions.find do |task_definition|
+      task_definition['id'] == later_task.id
+    end
+    grade_due_dates = student_later_task.fetch('grade_due_dates')
+    assert_equal 1, grade_due_dates.length
+    assert_equal grade_due_date.target_grade, grade_due_dates.first.fetch('target_grade')
+    assert_equal grade_due_date.target_due_date.to_date,
+                 Date.parse(grade_due_dates.first.fetch('target_due_date'))
+    assert_equal grade_due_date.start_date.to_date,
+                 Date.parse(grade_due_dates.first.fetch('start_date'))
   end
 
   def test_get_project_response_is_correct
@@ -107,8 +204,8 @@ class ProjectsApiTest < ActiveSupport::TestCase
       project = user.projects.find(data['id'])
       assert project.present?, data.inspect
 
-      assert_json_matches_model(project, data, %w(campus_id target_grade campus_id))
-      assert_json_matches_model(project.unit, data['unit'], %w(code id name active))
+      assert_json_matches_model(project, data, %w[campus_id target_grade campus_id])
+      assert_json_matches_model(project.unit, data['unit'], %w[code id name active])
     end
   end
 
@@ -129,7 +226,7 @@ class ProjectsApiTest < ActiveSupport::TestCase
     assert_equal 200, last_response.status, last_response_body
     assert_equal user.projects.find(project.id).submitted_grade, 2
 
-    keys = %w(campus_id target_grade submitted_grade compile_portfolio portfolio_available uses_draft_learning_summary)
+    keys = %w[campus_id target_grade submitted_grade compile_portfolio portfolio_available uses_draft_learning_summary]
 
     assert_json_limit_keys_to_exactly keys, last_response_body
     assert_json_matches_model project, last_response_body, keys
