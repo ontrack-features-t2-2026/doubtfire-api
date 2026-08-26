@@ -15,25 +15,96 @@ on:
       #                      # message per requested reviewer. Decide, do not default.
 
 # Removes all GITHUB_TOKEN scopes, which this workflow does not need. It does NOT
-# restrict secrets.* - the webhook is protected by the job guard below, not by this.
+# restrict secrets.* - the webhook is protected by the guards below, not by this.
 permissions: {}
 
 jobs:
   notify-teams:
     name: Post pull request notification to Teams
-    # First clause makes the file inert if it ever travels to thoth-tech or
-    # doubtfire-lms. Second keeps the webhook out of reach of anonymous fork PRs
-    # while still notifying teammates who work from their own forks, which
-    # several doubtfire-web contributors do.
-    if: >-
-      github.repository_owner == 'ontrack-features-t2-2026' &&
-      (github.event.pull_request.head.repo.full_name == github.repository ||
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    # The job guard makes the file inert if it ever travels to thoth-tech or
+    # doubtfire-lms. The step below decides who gets a notification: a pull request
+    # from a branch in this repository always does, and a fork pull request only if
+    # its author is in one of the two OnTrack teams.
+    if: github.repository_owner == 'ontrack-features-t2-2026'
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
     steps:
+      - name: Check pull request author team membership
+        id: team-membership
+        shell: bash
+        env:
+          TEAM_MEMBERSHIP_TOKEN: ${{ secrets.TEAM_MEMBERSHIP_ACCESS }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # A branch in this repository can only be pushed by someone who already
+          # has write access, so those pull requests need no lookup. That is also
+          # the only reason Dependabot notifies: dependabot[bot] is in neither
+          # team and 404s on both. The team check below is for fork pull requests,
+          # which is where the webhook actually needed protecting.
+          if [[ "${PR_HEAD_REPO}" == "${REPOSITORY}" ]]; then
+            echo "eligible=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ -z "${TEAM_MEMBERSHIP_TOKEN:-}" ]]; then
+            echo "::error::The TEAM_MEMBERSHIP_ACCESS secret is not configured."
+            exit 1
+          fi
+
+          # The login goes into a URL path segment, so percent-encode it. curl also
+          # reads [ ] { } * in a URL as a glob and exits before sending anything, so
+          # --globoff below. Between them a login like dependabot[bot] is safe.
+          author_encoded="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["PR_AUTHOR"], safe=""))')"
+
+          for team in ontrack-contributors ontrack-leads; do
+            http_status="$(
+              curl \
+                --proto '=https' \
+                --tlsv1.2 \
+                --globoff \
+                --silent \
+                --show-error \
+                --connect-timeout 10 \
+                --max-time 30 \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${TEAM_MEMBERSHIP_TOKEN}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --output "${RUNNER_TEMP}/team-membership.json" \
+                --write-out '%{http_code}' \
+                "https://api.github.com/orgs/ontrack-features-t2-2026/teams/${team}/memberships/${author_encoded}" \
+            )" || http_status="000"
+
+            case "${http_status}" in
+              200)
+                membership_state="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])' \
+                  < "${RUNNER_TEMP}/team-membership.json")"
+                # "pending" is a teammate who has not accepted the org invitation
+                # yet. They are on the team and they review, so notify them too.
+                if [[ "${membership_state}" == "active" || "${membership_state}" == "pending" ]]; then
+                  echo "eligible=true" >> "${GITHUB_OUTPUT}"
+                  exit 0
+                fi
+                ;;
+              404) ;;
+              *)
+                echo "::error::GitHub returned HTTP ${http_status} while checking team membership."
+                exit 1
+                ;;
+            esac
+          done
+
+          # A skip is a decision, so say so on the run summary. Without this the job
+          # goes green and looks the same as one that posted a message.
+          echo "::warning::No Teams notification sent. ${PR_AUTHOR} opened this pull request from a fork and is in neither ontrack-contributors nor ontrack-leads."
+          echo "eligible=false" >> "${GITHUB_OUTPUT}"
+
       - name: Build and send Teams notification
+        if: steps.team-membership.outputs.eligible == 'true'
         shell: bash
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_PR_WEBHOOK_URL }}
