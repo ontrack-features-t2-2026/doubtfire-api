@@ -1,6 +1,15 @@
 class ExtensionComment < TaskComment
   belongs_to :assessor, class_name: 'User', optional: true
 
+  # The status that triggered an automatic resubmission extension. It is nil on
+  # extensions a student asked for, which is what tells the two kinds apart.
+  belongs_to :task_status, optional: true
+
+  # An extension the system worked out, rather than one a student requested
+  def automatic?
+    task_status.present?
+  end
+
   def serialize(user)
     json = super(user)
     json[:granted] = extension_granted
@@ -9,6 +18,8 @@ class ExtensionComment < TaskComment
     json[:weeks_requested] = extension_weeks
     json[:extension_response] = extension_response
     json[:task_status] = task.status
+    json[:automatic] = automatic?
+    json[:source_status] = automatic? ? task_status.status_key : nil
     json
   end
 

@@ -831,7 +831,10 @@ class TaskTest < ActiveSupport::TestCase
     rescue StandardError => e
       task.reload
 
-      assert_equal 2, task.comments.count
+      # The status comment for the move to fix, the automatic resubmission
+      # extension that comes with it, and the automated comment about the failure
+      assert_equal 3, task.comments.count
+      assert_equal 1, task.comments.where(type: 'ExtensionComment').count
       assert task.comments.last.comment.starts_with?('**Automated Comment**:')
       assert task.comments.last.comment.include?(e.message.to_s)
 
@@ -1618,5 +1621,255 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal TaskStatus.fix_and_resubmit, task2.task_status, "Dependent task should have automatically moved to Fix and Resubmit"
     assert_equal TaskStatus.complete, task3.task_status, "Task not Ready for Feedback should not be affected"
     assert_equal TaskStatus.ready_for_feedback, task4.task_status # Task 4 has no prerequsite links
+  end
+
+  #
+  # Build a unit with a single task, for the automatic resubmission extension
+  # tests below. An overdue target date is the case that mattered, because a
+  # task that is already late stays inside the one week window after it has
+  # been extended, so every repeat of the assessment used to add another week.
+  #
+  def create_task_for_resubmission_extension(weeks_on_resubmit: 1, target_date: Time.zone.now + 2.days)
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0, start_date: Time.zone.now - 6.weeks, end_date: Time.zone.now + 10.weeks)
+    unit.allow_student_extension_requests = true
+    unit.extension_weeks_on_resubmit_request = weeks_on_resubmit
+    unit.save!
+
+    td = TaskDefinition.new({
+                              unit_id: unit.id,
+                              tutorial_stream: unit.tutorial_streams.first,
+                              name: 'Resubmission task',
+                              description: 'Resubmission task',
+                              weighting: 4,
+                              target_grade: 0,
+                              start_date: unit.start_date,
+                              target_date: target_date,
+                              abbreviation: 'RESUB',
+                              restrict_status_updates: false,
+                              upload_requirements: [ ],
+                              plagiarism_warn_pct: 0.8,
+                              is_graded: false,
+                              max_quality_pts: 0
+                            })
+    td.save!
+
+    project = unit.active_projects.first
+    [unit, td, project.task_for_task_definition(td)]
+  end
+
+  # Assessing the same submission again must not move the deadline again.
+  def test_resubmission_extension_granted_once_per_round
+    unit, _td, task = create_task_for_resubmission_extension(target_date: Time.zone.now - 3.weeks)
+    tutor = unit.main_convenor_user
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    assert_equal 1, task.reload.extensions, 'The first fix should grant the resubmission extension'
+
+    first_due_date = task.due_date
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    assert_equal 1, task.reload.extensions, 'Assessing the same submission again must not extend again'
+    assert_equal first_due_date, task.due_date, 'The effective deadline must not move on a repeated assessment'
+
+    task.assess(TaskStatus.discuss, tutor)
+    assert_equal 1, task.reload.extensions, 'Another resubmission status in the same round must not extend again'
+    assert_equal first_due_date, task.due_date
+
+    unit.destroy!
+  end
+
+  # A new submission starts a new round of feedback, which earns its own
+  # extension. That is the rule the unit has today and it is unchanged.
+  def test_resubmission_extension_returns_after_a_new_submission
+    unit, _td, task = create_task_for_resubmission_extension
+    tutor = unit.main_convenor_user
+    student = unit.active_projects.first.student
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    assert_equal 1, task.reload.extensions
+
+    # A week later the student resubmits and is sent back to fix it again
+    travel_to Time.zone.now + 8.days do
+      task.submit(student)
+      task.assess(TaskStatus.fix_and_resubmit, tutor)
+      assert_equal 2, task.reload.extensions, 'A new submission earns a new resubmission extension'
+    end
+
+    unit.destroy!
+  end
+
+  # The extension has to say why it happened and what triggered it.
+  def test_resubmission_extension_records_its_reason
+    unit, _td, task = create_task_for_resubmission_extension
+    tutor = unit.main_convenor_user
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    task.reload
+
+    extension = task.resubmission_extension_comment
+    assert_not_nil extension, 'The automatic extension should be recorded against the task'
+    assert_equal 'ExtensionComment', extension.type
+    assert_equal 1, extension.extension_weeks
+    assert extension.extension_granted, 'The recorded extension should be marked as granted'
+    assert_equal TaskStatus.fix_and_resubmit, extension.task_status, 'The status that triggered the extension should be recorded'
+    assert_equal tutor, extension.assessor
+    assert extension.assessed?
+    assert extension.comment.present?, 'The extension should explain itself to the student'
+    assert extension.extension_response.include?(task.due_date.strftime('%a %b %e')), 'The response should name the new deadline'
+
+    serialized = extension.serialize(tutor)
+    assert serialized[:automatic], 'The interface needs to know the extension was automatic'
+    assert_equal :fix_and_resubmit, serialized[:source_status]
+
+    unit.destroy!
+  end
+
+  # A larger extension granted later must survive a repeated assessment.
+  def test_resubmission_extension_does_not_shorten_a_later_extension
+    unit, _td, task = create_task_for_resubmission_extension(target_date: Time.zone.now - 3.weeks)
+    tutor = unit.main_convenor_user
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    assert_equal 1, task.reload.extensions
+
+    assert task.grant_extension(tutor, 2), 'A tutor should be able to grant a further extension'
+    assert_equal 3, task.reload.extensions
+    later_due_date = task.due_date
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    task.reload
+    assert_equal 3, task.extensions, 'A later extension must not be lost, and must not be added to'
+    assert_equal later_due_date, task.due_date
+
+    unit.destroy!
+  end
+
+  # The recursive fix of dependent tasks runs an assessment on each of them.
+  # Replaying it must not extend those tasks a second time.
+  def test_recursive_fix_does_not_extend_dependent_tasks_twice
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+    unit.extension_weeks_on_resubmit_request = 1
+    unit.save!
+
+    tutor = FactoryBot.create(:user, :tutor)
+    unit.employ_staff(tutor, Role.tutor)
+
+    td1 = unit.task_definitions.first
+    td2 = unit.task_definitions.second
+
+    [td1, td2].each do |td|
+      td.update!(start_date: Time.zone.now - 6.weeks, target_date: Time.zone.now - 3.weeks, due_date: Time.zone.now + 8.weeks, target_grade: 0)
+    end
+
+    TaskPrerequisite.create!(
+      task_definition: td2,
+      prerequisite: td1,
+      task_status_id: TaskStatus.ready_for_feedback.id
+    )
+
+    project = unit.active_projects.first
+    task1 = project.task_for_task_definition(td1)
+    task2 = project.task_for_task_definition(td2)
+
+    task1.update!(task_status: TaskStatus.ready_for_feedback)
+    task2.update!(task_status: TaskStatus.ready_for_feedback)
+
+    task1.assess(TaskStatus.fix_and_resubmit, tutor, Time.zone.now, true)
+    assert_equal 1, task1.reload.extensions, 'The assessed task should be extended once'
+    assert_equal 1, task2.reload.extensions, 'The dependent task should be extended once'
+
+    # Replay the same event. The dependent task is put back to ready for
+    # feedback so the recursion reaches it again, as a duplicate event would.
+    task2.update!(task_status: TaskStatus.ready_for_feedback)
+    task1.assess(TaskStatus.fix_and_resubmit, tutor, Time.zone.now, true)
+
+    assert_equal 1, task1.reload.extensions, 'The assessed task must not be extended twice'
+    assert_equal 1, task2.reload.extensions, 'The dependent task must not be extended twice'
+
+    unit.destroy!
+  end
+
+  # The window is measured from the assessment being processed, not from the
+  # wall clock, so replaying an old event gives the answer it gave then.
+  def test_resubmission_extension_window_uses_the_assessment_time
+    unit, _td, task = create_task_for_resubmission_extension
+    tutor = unit.main_convenor_user
+
+    assert task.resubmission_extension_window_open?(Time.zone.now), 'The deadline is two days away, so the window is open now'
+    assert_not task.resubmission_extension_window_open?(Time.zone.now - 3.weeks), 'Three weeks ago the deadline was not close'
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor, Time.zone.now - 3.weeks)
+    assert_equal 0, task.reload.extensions, 'An assessment made when the deadline was far away should not extend it'
+
+    unit.destroy!
+  end
+
+  # Seven days has to mean seven calendar days in the local zone. Melbourne
+  # moves to daylight saving on 4 October 2026, so the week from 1 October is
+  # only 167 real hours and counting in fixed hours would drift the deadline.
+  def test_resubmission_extension_window_uses_calendar_days_across_daylight_saving
+    # Melbourne moves to daylight saving at 02:00 on 4 October 2026, so the seven
+    # days from 1 October are 167 real hours, not 168. Adding the window as a
+    # duration rather than as a fixed number of hours is what keeps the boundary
+    # on the same calendar day either side of that change.
+    #
+    # This drives resubmission_extension_window_open? rather than doing the
+    # arithmetic by hand, because the conversion inside that method is the part
+    # that can be wrong. The boundary lands at five days rather than seven
+    # because to_same_day_anywhere_on_earth pushes the due date out to the end of
+    # its day in UTC-12 first.
+    #
+    # Note this only exercises the daylight saving path because of use_zone.
+    # Nothing sets config.time_zone, so in production the zone is UTC and the
+    # week is always 168 hours. That gap is recorded in the ticket doc.
+    boundary = lambda do |zone_name, year, month, day|
+      Time.use_zone(zone_name) do
+        assess = Time.zone.local(year, month, day, 9, 0, 0)
+
+        unit_in, _td_in, inside = create_task_for_resubmission_extension(target_date: assess + 5.days)
+        unit_out, _td_out, outside = create_task_for_resubmission_extension(target_date: assess + 6.days)
+
+        open_at_five = inside.resubmission_extension_window_open?(assess)
+        open_at_six = outside.resubmission_extension_window_open?(assess)
+
+        unit_in.destroy!
+        unit_out.destroy!
+
+        [open_at_five, open_at_six]
+      end
+    end
+
+    # The week containing the change, and an ordinary week four weeks later.
+    across_change = boundary.call('Australia/Melbourne', 2026, 10, 1)
+    ordinary_week = boundary.call('Australia/Melbourne', 2026, 11, 1)
+
+    assert_equal [true, false], across_change,
+                 'Five calendar days out is inside the window and six is outside, in the week the clocks change'
+    assert_equal across_change, ordinary_week,
+                 'The boundary must fall on the same calendar day whether or not the week contains a daylight saving change'
+  end
+
+  # The extension only applies when the deadline is close.
+  def test_no_resubmission_extension_when_the_deadline_is_far_away
+    unit, _td, task = create_task_for_resubmission_extension(target_date: Time.zone.now + 4.weeks)
+    tutor = unit.main_convenor_user
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    assert_equal 0, task.reload.extensions, 'A task due in four weeks should not be extended'
+    assert_nil task.resubmission_extension_comment
+
+    unit.destroy!
+  end
+
+  # Units that turn the automatic extension off must not get one.
+  def test_no_resubmission_extension_when_the_unit_grants_zero_weeks
+    unit, _td, task = create_task_for_resubmission_extension(weeks_on_resubmit: 0)
+    tutor = unit.main_convenor_user
+
+    task.assess(TaskStatus.fix_and_resubmit, tutor)
+    assert_equal 0, task.reload.extensions
+    assert_nil task.resubmission_extension_comment
+
+    unit.destroy!
   end
 end

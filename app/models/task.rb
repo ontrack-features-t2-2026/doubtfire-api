@@ -376,6 +376,106 @@ class Task < ApplicationRecord
     end
   end
 
+  #
+  # The effective resubmission deadline
+  #
+  # When staff send a task back for more work the student needs time to do that
+  # work, so a task whose deadline is close is extended by the unit's
+  # resubmission extension. The rule itself is the four methods below, so a
+  # change to the rule is a change in one place.
+  #
+  # See docs/submission-lifecycle/effective-resubmission-deadline.md
+  #
+
+  # The statuses that hand a task back to the student for more work
+  def resubmission_extension_statuses
+    [TaskStatus.fix_and_resubmit, TaskStatus.discuss, TaskStatus.rediscuss, TaskStatus.demonstrate]
+  end
+
+  # How close the deadline has to be before a resubmission earns an extension
+  def resubmission_extension_window
+    7.days
+  end
+
+  # How many weeks the unit adds when a resubmission earns an extension
+  def resubmission_extension_weeks
+    unit.extension_weeks_on_resubmit_request
+  end
+
+  # Is the deadline close enough, at the moment of this assessment, for the
+  # resubmission extension to apply? The assessment's own time is used rather
+  # than the wall clock, so that reprocessing an event gives the answer it gave
+  # when it happened, and so dependent tasks fixed recursively are judged at the
+  # same moment as the task that triggered them. The window is added as a
+  # duration rather than a fixed number of hours, so it stays seven calendar
+  # days across a daylight saving change.
+  #
+  # Known gap, for SLR-E01 to rule on. `in_time_zone` uses the application zone,
+  # and nothing here sets `config.time_zone`, so that zone is UTC. Campuses
+  # carry their own `timezone` column and this does not read it. A campus on
+  # Melbourne time therefore has its window judged in UTC, which can move the
+  # boundary by the offset on the day. Reading `project.campus.timezone` instead
+  # changes who gets an extension, so it is a policy decision, not a tidy-up.
+  def resubmission_extension_window_open?(assess_date = Time.zone.now)
+    to_same_day_anywhere_on_earth(due_date) < assess_date.in_time_zone + resubmission_extension_window
+  end
+
+  # The automatic resubmission extension recorded for the current round of
+  # feedback, or nil if this round has not earned one. A round starts when the
+  # student submits, which is the same signal times_assessed uses, so a genuine
+  # resubmission earns a new extension while a repeated assessment, a re-save or
+  # a duplicate event does not.
+  def resubmission_extension_comment
+    return nil if submission_date.nil?
+
+    comments
+      .where(type: 'ExtensionComment')
+      .where.not(task_status_id: nil)
+      .where('date_extension_assessed >= ?', submission_date)
+      .order(:id)
+      .last
+  end
+
+  # Apply the resubmission extension for this assessment, if the rule calls for
+  # one and this round of feedback has not already had one. Returns the comment
+  # recording the extension, or nil when no extension was applied.
+  def grant_resubmission_extension(status, by_user, assess_date = Time.zone.now)
+    return nil unless resubmission_extension_statuses.include?(status)
+    return nil unless resubmission_extension_weeks > 0
+    return nil unless can_apply_for_extension?
+    return nil unless resubmission_extension_window_open?(assess_date)
+
+    # One automatic extension per round of feedback - reprocessing must not move
+    # the deadline a second time
+    return nil if resubmission_extension_comment.present?
+
+    weeks = [resubmission_extension_weeks, weeks_can_extend].min
+    return nil unless grant_extension(by_user, weeks)
+
+    record_resubmission_extension(status, by_user, assess_date, weeks)
+  end
+
+  # Record why the deadline moved and which assessment moved it, so the
+  # interface and the notifications can explain the change, and so a repeat of
+  # the same assessment can see that it has already been handled.
+  def record_resubmission_extension(status, by_user, assess_date, weeks)
+    extension = ExtensionComment.new
+    extension.task = self
+    extension.user = by_user
+    extension.recipient = by_user == project.student ? tutor : project.student
+    extension.content_type = :extension
+    extension.task_status = status
+    extension.assessor = by_user
+    extension.extension_weeks = weeks
+    extension.extension_granted = true
+    extension.date_extension_assessed = assess_date
+    extension.comment = "**Automated Message:** This task was set to #{status.name} within a week of its deadline, so it was extended by #{weeks} #{'week'.pluralize(weeks)} to give you time to resubmit."
+    extension.extension_response = "Time extended to #{due_date.strftime('%a %b %e')}"
+    extension.save!
+
+    extension
+  end
+
   # Applying for a scorm extension will create a scorm extension comment
   def apply_for_scorm_extension(user, text)
     extension = ScormExtensionComment.create
@@ -856,13 +956,10 @@ class Task < ApplicationRecord
     else
       self.completion_date = nil
 
-      # Grant an extension on fix if due date is within 1 week
-      case task_status
-      when TaskStatus.fix_and_resubmit, TaskStatus.discuss, TaskStatus.rediscuss, TaskStatus.demonstrate
-        if to_same_day_anywhere_on_earth(due_date) < Time.zone.now + 7.days && can_apply_for_extension? && unit.extension_weeks_on_resubmit_request > 0
-          grant_extension(assessor, unit.extension_weeks_on_resubmit_request)
-        end
-      end
+      # Grant an extension on fix if the deadline is close - see
+      # #grant_resubmission_extension for the rule and for why this only
+      # happens once per round of feedback
+      grant_resubmission_extension(task_status, assessor, assess_date)
     end
 
     # Save the task
