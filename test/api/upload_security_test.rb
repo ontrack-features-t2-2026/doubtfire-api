@@ -516,6 +516,7 @@ class UploadSecurityTest < ActiveSupport::TestCase
   end
 
   test 'rejects encrypted Word document' do
+    skip 'Gotenberg not configured in this environment' unless Doubtfire::Application.config.respond_to?(:gotenberg_image)
     # Requires gotenberg to be configured so the DOCX path is reached.
     with_word_document_conversion_configured do
       result = File.open(Rails.root.join('test_files/submissions/encrypted.docx')) do |f|
@@ -750,7 +751,7 @@ class UploadSecurityTest < ActiveSupport::TestCase
 
     assert_not_includes logged, student.email,
                         'Log output must not include the student email on rejection'
-    # Note: username may appear in file paths at debug level - this is acceptable
+    # NOTE: username may appear in file paths at debug level - this is acceptable
     # as long as it does not appear alongside file content or sensitive data.
     # Production log level :warn suppresses these debug path messages.
   ensure
