@@ -165,6 +165,32 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_not_nil body['title']
   end
 
+  def test_v2_events_with_sensitive_detail_use_reviewed_lock_screen_copy
+    sensitive_canary = 'PRIVATE-NAME-AND-SCHEDULE-7429'
+    expected_bodies = {
+      'tutorial_changed' => 'Your tutorial details changed.',
+      'group_membership_changed' => 'Your group membership changed.',
+      'task_submitted' => 'A task is ready for marking.',
+      'portfolio_received' => 'Your portfolio submission was received.'
+    }
+
+    expected_bodies.each do |event, expected_body|
+      notification = Notification.create!(
+        user: @user,
+        notification_type: 'general',
+        event: event,
+        message: "#{sensitive_canary} appeared in the rich channel copy.",
+        link: '/notifications'
+      )
+
+      body = JSON.parse(PushNotificationService.payload_for(notification))
+                 .dig('notification', 'body')
+
+      assert_equal expected_body, body, event
+      assert_not_includes body, sensitive_canary, event
+    end
+  end
+
   def test_click_payload_preserves_every_approved_route_family
     routes = [
       '/notifications',
