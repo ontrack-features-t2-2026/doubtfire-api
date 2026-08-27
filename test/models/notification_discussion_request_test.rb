@@ -9,6 +9,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -84,6 +85,8 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
       expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
     )
 
+    # Email is queued rather than sent inline since EN-F03.
+    NotificationEmailJob.drain
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
@@ -100,6 +103,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
 
   def test_email_uses_the_event_template_without_assessment_content
     @task.send(:notify_discussion_request_recipient, notification_target)
+    NotificationEmailJob.drain
 
     body = delivered_body
 
