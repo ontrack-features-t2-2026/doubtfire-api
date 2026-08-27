@@ -59,6 +59,7 @@ gem 'hirb'
 gem 'devise'
 gem 'devise_ldap_authenticatable'
 gem 'json-jwt'
+gem 'rack-attack', '~> 6.8'
 gem 'ruby-saml'
 
 # Student submission
