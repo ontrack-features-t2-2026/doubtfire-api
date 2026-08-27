@@ -1,1 +1,18 @@
 :concurrency: 1
+
+# Strict priority, highest first. Student facing notification email is the only
+# thing on `mailers` and each job is a single SMTP send, so it must not wait
+# behind AcceptSubmissionJob or a CSV export on `default` at concurrency 1.
+#
+# This list is what makes NotificationEmailJob run in production. That worker is
+# started by lib/shell/sidekiq_entry_point.sh, a bare `bundle exec sidekiq` with
+# no -q, so with no :queues: here Sidekiq would listen on `default` alone and
+# every mailers job would sit in Redis unread. perform_async succeeds, nothing
+# raises and nothing logs, so the failure is silent.
+#
+# The development worker passes `-q mailers` on the command line, which replaces
+# this list, so it stays narrow and keeps ignoring `default`. See the comment on
+# the doubtfire-sidekiq service in doubtfire-deploy development/docker-compose.yml.
+:queues:
+  - mailers
+  - default

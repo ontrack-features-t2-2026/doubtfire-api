@@ -8,6 +8,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -21,6 +22,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     @task.update!(task_status: TaskStatus.ready_for_feedback)
     @task.add_status_comment(@student, TaskStatus.ready_for_feedback)
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
   end
 
   # The notification email is multipart, and Mail::Body#to_s is empty for a
@@ -37,6 +39,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       assert @task.trigger_transition(trigger: 'discuss', by_user: @tutor)
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -62,6 +65,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
   def test_an_unchanged_status_notifies_nobody
     @task.trigger_transition(trigger: 'discuss', by_user: @tutor)
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     # Re-applying the same status is a no-op: no change, no notification.
     assert_no_difference 'Notification.count' do
@@ -83,6 +87,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
 
   def test_the_status_value_is_not_in_the_notification_or_the_email
     @task.trigger_transition(trigger: 'discuss', by_user: @tutor)
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
     body = delivered_body
@@ -115,6 +120,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
 
   def test_the_event_specific_template_is_used_instead_of_the_generic_one
     @task.trigger_transition(trigger: 'discuss', by_user: @tutor)
+    NotificationEmailJob.drain
 
     body = delivered_body
 
@@ -129,6 +135,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       assert @task.trigger_transition(trigger: 'discuss', by_user: @tutor, bulk: true)
     end
+    NotificationEmailJob.drain
 
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to

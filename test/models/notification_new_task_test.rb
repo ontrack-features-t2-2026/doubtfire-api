@@ -9,6 +9,7 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @unit = FactoryBot.create(
       :unit,
@@ -53,6 +54,7 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
 
   def run_job
     NewTaskAvailableNotificationJob.new.perform(@task_definition.id)
+    NotificationEmailJob.drain
   end
 
   def event_notifications
