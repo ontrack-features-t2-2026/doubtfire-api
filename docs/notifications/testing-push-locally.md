@@ -340,10 +340,13 @@ Then sign in, wait out the six second service worker registration delay, and use
 MN-C01's opt-in button. Run the same command again. The new or changed row is
 the phone's subscription.
 
-Do not identify the device only from the endpoint host. Chrome and Edge commonly
-use FCM on both desktop and Android, Firefox uses Mozilla Push, and Safari/iOS
-uses Apple Web Push. Comparing the rows before and after subscribing is the
-reliable check. Then trigger an event as another user and watch.
+Do not identify the device only from the endpoint host. It narrows the browser
+but it does not name the device, and Chromium does not imply one service:
+measured on 27 Aug 2026, Chrome 152 subscribed through `fcm.googleapis.com` and
+Edge 151 on macOS through `wns2-bl2p.notify.windows.com`. Firefox uses Mozilla
+Push and Safari/iOS uses Apple Web Push. Comparing the rows before and after
+subscribing is the reliable check. Then trigger an event as another user and
+watch.
 
 ### Things that will probably go wrong
 
