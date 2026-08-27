@@ -45,15 +45,16 @@ env:
 
 jobs:
   unit_test_shards:
-    name: Unit Tests (shard ${{ matrix.shard }}/4)
+    name: Unit Tests (shard ${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
-      TEST_SHARD_COUNT: "4"
+      TEST_SHARD_COUNT: "8"
       TEST_SHARD_NUMBER: ${{ matrix.shard }}
+      TEST_SHARD_MANIFEST: /doubtfire/tmp/test-shard-manifests/shard-${{ matrix.shard }}.txt
     services:
       mariadb:
         image: mariadb
@@ -207,10 +208,20 @@ jobs:
             -e LTI_ENABLED
             -e TEST_SHARD_COUNT
             -e TEST_SHARD_NUMBER
+            -e TEST_SHARD_MANIFEST
           run: TERM=xterm bundle exec ruby script/test_shard.rb
+      - name: Upload test shard manifest
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unit-test-shard-manifest-${{ matrix.shard }}
+          path: tmp/test-shard-manifests/shard-${{ matrix.shard }}.txt
+          if-no-files-found: error
       - name: Stop TexLive service
+        if: ${{ always() }}
         run: docker rm -f ${{ env.LATEX_CONTAINER_NAME }}
       - name: Stop JPlag service
+        if: ${{ always() }}
         run: docker rm -f jplag
 
   unit-tests:
@@ -219,10 +230,48 @@ jobs:
     needs: unit_test_shards
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download test shard manifests
+        id: download_manifests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: unit-test-shard-manifest-*
+          path: tmp/all-test-shard-manifests
+          merge-multiple: true
+      - name: Verify exact test shard union
+        id: verify_manifests
+        run: |
+          manifest_count=$(find tmp/all-test-shard-manifests -type f -name 'shard-*.txt' | wc -l)
+          if [ "$manifest_count" -ne 8 ]; then
+            echo "::error::Expected 8 shard manifests, found $manifest_count."
+            exit 1
+          fi
+
+          find test -type f -name '*_test.rb' -print | LC_ALL=C sort > expected-tests.txt
+          cat tmp/all-test-shard-manifests/shard-*.txt | LC_ALL=C sort > assigned-tests.txt
+          LC_ALL=C uniq -d assigned-tests.txt > duplicate-tests.txt
+
+          if [ -s duplicate-tests.txt ]; then
+            echo "::error::One or more test files were assigned to multiple shards."
+            cat duplicate-tests.txt
+            exit 1
+          fi
+
+          LC_ALL=C uniq assigned-tests.txt > assigned-tests-unique.txt
+          diff -u expected-tests.txt assigned-tests-unique.txt
       - name: Confirm all unit test shards passed
+        if: ${{ always() }}
         env:
           SHARD_RESULT: ${{ needs.unit_test_shards.result }}
+          MANIFEST_DOWNLOAD_RESULT: ${{ steps.download_manifests.outcome }}
+          MANIFEST_VERIFY_RESULT: ${{ steps.verify_manifests.outcome }}
         run: |
+          if [ "$MANIFEST_DOWNLOAD_RESULT" != "success" ] || [ "$MANIFEST_VERIFY_RESULT" != "success" ]; then
+            echo "::error::Test shard manifest verification did not succeed "\
+                 "(download: $MANIFEST_DOWNLOAD_RESULT, verify: $MANIFEST_VERIFY_RESULT)."
+            exit 1
+          fi
           if [ "$SHARD_RESULT" != "success" ]; then
             echo "::error::One or more unit test shards did not succeed (result: $SHARD_RESULT)."
             exit 1

@@ -1,12 +1,15 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require 'fileutils'
+
 # Split the Rails test files into deterministic, approximately even shards.
 #
 # File line count is used as a stable runtime proxy. Assigning the largest files
 # first to the lightest shard avoids a hard-coded manifest, so new *_test.rb
 # files are included automatically.
 # Preview a shard without running Rails by passing --dry-run.
+# Set TEST_SHARD_MANIFEST to write the selected repository-relative file list.
 module TestShard
   module_function
 
@@ -44,6 +47,13 @@ module TestShard
     value
   end
 
+  def write_manifest(path, selected_files)
+    return if path.to_s.empty?
+
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{selected_files.join("\n")}\n")
+  end
+
   def run(argv)
     unknown_arguments = argv - ['--dry-run']
     abort "Unknown argument(s): #{unknown_arguments.join(' ')}" unless unknown_arguments.empty?
@@ -63,6 +73,7 @@ module TestShard
          "#{selected_files.length} of #{shards.sum { |shard| shard[:files].length }} files, " \
          "#{selected_shard[:line_count]} of #{shards.sum { |shard| shard[:line_count] }} lines"
     selected_files.each { |path| puts "  #{path}" }
+    write_manifest(ENV.fetch('TEST_SHARD_MANIFEST', nil), selected_files)
 
     return if argv.include?('--dry-run')
 
