@@ -8,10 +8,10 @@ module TestHelpers
       ).fetch('notification')
     end
 
-    def assert_valid_push_payload(notification, expected_link:)
+    def assert_valid_push_payload(notification, expected_link:, expected_body: nil)
       push = parsed_push_notification(notification)
       data = push.fetch('data')
-      expected_body = notification.message.to_s.truncate(
+      expected_body ||= notification.message.to_s.truncate(
         PushNotificationService::MAX_BODY_LENGTH
       )
 
