@@ -63,7 +63,8 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     )
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard"
+      expected_link: "/projects/#{@project.id}/dashboard",
+      expected_body: 'Your portfolio submission was received.'
     )
 
     assert_equal 1, ActionMailer::Base.deliveries.count
