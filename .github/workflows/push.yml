@@ -45,14 +45,14 @@ env:
 
 jobs:
   unit_test_shards:
-    name: Unit Tests (shard ${{ matrix.shard }}/8)
+    name: Unit Tests (shard ${{ matrix.shard }}/12)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     env:
-      TEST_SHARD_COUNT: "8"
+      TEST_SHARD_COUNT: "12"
       TEST_SHARD_NUMBER: ${{ matrix.shard }}
       TEST_SHARD_MANIFEST: /doubtfire/tmp/test-shard-manifests/shard-${{ matrix.shard }}.txt
     services:
@@ -243,8 +243,8 @@ jobs:
         id: verify_manifests
         run: |
           manifest_count=$(find tmp/all-test-shard-manifests -type f -name 'shard-*.txt' | wc -l)
-          if [ "$manifest_count" -ne 8 ]; then
-            echo "::error::Expected 8 shard manifests, found $manifest_count."
+          if [ "$manifest_count" -ne 12 ]; then
+            echo "::error::Expected 12 shard manifests, found $manifest_count."
             exit 1
           fi
 
