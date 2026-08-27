@@ -53,7 +53,8 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
 
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}",
+      expected_body: 'A task is ready for marking.'
     )
   end
 

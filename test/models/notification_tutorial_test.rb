@@ -56,7 +56,8 @@ class NotificationTutorialTest < ActiveSupport::TestCase
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard"
+      expected_link: "/projects/#{@project.id}/dashboard",
+      expected_body: 'Your tutorial details changed.'
     )
   end
 
