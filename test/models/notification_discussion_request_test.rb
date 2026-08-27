@@ -71,6 +71,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
         discussion = @task.add_discussion_comment(@tutor, uploads)
       end
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 

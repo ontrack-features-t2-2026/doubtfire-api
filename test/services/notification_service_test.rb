@@ -127,6 +127,86 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
+  def test_feedback_notification_is_queued_when_the_category_preference_is_on
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+
+    assert_difference 'Notification.count', 1 do
+      notification = NotificationService.notify(
+        user: user, type: 'feedback', event: 'feedback_available', message: 'Feedback available.'
+      )
+
+      assert notification.persisted?
+    end
+
+    assert_equal 1, NotificationEmailJob.jobs.size
+    NotificationEmailJob.drain
+    assert_equal 1, ActionMailer::Base.deliveries.count
+  end
+
+  def test_task_preference_gates_notifications_in_both_directions
+    user = FactoryBot.create(:user, receive_task_notifications: true)
+
+    assert_difference 'Notification.count', 1 do
+      notification = NotificationService.notify(
+        user: user, type: 'task', event: 'task_due_date_changed', message: 'Task date changed.'
+      )
+
+      assert notification.persisted?
+    end
+    # Drain before flipping the preference. The job re-reads it when it runs,
+    # so leaving it queued across the update would test the worker's late
+    # re-check rather than the gate in notify, which is what this is about.
+    assert_equal 1, NotificationEmailJob.jobs.size
+    NotificationEmailJob.drain
+    assert_equal 1, ActionMailer::Base.deliveries.count
+
+    user.update!(receive_task_notifications: false)
+
+    assert_no_difference 'Notification.count' do
+      result = NotificationService.notify(
+        user: user, type: 'task', event: 'task_due_date_changed', message: 'Suppressed task change.'
+      )
+
+      assert_nil result
+    end
+
+    # Nothing new queued and nothing new delivered. The suppressed call created
+    # no row, so no after_commit ran.
+    assert_empty NotificationEmailJob.jobs
+    assert_equal 1, ActionMailer::Base.deliveries.count
+  end
+
+  def test_portfolio_preference_gates_notifications_in_both_directions
+    user = FactoryBot.create(:user, receive_portfolio_notifications: true)
+
+    assert_difference 'Notification.count', 1 do
+      notification = NotificationService.notify(
+        user: user, type: 'portfolio', event: 'portfolio_received', message: 'Portfolio received.'
+      )
+
+      assert notification.persisted?
+    end
+    # Drain before flipping the preference. The job re-reads it when it runs,
+    # so leaving it queued across the update would test the worker's late
+    # re-check rather than the gate in notify, which is what this is about.
+    assert_equal 1, NotificationEmailJob.jobs.size
+    NotificationEmailJob.drain
+    assert_equal 1, ActionMailer::Base.deliveries.count
+
+    user.update!(receive_portfolio_notifications: false)
+
+    assert_no_difference 'Notification.count' do
+      result = NotificationService.notify(
+        user: user, type: 'portfolio', event: 'portfolio_received', message: 'Suppressed portfolio receipt.'
+      )
+
+      assert_nil result
+    end
+
+    assert_empty NotificationEmailJob.jobs
+    assert_equal 1, ActionMailer::Base.deliveries.count
+  end
+
   def test_types_without_a_preference_are_always_queued
     user = FactoryBot.create(
       :user,
@@ -148,6 +228,28 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert notification.persisted?
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  # 'extension' has no entry in Notification::PREFERENCE_FOR_TYPE, so
+  # deliver_to? returns true regardless of the three category toggles. The
+  # event name is the one ExtensionComment actually raises.
+  def test_extension_notifications_are_always_queued
+    user = FactoryBot.create(
+      :user,
+      receive_task_notifications: false,
+      receive_feedback_notifications: false,
+      receive_portfolio_notifications: false
+    )
+
+    notification = NotificationService.notify(
+      user: user, type: 'extension', event: 'extension_assessed', message: 'Extension decision available.'
+    )
+
+    assert notification.persisted?
+    assert_equal 1, NotificationEmailJob.jobs.size
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+    NotificationEmailJob.drain
+    assert_equal 1, ActionMailer::Base.deliveries.count
   end
 
   def test_a_queue_failure_does_not_block_the_in_app_notification
