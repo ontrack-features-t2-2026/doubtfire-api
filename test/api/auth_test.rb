@@ -128,6 +128,29 @@ class AuthTest < ActiveSupport::TestCase
     assert actual_auth.key? 'error'
   end
 
+  def test_repeated_failed_password_auth_is_rate_limited
+    username = User.first.username
+    invalid_password = 'definitely-wrong-password'
+
+    10.times do |attempt|
+      start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      post_json '/api/auth.json',
+                username: username,
+                password: invalid_password
+
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
+
+      puts "Attempt #{attempt + 1}: status=#{last_response.status}, time=#{elapsed.round(3)}s"
+
+      if attempt < 5
+        assert_equal 401, last_response.status
+      else
+        assert_equal 429, last_response.status
+      end
+    end
+  end
+
   # Test auth with empty request body
   def test_fail_empty_request
     data_to_post = ""
