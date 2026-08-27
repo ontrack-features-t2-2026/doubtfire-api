@@ -9,6 +9,19 @@ class AuthTest < ActiveSupport::TestCase
     Rails.application
   end
 
+  setup do
+    Rack::Attack.reset!
+  end
+
+  def post_failed_auth(username:, ip:)
+    post(
+      '/api/auth.json',
+      { username: username, password: 'definitely-wrong-password' }.to_json,
+      'CONTENT_TYPE' => 'application/json',
+      'REMOTE_ADDR' => ip
+    )
+  end
+
   # --------------------------------------------------------------------------- #
   # --- Endpoint testing for:
   # ------- /api/auth.json
@@ -112,6 +125,40 @@ class AuthTest < ActiveSupport::TestCase
     refute actual_auth.key?('auth_token'), 'Auth token not expected if auth fails'
 
     assert actual_auth.key? 'error'
+  end
+
+  def test_repeated_failed_password_auth_is_rate_limited_by_ip
+    travel_to Time.zone.parse('2026-08-27 03:00:30 UTC') do
+      6.times do |attempt|
+        post_failed_auth(
+          username: "missing-user-#{attempt}",
+          ip: '192.0.2.10'
+        )
+
+        assert_equal(attempt < 5 ? 401 : 429, last_response.status)
+      end
+
+      assert_equal '30', last_response.headers.fetch('retry-after')
+      assert_equal 'Too many authentication attempts. Please try again later.', last_response_body['error']
+    end
+  end
+
+  def test_repeated_failed_password_auth_is_rate_limited_by_normalized_json_username
+    username = User.first.username
+    username_variants = [username, username.upcase, " #{username}", "#{username} ", " #{username.upcase} "]
+
+    travel_to Time.zone.parse('2026-08-27 03:00:30 UTC') do
+      username_variants.each_with_index do |attempted_username, attempt|
+        post_failed_auth(username: attempted_username, ip: "198.51.100.#{attempt + 1}")
+        assert_equal 401, last_response.status
+      end
+
+      post_failed_auth(username: username, ip: '198.51.100.6')
+
+      assert_equal 429, last_response.status
+      assert_equal '30', last_response.headers.fetch('retry-after')
+      assert_equal 'Too many authentication attempts. Please try again later.', last_response_body['error']
+    end
   end
 
   # Test auth with empty request body

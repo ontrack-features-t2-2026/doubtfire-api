@@ -322,6 +322,8 @@ GEM
     raabro (1.4.0)
     racc (1.8.1)
     rack (3.1.22)
+    rack-attack (6.8.0)
+      rack (>= 1.0, < 4)
     rack-cors (2.0.2)
       rack (>= 2.0.0)
     rack-session (2.1.2)
@@ -608,6 +610,7 @@ DEPENDENCIES
   oauth2
   pdf-reader
   puma (~> 7.2, >= 7.2.1)
+  rack-attack (~> 6.8)
   rack-cors
   rails (~> 8.0.0, >= 8.0.5.1)
   rails-latex
@@ -781,6 +784,7 @@ CHECKSUMS
   raabro (1.4.0) sha256=d4fa9ff5172391edb92b242eed8be802d1934b1464061ae5e70d80962c5da882
   racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
   rack (3.1.22) sha256=db116c1462fd32dec8b942a808ebedd4e1dbf1fcd0b24c481ae32ee99ca1ebe0
+  rack-attack (6.8.0) sha256=f2499fdebf85bcc05573a22dff57d24305ac14ec2e4156cd3c28d47cafeeecf2
   rack-cors (2.0.2) sha256=415d4e1599891760c5dc9ef0349c7fecdf94f7c6a03e75b2e7c2b54b82adda1b
   rack-session (2.1.2) sha256=595434f8c0c3473ae7d7ac56ecda6cc6dfd9d37c0b2b5255330aa1576967ffe8
   rack-test (2.2.0) sha256=005a36692c306ac0b4a9350355ee080fd09ddef1148a5f8b2ac636c720f5c463
