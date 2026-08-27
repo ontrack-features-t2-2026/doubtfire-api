@@ -65,6 +65,16 @@ jobs:
 
           target_ref="$(jq -rn --arg ref "$TARGET_BRANCH" '$ref | @uri')"
           source_ref="$(jq -rn --arg ref "$SOURCE_BRANCH" '$ref | @uri')"
+
+          for ref in "$target_ref" "$source_ref"; do
+            if ! gh api "repos/$GITHUB_REPOSITORY/branches/${ref}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              --silent >/dev/null 2>&1; then
+              echo "Branch $ref no longer exists in $GITHUB_REPOSITORY; skipping."
+              exit 0
+            fi
+          done
           comparison="$(
             gh api "repos/$GITHUB_REPOSITORY/compare/${target_ref}...${source_ref}" \
               -H "Accept: application/vnd.github+json" \
