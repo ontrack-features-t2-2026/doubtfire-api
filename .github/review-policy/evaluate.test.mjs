@@ -7,6 +7,7 @@ import {
   createAppJwt,
   evaluatePolicy,
   pullRequestNumbersFromWorkflowRun,
+  safeError,
   setPolicyStatus,
   statusShaForPullRequest,
 } from './evaluate.mjs';
@@ -129,6 +130,20 @@ test('GitHub App JWT has a valid RSA signature and bounded lifetime', () => {
   assert.equal(claims.iss, '4699573');
   assert.equal(claims.iat, now - 60);
   assert.equal(claims.exp, now + 540);
+});
+
+test('classic and stateless GitHub App tokens are fully redacted from errors', () => {
+  const classicToken = `ghs_${'a'.repeat(36)}`;
+  const statelessToken = `ghs_${'A'.repeat(170)}.${'b'.repeat(170)}.${'C'.repeat(170)}`;
+
+  assert.equal(
+    safeError(new Error(`classic ${classicToken} token`)),
+    'classic [redacted token] token',
+  );
+  assert.equal(
+    safeError(new Error(`stateless ${statelessToken} token`)),
+    'stateless [redacted token] token',
+  );
 });
 
 test('unchanged App status is not republished and spoofed sources are ignored', async () => {
