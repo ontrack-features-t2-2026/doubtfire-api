@@ -22,14 +22,19 @@ class NotificationService
   #         Notification::TYPES.
   # event - the specific thing that happened, e.g. 'task_comment_created'.
   #         Required, so every notification can be traced back to its source.
-  def self.notify(user:, type:, event:, message:, link: nil, dedupe_key: nil)
+  # notifiable - the record the event happened to, e.g. the comment or the task.
+  #         Optional, so an existing caller and a general notification both
+  #         still work. Supplying it is what lets the notification be cleared
+  #         when the user reads the thing it was about.
+  def self.notify(user:, type:, event:, message:, link: nil, dedupe_key: nil, notifiable: nil)
     notification = reserve(
       user: user,
       type: type,
       event: event,
       message: message,
       link: link,
-      dedupe_key: dedupe_key
+      dedupe_key: dedupe_key,
+      notifiable: notifiable
     )
 
     deliver(notification)
@@ -38,7 +43,7 @@ class NotificationService
   # Persist a notification without running its delivery channels. Callers that
   # need a short eligibility lock can commit this reservation, release the
   # lock, and then call `deliver` without holding a row lock across network I/O.
-  def self.reserve(user:, type:, event:, message:, link: nil, dedupe_key: nil)
+  def self.reserve(user:, type:, event:, message:, link: nil, dedupe_key: nil, notifiable: nil)
     type = type.to_s
     return nil unless deliver_to?(user, type)
 
@@ -48,7 +53,8 @@ class NotificationService
       event: event.to_s,
       message: message,
       link: link,
-      dedupe_key: dedupe_key
+      dedupe_key: dedupe_key,
+      notifiable: notifiable
     )
   end
 
