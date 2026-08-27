@@ -12,9 +12,12 @@
 class PushSubscription < ApplicationRecord
   # Exact hosts. One per push service.
   #
-  #   fcm.googleapis.com                  Chrome, Edge, Opera, Brave
+  #   fcm.googleapis.com                  Chrome, Opera, Brave
   #   android.googleapis.com              older Chrome on Android
   #   updates.push.services.mozilla.com   Firefox
+  #
+  # Edge is Chromium but it subscribes through WNS, so it is covered by the
+  # suffixes below and not by fcm.googleapis.com.
   PUSH_SERVICE_HOSTS = %w[
     fcm.googleapis.com
     android.googleapis.com
@@ -25,9 +28,13 @@ class PushSubscription < ApplicationRecord
   # with a leading dot so "evil-notify.windows.com" cannot pass as a subdomain
   # of "notify.windows.com".
   #
-  #   *.notify.windows.com               WNS, legacy Edge
+  #   *.notify.windows.com               WNS, current Edge
   #   *.push.services.microsoft.com      WNS, current
   #   *.push.apple.com                    Safari, iOS 16.4+
+  #
+  # Not legacy. Edge 151 on macOS subscribed through
+  # wns2-bl2p.notify.windows.com when this was checked on 27 Aug 2026, so a
+  # current Chromium Edge lands here rather than on fcm.googleapis.com.
   PUSH_SERVICE_HOST_SUFFIXES = %w[
     .notify.windows.com
     .push.services.microsoft.com
