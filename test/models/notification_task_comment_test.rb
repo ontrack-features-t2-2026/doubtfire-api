@@ -7,6 +7,7 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -30,6 +31,7 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       @task.add_text_comment(@tutor, 'Have a look at question three.')
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -48,6 +50,7 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       @task.add_text_comment(@student, 'I am stuck on question three.')
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -70,6 +73,7 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
   def test_the_comment_text_is_not_in_the_notification_or_the_email
     secret = 'Please do not put this sentence in an email.'
     @task.add_text_comment(@tutor, secret)
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
     body = delivered_body
@@ -102,6 +106,7 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
 
   def test_the_event_specific_template_is_used_instead_of_the_generic_one
     @task.add_text_comment(@tutor, 'Template check.')
+    NotificationEmailJob.drain
 
     body = delivered_body
 

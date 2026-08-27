@@ -8,6 +8,7 @@ class NotificationGroupTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @group = FactoryBot.create(:group, unit: @project.unit)
@@ -25,6 +26,7 @@ class NotificationGroupTest < ActiveSupport::TestCase
     assert_difference 'Notification.count', 1 do
       @group.add_member(@project)
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -53,10 +55,12 @@ class NotificationGroupTest < ActiveSupport::TestCase
     @group.add_member(@project)
 
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     assert_difference 'Notification.count', 1 do
       @group.remove_member(@project)
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -75,10 +79,12 @@ class NotificationGroupTest < ActiveSupport::TestCase
     @group.add_member(other_project)
 
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     assert_difference 'Notification.count', 1 do
       @group.add_member(@project)
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -113,12 +119,14 @@ class NotificationGroupTest < ActiveSupport::TestCase
     new_tutorial = FactoryBot.create(:tutorial, unit: unit, campus: nil)
 
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     assert_difference -> { Notification.where(event: 'tutorial_changed').count }, 2 do
       assert_no_difference -> { Notification.where(event: 'group_membership_changed').count } do
         group.switch_to_tutorial(new_tutorial)
       end
     end
+    NotificationEmailJob.drain
 
     tutorial_notifications = Notification.where(event: 'tutorial_changed').recent_first.limit(2)
 

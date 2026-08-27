@@ -250,6 +250,7 @@ class SendDueSoonRemindersJobTest < ActiveSupport::TestCase
 
   def run_job
     SendDueSoonRemindersJob.new.perform
+    NotificationEmailJob.drain
   end
 
   def delivered_body
