@@ -10,3 +10,11 @@
 <p>
   You can view your current group information in <%= @doubtfire_product_name %>.
 </p>
+
+<% if @notification.link.present? %>
+  <p>
+    <a href="<%= @doubtfire_host %><%= @notification.link %>">
+      Open your group in <%= @doubtfire_product_name %>
+    </a>
+  </p>
+<% end %>
