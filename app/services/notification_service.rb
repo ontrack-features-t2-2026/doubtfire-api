@@ -1,7 +1,7 @@
 # Central entry point for raising a notification.
 #
 # Creates the in-app record and fans out to the enabled delivery channels
-# (email now, push in Stage 4). A single category toggle (the user's
+# (email through Sidekiq, push immediately). A single category toggle (the user's
 # receive_*_notifications preference) gates every channel: if the category is
 # off, the notification is suppressed entirely. Per-channel granularity
 # (a type x channel matrix) is deferred to a future iteration.
@@ -60,9 +60,14 @@ class NotificationService
     # its channel delivery. If delivery raises, delivered_at remains nil and a
     # retry tries again. External channels are at-least-once: a process crash
     # after a provider accepts a message can repeat that message on retry.
+    #
+    # Email is deliberately not fanned out here. Notification's after_commit
+    # hook queues it once, on create, so a reserve that returns an existing row
+    # for a dedupe key creates nothing and queues nothing: the unique index is
+    # what stops the second email, in place of the delivered_at guard below.
+    # delivered_at therefore tracks push delivery.
     notification.with_lock do
       unless notification.delivered_at?
-        deliver_email(notification)
         PushNotificationService.deliver(notification)
         notification.update!(delivered_at: Time.current)
       end
@@ -80,7 +85,8 @@ class NotificationService
   end
 
   # A non-null dedupe key is an immutable event identity. The unique database
-  # index makes concurrent fan-out jobs race safely: exactly one insert wins.
+  # index makes concurrent fan-out jobs race safely: exactly one insert wins,
+  # and only that winner runs the after_commit hook that queues the email.
   def self.create_notification(**attributes)
     Notification.transaction(requires_new: true) do
       Notification.create!(**attributes)
@@ -95,27 +101,18 @@ class NotificationService
   end
   private_class_method :create_notification
 
-  # Email channel. Best-effort: a mail failure must never block the in-app
-  # notification, so errors are logged and swallowed here.
+  # Email channel. Called from Notification's after_commit hook, never directly
+  # from notify or deliver, so the notification is committed before the job exists.
   #
-  # Sent inline, rather than with deliver_later or a Sidekiq job.
-  #
-  # No Active Job queue adapter is configured, so deliver_later would run on
-  # Active Job's in-process :async thread pool. That does execute, but only in
-  # memory: anything still pending is lost when the container restarts, and it
-  # shows up in no dashboard. A Sidekiq job would be worse in development, where
-  # the stack starts Redis but runs no worker process at all, so perform_async
-  # would queue to Redis and sit there forever without reporting an error.
-  #
-  # Known trade-off: this runs on the request path, and production delivers over
-  # SMTP (config/environments/production.rb), so a slow mail server slows down
-  # whatever action raised the notification. The rescue below cannot prevent that
-  # latency, and it also swallows the failure without retrying. Moving this onto
-  # a real queue is ticket EN-F03, which adds the worker service first.
-  def self.deliver_email(notification)
-    NotificationsMailer.single_notification(notification).deliver_now
+  # Queue only the stable Notification id; message content, recipient details
+  # and other student data remain in the database. Queue connection errors are
+  # best-effort so the in-app record and push delivery are not blocked. Delivery
+  # failures are raised by the job for Sidekiq to retry.
+  def self.queue_email(notification)
+    NotificationEmailJob.perform_async(notification.id)
   rescue StandardError => e
-    Rails.logger.error "Failed to send notification email for user #{notification.user_id}: #{e.message}"
+    Rails.logger.error(
+      "Failed to queue notification email for Notification #{notification.id}: #{e.class}"
+    )
   end
-  private_class_method :deliver_email
 end

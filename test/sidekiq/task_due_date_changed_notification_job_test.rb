@@ -148,6 +148,7 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
       @previous_due_date,
       @new_due_date
     )
+    NotificationEmailJob.drain
   end
 
   def eligible_projects
