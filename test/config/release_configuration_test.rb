@@ -101,11 +101,13 @@ class ReleaseConfigurationTest < Minitest::Test
     schema = read('db/schema.rb')
     migration = read('db/migrate/20260824000002_ensure_target_grade_changed_at_default.rb')
     workflow = read('.github/workflows/push.yml')
+    database_preparation = read('script/prepare_test_database.sh')
 
     assert_includes schema, 'default: -> { "current_timestamp(6)" }'
     assert_includes migration, "-> { 'CURRENT_TIMESTAMP(6)' }"
+    assert_includes workflow, 'run: script/prepare_test_database.sh'
     assert_includes workflow, 'git diff --exit-code -- db/schema.rb'
-    assert_includes workflow, "abort 'db:populate created no units' unless Unit.exists?"
+    assert_includes database_preparation, "abort 'db:populate created no units' unless Unit.exists?"
   end
 
   def test_development_compose_has_no_literal_institution_credential
