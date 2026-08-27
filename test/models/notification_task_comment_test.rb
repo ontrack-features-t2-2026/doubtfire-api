@@ -46,6 +46,25 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
 
+  # The abbreviation goes into a url segment and nothing validates its format, so
+  # a space in it produced a link both allowlists rejected. The bell and the push
+  # banner dropped the person on /notifications with no task open, while the
+  # email opened the task, because the mail template applies no allowlist.
+  def test_an_abbreviation_with_a_space_is_encoded_in_the_link
+    @task_definition.update!(abbreviation: 'Portfolio Reflection')
+    @task.reload
+
+    @task.add_text_comment(@tutor, 'Have a look at question three.')
+
+    notification = Notification.recent_first.first
+
+    assert_equal "/projects/#{@project.id}/dashboard/Portfolio%20Reflection", notification.link
+    assert_valid_push_payload(
+      notification,
+      expected_link: "/projects/#{@project.id}/dashboard/Portfolio%20Reflection"
+    )
+  end
+
   def test_a_student_comment_notifies_the_tutor
     assert_difference 'Notification.count', 1 do
       @task.add_text_comment(@student, 'I am stuck on question three.')

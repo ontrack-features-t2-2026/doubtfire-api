@@ -741,7 +741,7 @@ class Task < ApplicationRecord
       type: 'task',
       event: 'task_submitted',
       message: "#{student.name} submitted #{task_definition.name} for marking in #{product_name}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
       notifiable: self
     )
   rescue StandardError => e
@@ -776,7 +776,7 @@ class Task < ApplicationRecord
       type: 'task',
       event: 'task_status_changed',
       message: "#{by_user.name} updated the status of #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
       notifiable: self
     )
   rescue StandardError => e
@@ -1077,7 +1077,7 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'task_comment_created',
       message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
       notifiable: comment
     )
   rescue StandardError => e
@@ -1170,7 +1170,7 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'discussion_request_created',
       message: 'A discussion prompt is ready for you.',
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}"
     )
   rescue StandardError => e
     logger.error "Failed to raise discussion_request_created notification for task #{id}: #{e.message}"
