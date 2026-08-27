@@ -72,7 +72,7 @@ class ExtensionComment < TaskComment
           type: 'extension',
           event: 'extension_assessed',
           message: extension_response,
-          link: "/projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
+          link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task.task_definition.abbreviation)}"
         )
       rescue StandardError => e
         Rails.logger.error "Failed to notify student about extension assessment: #{e.message}"

@@ -204,7 +204,12 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/2/dashboard/TASK1',
       '/projects/2/dashboard/P-2.21',
       '/projects/2/dashboard/D-9.568',
-      '/projects/2/dashboard/C-4.602'
+      '/projects/2/dashboard/C-4.602',
+      # An abbreviation with a space in it, encoded at the point the link is
+      # built. This is the case the whole ticket is about.
+      '/projects/2/dashboard/Portfolio%20Reflection',
+      # 43 characters, the length this repo's own tests already create.
+      "/projects/2/dashboard/#{'a' * 43}"
     ]
 
     routes.each do |route|
@@ -238,12 +243,19 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/2/dashboard/1.1P%3ftoken%3dsecret',
       '/%252f%252fexample.test',
       '/projects/2/dashboard/%',
+      # An encoded slash must still fall back. Admitting %20 must not become
+      # admitting any escape, or a path separator walks past the anchor.
+      '/projects/2/dashboard/A%2FB',
+      '/projects/2/dashboard/A%2fB',
       '/projects/0/dashboard',
       '/projects/2/dashboard/',
       '/projects/2/dashboard/1.1P/extra',
       '/projects/2/dashboard/1.1P?token=secret',
       '/projects/2/dashboard/1.1P#feedback',
-      "/projects/2/dashboard/#{'A1' * 20}",
+      # Still here to prove the segment bound is enforced, lengthened because the
+      # bound moved from 32 to 128. This is the only case in this list that
+      # changed.
+      "/projects/2/dashboard/#{'A1' * 70}",
       '/units/2',
       '/home'
     ]

@@ -33,9 +33,19 @@ class PushNotificationService
   # MN-C03 BEGIN: safe click route constants
   SAFE_CLICK_FALLBACK = '/notifications'.freeze
   MAX_CLICK_LINK_LENGTH = 256
-  FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#%]/
+  # The percent sign is no longer forbidden outright, because the task segment
+  # now carries %20 for an abbreviation with a space in it. Everything else a
+  # percent sign can introduce is still refused by the task route below, which
+  # admits %20 and no other escape.
+  FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#]/
   SAFE_PROJECT_ROOT_LINK = %r{\A/projects/[1-9]\d*/(?:dashboard|groups)\z}
-  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z}x
+  # %20 only, deliberately not "a percent and any two hex digits". %2F is an
+  # encoded slash and %5C an encoded backslash, and either walks a path
+  # separator straight past an anchored pattern written on the assumption there
+  # is none. The cap is 128 rather than 32 because abbreviations already in
+  # these repos run past 40 characters; it is not raised further because
+  # MAX_CLICK_LINK_LENGTH is checked first and would decide anyway.
+  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9](?:[A-Za-z0-9._-]|%20){0,127}\z}x
   # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
   # service that accepts a connection and then never answers holds the request
