@@ -217,11 +217,18 @@ class TasksApi < Grape::API
           recursive_fix: params[:trigger_recursive_fix],
           check_feedback: true
         )
-        if result.nil? && task.errors.any?
-          error!({ error: task.errors.full_messages.to_sentence }, 403)
-        end
-        if result.nil? && task.task_definition.restrict_status_updates
-          error!({ error: 'This task can only be updated by your tutor.' }, 403)
+        # trigger_transition returns nil for every refusal, and most of its early
+        # returns leave errors empty. Both guards below used to need something
+        # extra on top of that, so a refused change fell through to the 200 at the
+        # end of the handler and the client showed it as accepted.
+        if result.nil?
+          if task.errors.any?
+            error!({ error: task.errors.full_messages.to_sentence }, 403)
+          elsif task.task_definition.restrict_status_updates
+            error!({ error: 'This task can only be updated by your tutor.' }, 403)
+          else
+            error!({ error: 'This status change is not allowed for this task.' }, 403)
+          end
         end
         SessionTracker.record_assessment_activity(
           action: "assessing",
