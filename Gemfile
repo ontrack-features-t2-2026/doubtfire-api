@@ -123,3 +123,11 @@ gem "sys-filesystem"
 
 gem "sentry-rails"
 gem "sentry-ruby"
+
+# Web push notifications. Signs and encrypts payloads for the browser push
+# services (VAPID). See docs/notifications/push-setup.md.
+#
+# Pinned exactly so a future dependency update cannot unexpectedly move JWT to
+# a new major version. web-push 3.0.1 still supports jwt ~> 2.0 and replaces the
+# retired hkdf dependency with OpenSSL::KDF; JWT 3 is introduced by 3.0.2.
+gem 'web-push', '3.0.1'

@@ -35,6 +35,10 @@ class Project < ApplicationRecord
   has_many :staff_notes, dependent: :destroy
   has_many :engagements, dependent: :destroy, inverse_of: :project
 
+  before_create :record_target_grade_change
+  before_update :record_target_grade_change,
+                if: :will_save_change_to_target_grade?
+
   # Callbacks - methods called are private
   before_destroy :can_destroy?
 
@@ -174,9 +178,29 @@ class Project < ApplicationRecord
     else # there is an existing enrolment...
       tutorial_enrolment.tutorial = tutorial
       tutorial_enrolment.update!(tutorial_id: tutorial.id)
+      notify_tutorial_changed(tutorial)
     end
     tutorial_enrolment
   end
+
+  def notify_tutorial_changed(tutorial)
+    student = self.student
+    return if student.blank?
+
+    NotificationService.notify(
+      user: student,
+      type: 'general',
+      event: 'tutorial_changed',
+      message: "You have been moved to tutorial #{tutorial.abbreviation} in #{unit.code}. It meets on #{tutorial.meeting_day} at #{tutorial.meeting_time}.",
+      link: "/projects/#{id}/dashboard"
+    )
+  rescue StandardError => e
+    logger.error(
+      "Failed to raise tutorial_changed notification for project #{id}: #{e.message}"
+    )
+  end
+
+  private :notify_tutorial_changed
 
   def enrolled_in?(tutorial)
     tutorial_enrolments.select { |e| e.tutorial_id == tutorial.id }.count > 0 || tutorial_enrolments.where(tutorial_id: tutorial.id).count > 0
@@ -717,6 +741,10 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def record_target_grade_change
+    self.target_grade_changed_at = Time.current
+  end
 
   def can_destroy?
     return true if tutorial_enrolments.count == 0

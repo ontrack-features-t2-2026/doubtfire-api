@@ -23,6 +23,17 @@ Doubtfire is a feedback-driven learning support system.
 
 See [Doubtfire Deploy](https://github.com/doubtfire-lms/doubtfire-deploy) for instructions on deploying, and contributing, to the Doubtfire project.
 
+The legacy root `docker-compose.yml` defaults to local database authentication.
+Optional AAF development must use a dedicated non-production registration
+supplied through an ignored `.env` file copied from `.env.example`. Any AAF
+secret ever committed to Git must be treated as compromised and rotated by its
+identity owner.
+
+Image publication is coordinated from the exact API/web revisions pinned by
+`doubtfire-deploy` and its `production/publish-release.sh` release gate. The
+legacy API image workflow is intentionally build-only and cannot publish a
+tagged image independently of the cross-repository handover checks.
+
 ## Environment variables
 
 Doubtfire requires multiple environment variables that help define settings about the Doubtfire instance running. Whilst these will default to other values, you may want to override them in production.
@@ -35,6 +46,7 @@ Doubtfire requires multiple environment variables that help define settings abou
 | `DF_ARCHIVE_DIR`               | The directory to move archived unit files to, and access from.                                                                                                                                                                                                              | `DF_STUDENT_WORK_DIR/archive`  |
 | `DF_INSTITUTION_NAME`          | The name of your institution running Doubtfire.                                                                                                                                                                                                                             | _Doubtfire University_         |
 | `DF_INSTITUTION_EMAIL_DOMAIN`  | The email domain from which emails are sent to and from in your institution.                                                                                                                                                                                                | `doubtfire.com`                |
+| `DF_INSTITUTION_EMAIL_SENDER`  | The SMTP-authorised From address used for event-notification email. It may include a display name.                                                                                                                                                                           | `noreply@doubtfire.local`      |
 | `DF_INSTITUTION_HOST`          | The host running the Doubtfire instance.                                                                                                                                                                                                                                    | `localhost:3000`               |
 | `DF_COOKIE_DOMAIN`             | The domain to be associated with secure cookies.                                                                                                                                                                                                                            | Attempts to read from host     |
 | `DF_INSTITUTION_PRODUCT_NAME`  | The name of the product (i.e. Doubtfire) at your institution.                                                                                                                                                                                                               | _Doubtfire_                    |

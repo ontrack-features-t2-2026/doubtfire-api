@@ -12,7 +12,8 @@ class UnitsTest < ActiveSupport::TestCase
   def assert_users_model_response(response_data, user_model, keys = nil)
     if keys.nil?
       keys = %w[id student_id email first_name last_name username nickname receive_task_notifications
-                receive_portfolio_notifications receive_feedback_notifications opt_in_to_research has_run_first_time_setup]
+                receive_portfolio_notifications receive_feedback_notifications display_peer_progress
+                opt_in_to_research has_run_first_time_setup]
     end
 
     assert_json_matches_model(user_model, response_data, keys)
@@ -50,7 +51,7 @@ class UnitsTest < ActiveSupport::TestCase
     assert_equal expected_data.count, last_response_body.count
 
     # What are the keys we expect in the data that match the model - so we can check these
-    response_keys = %w[first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications opt_in_to_research has_run_first_time_setup]
+    response_keys = %w[first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup]
 
     # Loop through all of the responses
     last_response_body.each do | data |
@@ -76,7 +77,7 @@ class UnitsTest < ActiveSupport::TestCase
     assert_equal 200, last_response.status
 
     # Check the returned details match as expected
-    response_keys = %w(first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications opt_in_to_research has_run_first_time_setup)
+    response_keys = %w(first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup)
     assert_json_matches_model(expected_user, returned_user, response_keys)
   end
 
@@ -134,6 +135,7 @@ class UnitsTest < ActiveSupport::TestCase
 
     assert_equal pre_count + 1, User.all.length
     assert_users_model_response last_response_body, User.last
+    assert User.last.display_peer_progress?
     assert_equal 201, last_response.status
   end
 
@@ -333,6 +335,27 @@ class UnitsTest < ActiveSupport::TestCase
 
     put_json '/api/users/2', data_to_put
     assert_equal 400, last_response.status
+  end
+
+  def test_put_update_peer_progress_display_preference
+    user = User.second
+    add_auth_header_for(user: User.first)
+
+    put_json "/api/users/#{user.id}", {
+      user: { display_peer_progress: false }
+    }
+
+    assert_equal 200, last_response.status
+    assert_equal false, last_response_body['display_peer_progress']
+    assert_not user.reload.display_peer_progress?
+
+    put_json "/api/users/#{user.id}", {
+      user: { display_peer_progress: true }
+    }
+
+    assert_equal 200, last_response.status
+    assert_equal true, last_response_body['display_peer_progress']
+    assert user.reload.display_peer_progress?
   end
 
   def test_put_update_user_invalid_email

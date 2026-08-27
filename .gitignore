@@ -32,6 +32,7 @@ student-work/
 .DS_Store
 .env
 .env*
+!.env.example
 /config/credentials/*.yml.enc
 /config/credentials/*.key
 /config/master.key

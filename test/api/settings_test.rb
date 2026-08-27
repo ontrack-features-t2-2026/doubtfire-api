@@ -65,7 +65,7 @@ class SettingsTest < ActiveSupport::TestCase
     assert_equal D2lIntegration.enabled?, last_response_body['d2lEnabled']
 
     assert_equal(
-      %w[d2lEnabled overseerEnabled tiiEnabled].sort,
+      %w[d2lEnabled overseerEnabled pushEnabled tiiEnabled vapidPublicKey].sort,
       last_response_body.keys.sort
     )
   end

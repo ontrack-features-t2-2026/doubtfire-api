@@ -10,6 +10,7 @@ module Entities
     expose :receive_task_notifications, unless: :minimal
     expose :receive_portfolio_notifications, unless: :minimal
     expose :receive_feedback_notifications, unless: :minimal
+    expose :display_peer_progress, unless: :minimal
     expose :opt_in_to_research, unless: :minimal
     expose :has_run_first_time_setup, unless: :minimal
 

@@ -605,6 +605,10 @@ class Task < ApplicationRecord
     # State transitions based upon the trigger
     #
 
+    # Remember the status before the transition so we can tell, at the end,
+    # whether it actually changed. An unchanged status must not notify (EN-E02).
+    status_id_before_transition = task_status_id
+
     status = TaskStatus.status_for_name(trigger)
 
     case status
@@ -676,7 +680,78 @@ class Task < ApplicationRecord
       end
     end
 
+    # EN-V06: tell the responsible tutor when a student submits for marking.
+    notify_tutor_of_task_submission(by_user, role, status_id_before_transition, group_transition)
+
+    # EN-E02: tell the student when a staff member changed their task's status.
+    notify_student_of_status_change(by_user, role, status_id_before_transition)
+
     true
+  end
+
+  # Tell the responsible tutor when a student's task genuinely moves into the
+  # ready-for-feedback state. EN-E02 shares this transition seam, but its
+  # tutor-only role guard is deliberately disjoint from this student-only one,
+  # so one transition cannot raise both events.
+  #
+  # A group submission fans the same transition out to every member task. Only
+  # the original action notifies; internal group transitions are suppressed so
+  # one logical submission cannot amplify into duplicate tutor emails.
+  def notify_tutor_of_task_submission(by_user, role, previous_status_id, group_transition)
+    return unless [:student, :group_member].include?(role)
+    return if group_transition
+    return unless task_status == TaskStatus.ready_for_feedback
+    return if task_status_id == previous_status_id
+
+    recipient = project&.tutor_for(task_definition)
+    student = project&.student
+    return if recipient.blank? || student.blank? || recipient == by_user
+
+    product_name = Doubtfire::Application.config.institution[:product_name]
+
+    NotificationService.notify(
+      user: recipient,
+      type: 'task',
+      event: 'task_submitted',
+      message: "#{student.name} submitted #{task_definition.name} for marking in #{product_name}.",
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise task_submitted notification for task #{id}: #{e.message}"
+  end
+
+  # Tell the student that a staff member changed the status of their task.
+  #
+  # Only a tutor's action notifies (role == :tutor); a student changing their
+  # own task must never email themselves. And only a real change notifies: an
+  # unchanged status is a no-op.
+  #
+  # The new status value is deliberately kept out of the notification, the same
+  # way the comment text is in notify_comment_recipient. The email is a prompt to
+  # come back to OnTrack, not a copy of the result.
+  #
+  # Raising a notification must never roll back the transition, so failures are
+  # logged and swallowed. NotificationService already rescues mail errors; this
+  # catches the record write and anything else unexpected.
+  def notify_student_of_status_change(by_user, role, previous_status_id)
+    return unless role == :tutor
+    return if task_status_id == previous_status_id
+
+    recipient = project&.student
+    # recipient == by_user is belt and braces: once role == :tutor the actor
+    # cannot be the student, since user_role checks user == student first. Kept
+    # so a future change to user_role cannot start emailing someone themselves.
+    return if recipient.blank? || recipient == by_user
+
+    NotificationService.notify(
+      user: recipient,
+      type: 'task',
+      event: 'task_status_changed',
+      message: "#{by_user.name} updated the status of #{task_definition.abbreviation} in #{unit.code}.",
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise task_status_changed notification for task #{id}: #{e.message}"
   end
 
   def has_discussed_in_class_comment?
@@ -946,7 +1021,37 @@ class Task < ApplicationRecord
     comment.reply_to_id = reply_to_id
     comment.save!
 
+    notify_comment_recipient(comment)
+
     comment
+  end
+
+  # Tell the other party that a comment arrived.
+  #
+  # comment.recipient is already worked out above: the tutor when a student
+  # commented, the student when a tutor commented. Do not recalculate it.
+  #
+  # A project with no tutor for this task definition has no recipient, so the
+  # guard is required and not defensive padding.
+  #
+  # The comment text is deliberately not put in the notification. The email is a
+  # prompt to come back to OnTrack, not a copy of the conversation.
+  #
+  # Raising a notification must never stop a comment being posted, so failures
+  # are logged and swallowed. NotificationService already rescues mail errors;
+  # this catches the record write and anything else unexpected.
+  def notify_comment_recipient(comment)
+    return if comment.recipient.blank?
+
+    NotificationService.notify(
+      user: comment.recipient,
+      type: 'feedback',
+      event: 'task_comment_created',
+      message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise task_comment_created notification for task #{id}: #{e.message}"
   end
 
   def individual_task_or_submitter_of_group_task?
@@ -1014,9 +1119,31 @@ class Task < ApplicationRecord
     end
 
     discussion.mark_as_read(user, unit)
+    notify_discussion_request_recipient(discussion)
 
     logger.info(discussion)
     return discussion
+  end
+
+  # EN-V08 was originally described as a discussion booking notification, but
+  # OnTrack has no booking or appointment record to hook. A discussion comment
+  # is the point where a tutor actually raises an audio prompt for a student,
+  # so notify the student once that prompt and its attachments are ready.
+  #
+  # Prompt content is deliberately left out of the notification and email. A
+  # notification failure must not stop the discussion comment being created.
+  def notify_discussion_request_recipient(discussion)
+    return if discussion.recipient.blank?
+
+    NotificationService.notify(
+      user: discussion.recipient,
+      type: 'feedback',
+      event: 'discussion_request_created',
+      message: 'A discussion prompt is ready for you.',
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise discussion_request_created notification for task #{id}: #{e.message}"
   end
 
   # TODO: Refactor to attachment comment (with inheritance on model)
