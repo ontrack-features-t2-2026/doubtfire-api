@@ -74,9 +74,9 @@ per-channel switches later if we want.
 - app/services/notification_service.rb: the one entry point. Checks the setting,
   saves the record, and queues the email and push channel jobs.
 - app/sidekiq/notification_email_job.rb: reloads a notification by id and sends
-  its email.
+  its email on the `mailers` queue.
 - app/sidekiq/push_notification_delivery_job.rb: reloads a notification by id
-  and hands it to the Web Push delivery channel.
+  and hands it to the Web Push delivery channel on the `notifications` queue.
 - app/services/push_notification_service.rb: the Web Push delivery channel. It
   remains a safe no-op until both VAPID keys are configured.
 - app/mailers/notifications_mailer.rb: the email. New method single_notification

@@ -254,8 +254,9 @@ request.
 `NotificationService.notify` persists the in-app record, then queues separate
 ID-only email and push jobs. Sidekiq workers reload the notification and perform
 provider network I/O; a request only waits for the short Redis hand-offs. Both
-jobs use the default queue, so every deployed environment that should deliver
-notifications must run a Sidekiq worker for that queue.
+jobs avoid the general-purpose `default` queue: email uses `mailers` and Web Push
+uses `notifications`. Every deployed environment that should deliver
+notifications must run a Sidekiq worker for both channel queues.
 
 The hand-off is at-least-once. If either job cannot be queued, `delivered_at`
 stays empty so a later event retry can try again. That retry may enqueue the

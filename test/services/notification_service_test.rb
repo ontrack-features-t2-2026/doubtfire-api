@@ -35,7 +35,7 @@ class NotificationServiceTest < ActiveSupport::TestCase
 
     push_job = PushNotificationDeliveryJob.jobs.last
     assert_equal 'PushNotificationDeliveryJob', push_job['class']
-    assert_equal 'default', push_job['queue']
+    assert_equal 'notifications', push_job['queue']
     assert_equal [notification.id], push_job['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
   end

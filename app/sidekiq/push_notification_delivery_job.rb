@@ -3,7 +3,10 @@
 class PushNotificationDeliveryJob
   include Sidekiq::Job
 
-  sidekiq_options retry: 3
+  # Keep provider network I/O off `default`. The development stack cannot
+  # safely consume that queue because it also contains submission/PDF jobs
+  # whose supporting services are not present there.
+  sidekiq_options queue: :notifications, retry: 3
 
   # Redis carries only the stable database id. The worker reloads the current
   # notification and subscription state immediately before delivery.
