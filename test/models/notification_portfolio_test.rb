@@ -15,6 +15,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @project.campus.update!(timezone: 'Australia/Melbourne')
@@ -35,6 +36,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     )
 
     assert_equal 200, last_response.status, last_response.body
+    NotificationEmailJob.drain
   end
 
   def delivered_body

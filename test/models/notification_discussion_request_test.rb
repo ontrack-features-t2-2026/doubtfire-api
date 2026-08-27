@@ -9,6 +9,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
 
   setup do
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     @project = FactoryBot.create(:project)
     @unit = @project.unit
@@ -70,6 +71,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
         discussion = @task.add_discussion_comment(@tutor, uploads)
       end
     end
+    NotificationEmailJob.drain
 
     notification = Notification.recent_first.first
 
@@ -100,6 +102,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
 
   def test_email_uses_the_event_template_without_assessment_content
     @task.send(:notify_discussion_request_recipient, notification_target)
+    NotificationEmailJob.drain
 
     body = delivered_body
 
