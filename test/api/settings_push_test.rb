@@ -1,8 +1,15 @@
 require 'test_helper'
 
-# MN-C01: the authenticated front end reads the VAPID public key from
-# /api/settings so it is configured in one place instead of being copied into
-# the web repo and going stale the first time the keys are rotated.
+# MN-C01: the front end reads the VAPID public key from /api/settings so it is
+# configured in one place instead of being copied into the web repo and going
+# stale the first time the keys are rotated.
+#
+# The endpoint itself takes no authentication. SettingsApi calls no
+# authenticated? and ApiRoot has no before-filter that adds one, so anyone who
+# can reach the host can GET it. The signed-in caller is the normal case and
+# most of this file uses it, but the private key must stay out of the response
+# for a caller with no credentials at all, which is what the anonymous test at
+# the bottom pins down.
 #
 # Separate from settings_test.rb on purpose. That file predates rubocop's style
 # rules and already carries 17 offenses; adding to it would either add more or
@@ -67,11 +74,29 @@ class SettingsPushTest < ActiveSupport::TestCase
   end
 
   # The browser needs the public key after sign-in. The private key must never
-  # be included in the authenticated settings response.
+  # be in the response the signed-in front end receives.
   def test_the_private_key_is_never_published
     with_vapid_keys do
       get '/api/settings'
 
+      assert_not_includes last_response.body, 'BTestPrivateKey'
+      assert_not_includes last_response_body.keys, 'vapidPrivateKey'
+    end
+  end
+
+  # The case that actually matters. This endpoint is reachable without
+  # credentials, so the private key must not be served to a caller who has
+  # none. Do not fold this into the test above by deleting the header clear:
+  # asserting it only for a signed-in user proves nothing about an anonymous
+  # one, and the endpoint answers both.
+  def test_the_private_key_is_never_published_to_an_anonymous_caller
+    clear_auth_header
+
+    with_vapid_keys do
+      get '/api/settings'
+
+      assert_equal 200, last_response.status
+      assert_equal 'BTestPublicKey', last_response_body['vapidPublicKey']
       assert_not_includes last_response.body, 'BTestPrivateKey'
       assert_not_includes last_response_body.keys, 'vapidPrivateKey'
     end
