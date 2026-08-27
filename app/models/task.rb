@@ -292,13 +292,39 @@ class Task < ApplicationRecord
     folder_exists_in_new? || folder_exists_in_process?
   end
 
+  # The time zone this task's deadlines are read in.
+  #
+  # A deadline written as a day belongs to the student's day, so the zone comes
+  # from the campus the student is enrolled at. Campus#timezone already falls
+  # back to the application zone when the column is not set, and a project with
+  # no campus falls back to the same place, so an install that has not filled in
+  # campus time zones behaves exactly as it did before. Nothing here depends on
+  # config.time_zone being set to anything in particular.
+  def deadline_time_zone
+    name = project&.campus&.timezone
+    zone = ActiveSupport::TimeZone[name] if name.present?
+
+    zone || Time.zone
+  end
+
+  # The calendar day a deadline falls on, read in this task's own zone.
+  #
+  # Reading it in whatever zone the value happened to be loaded in is what let
+  # the day move. A campus on Australian time changes its offset from UTC by an
+  # hour twice a year, so the same wall clock deadline sat on one UTC day in
+  # summer and the next one in winter, and every date built from those parts
+  # drifted with it.
+  def deadline_date(value)
+    value.in_time_zone(deadline_time_zone).to_date
+  end
+
   # Get the raw extension date - with extensions representing weeks
   def raw_extension_date
-    target_date.to_date + extensions.weeks
+    deadline_date(target_date) + extensions.weeks
   end
 
   def max_date_with_spec_con_days
-    task_definition.due_date.to_date + project.spec_con_days.days
+    deadline_date(task_definition.due_date) + project.spec_con_days.days
   end
 
   # Get the adjusted extension date, which ensures it is never past the due date
@@ -402,26 +428,43 @@ class Task < ApplicationRecord
     unit.extension_weeks_on_resubmit_request
   end
 
+  # The moment this task's deadline actually passes.
+  #
+  # A deadline set as a day runs to the end of that day anywhere on earth, and
+  # which day that is is read in the task's own zone. This is the "effective
+  # deadline" the ticket is named after and it is the one value the window, the
+  # late check and the interface should all agree on.
+  def effective_deadline
+    to_same_day_anywhere_on_earth(due_date)
+  end
+
+  # The far edge of the window: seven calendar days after this assessment, in
+  # the task's own zone.
+  #
+  # The window is added as a duration to a time in that zone, so it lands at the
+  # same wall clock seven days later even when the clocks change in between. The
+  # week Melbourne moves onto daylight saving is 167 real hours long and the
+  # week it moves off is 169, and counting either as a flat 168 moved the edge of
+  # the window by an hour.
+  def resubmission_extension_window_end(assess_date = Time.zone.now)
+    assess_date.in_time_zone(deadline_time_zone) + resubmission_extension_window
+  end
+
   # Is the deadline close enough, at the moment of this assessment, for the
   # resubmission extension to apply? The assessment's own time is used rather
   # than the wall clock, so that reprocessing an event gives the answer it gave
   # when it happened, and so dependent tasks fixed recursively are judged at the
-  # same moment as the task that triggered them. The window is added as a
-  # duration rather than a fixed number of hours, so it stays seven calendar
-  # days across a daylight saving change.
+  # same moment as the task that triggered them.
   #
-  # Known gap, for SLR-E01 to rule on. `in_time_zone` uses the application zone,
-  # and nothing here sets `config.time_zone`, so that zone is UTC. Campuses
-  # carry their own `timezone` column and this does not read it. A campus on
-  # Melbourne time therefore has its window judged in UTC, which can move the
-  # boundary by the offset on the day. Reading `project.campus.timezone` instead
-  # changes who gets an extension, so it is a policy decision, not a tidy-up.
+  # Both sides of this comparison are resolved in the task's own zone rather
+  # than in whatever the application zone happens to be, so the answer does not
+  # depend on config.time_zone being set.
   def resubmission_extension_window_open?(assess_date = Time.zone.now)
-    to_same_day_anywhere_on_earth(due_date) < assess_date.in_time_zone + resubmission_extension_window
+    effective_deadline < resubmission_extension_window_end(assess_date)
   end
 
-  # The automatic resubmission extension recorded for the current round of
-  # feedback, or nil if this round has not earned one. A round starts when the
+  # The resubmission extension recorded for the current round of feedback, or
+  # nil if this round has not earned one. A round starts when the
   # student submits, which is the same signal times_assessed uses, so a genuine
   # resubmission earns a new extension while a repeated assessment, a re-save or
   # a duplicate event does not.
@@ -445,7 +488,7 @@ class Task < ApplicationRecord
     return nil unless can_apply_for_extension?
     return nil unless resubmission_extension_window_open?(assess_date)
 
-    # One automatic extension per round of feedback - reprocessing must not move
+    # One resubmission extension per round of feedback - reprocessing must not move
     # the deadline a second time
     return nil if resubmission_extension_comment.present?
 
@@ -2058,9 +2101,17 @@ class Task < ApplicationRecord
     end
   end
 
-  # Use the current DateTime to calculate a new DateTime for the last moment of the same
-  # day anywhere on earth
+  # The last moment of the same day anywhere on earth.
+  #
+  # A deadline set as a day is not over until that day is over everywhere, which
+  # is 23:59:59 at UTC-12. Which day that is has to be read in the task's own
+  # zone, because a timestamp near midnight belongs to different calendar days
+  # in different zones. This used to read the day, month and year straight off
+  # the value as it happened to be loaded, so the answer moved by a whole day
+  # when a campus changed its offset for daylight saving. The result is built at
+  # a fixed -12:00 offset, which never observes daylight saving itself.
   def to_same_day_anywhere_on_earth(date)
-    DateTime.new(date.year, date.month, date.day, 23, 59, 59, '-12:00')
+    day = deadline_date(date)
+    Time.new(day.year, day.month, day.day, 23, 59, 59, '-12:00')
   end
 end

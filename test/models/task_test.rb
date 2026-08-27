@@ -1718,7 +1718,7 @@ class TaskTest < ActiveSupport::TestCase
     assert extension.extension_response.include?(task.due_date.strftime('%a %b %e')), 'The response should name the new deadline'
 
     serialized = extension.serialize(tutor)
-    assert serialized[:automatic], 'The interface needs to know the extension was automatic'
+    assert serialized[:resubmission_extension], 'The interface needs to know OnTrack worked this extension out itself'
     assert_equal :fix_and_resubmit, serialized[:source_status]
 
     unit.destroy!
@@ -1804,49 +1804,172 @@ class TaskTest < ActiveSupport::TestCase
     unit.destroy!
   end
 
-  # Seven days has to mean seven calendar days in the local zone. Melbourne
-  # moves to daylight saving on 4 October 2026, so the week from 1 October is
-  # only 167 real hours and counting in fixed hours would drift the deadline.
-  def test_resubmission_extension_window_uses_calendar_days_across_daylight_saving
-    # Melbourne moves to daylight saving at 02:00 on 4 October 2026, so the seven
-    # days from 1 October are 167 real hours, not 168. Adding the window as a
-    # duration rather than as a fixed number of hours is what keeps the boundary
-    # on the same calendar day either side of that change.
-    #
-    # This drives resubmission_extension_window_open? rather than doing the
-    # arithmetic by hand, because the conversion inside that method is the part
-    # that can be wrong. The boundary lands at five days rather than seven
-    # because to_same_day_anywhere_on_earth pushes the due date out to the end of
-    # its day in UTC-12 first.
-    #
-    # Note this only exercises the daylight saving path because of use_zone.
-    # Nothing sets config.time_zone, so in production the zone is UTC and the
-    # week is always 168 hours. That gap is recorded in the ticket doc.
-    boundary = lambda do |zone_name, year, month, day|
-      Time.use_zone(zone_name) do
-        assess = Time.zone.local(year, month, day, 9, 0, 0)
+  #
+  # Melbourne puts its clocks back at 03:00 on Sunday 5 April 2026 and forward
+  # at 02:00 on Sunday 4 October 2026, so 2 April and 8 October are +11:00 while
+  # 9 April and 1 October are +10:00. Those are the four dates the tests below
+  # use.
+  #
+  # Every one of them leaves the application zone alone on purpose. Nothing in
+  # config/ sets config.time_zone, so that zone is UTC, and the whole point of
+  # the fix is that the deadline maths no longer depends on it. The zone comes
+  # off the campus the student is enrolled at.
+  #
 
-        unit_in, _td_in, inside = create_task_for_resubmission_extension(target_date: assess + 5.days)
-        unit_out, _td_out, outside = create_task_for_resubmission_extension(target_date: assess + 6.days)
+  # The last moment of a given day, anywhere on earth. Fixed offset, so it never
+  # observes daylight saving itself.
+  def end_of_day_anywhere_on_earth(year, month, day)
+    Time.new(year, month, day, 23, 59, 59, '-12:00')
+  end
 
-        open_at_five = inside.resubmission_extension_window_open?(assess)
-        open_at_six = outside.resubmission_extension_window_open?(assess)
+  # Put the campuses these tasks belong to onto a real Australian zone, then put
+  # them back so nothing else in the suite sees the change.
+  def with_campus_timezone(zone_name, *tasks)
+    campuses = tasks.map { |task| task.project.campus }.compact.uniq
+    previous = campuses.map { |campus| [campus, campus.read_attribute(:timezone)] }
 
-        unit_in.destroy!
-        unit_out.destroy!
+    campuses.each { |campus| campus.update!(timezone: zone_name) }
+    yield
+  ensure
+    previous.each { |campus, was| campus.update!(timezone: was) }
+  end
 
-        [open_at_five, open_at_six]
+  # A deadline set at the same time of day on either side of a daylight saving
+  # change has to land on the day it was set for, and two of them a week apart
+  # have to stay a week apart.
+  #
+  # This used to read the day, month and year straight off the deadline as it
+  # was loaded, which meant reading them in UTC. 10:30 in Melbourne is the
+  # previous day in UTC through summer and the same day through winter, so the
+  # effective deadline jumped a whole day at the boundary.
+  def test_effective_deadline_does_not_drift_across_a_daylight_saving_boundary
+    melbourne = ActiveSupport::TimeZone['Australia/Melbourne']
+    unit, td, task = create_task_for_resubmission_extension
+
+    with_campus_timezone('Australia/Melbourne', task) do
+      # The week the clocks go back, then the week they go forward
+      [[[2026, 4, 2], [2026, 4, 9]], [[2026, 10, 1], [2026, 10, 8]]].each do |first, second|
+        deadlines = [first, second].map do |year, month, day|
+          td.update!(target_date: melbourne.local(year, month, day, 10, 30, 0))
+          task.reload.effective_deadline
+        end
+
+        assert_equal end_of_day_anywhere_on_earth(*first), deadlines.first,
+                     "A task due at 10:30 in Melbourne on #{first.join('-')} runs to the end of that day, not the one before"
+        assert_equal end_of_day_anywhere_on_earth(*second), deadlines.second,
+                     "A task due at 10:30 in Melbourne on #{second.join('-')} runs to the end of that day, not the one before"
+        assert_equal 7.days.to_i, (deadlines.second - deadlines.first).to_i,
+                     'Two deadlines a week apart on the campus calendar stay a week apart when the clocks change between them'
       end
     end
 
-    # The week containing the change, and an ordinary week four weeks later.
-    across_change = boundary.call('Australia/Melbourne', 2026, 10, 1)
-    ordinary_week = boundary.call('Australia/Melbourne', 2026, 11, 1)
+    unit.destroy!
+  end
 
-    assert_equal [true, false], across_change,
-                 'Five calendar days out is inside the window and six is outside, in the week the clocks change'
-    assert_equal across_change, ordinary_week,
-                 'The boundary must fall on the same calendar day whether or not the week contains a daylight saving change'
+  # Seven days has to mean seven days on the campus calendar. The week Melbourne
+  # moves onto daylight saving is 167 real hours long and the week it moves off
+  # is 169, so counting a flat 168 moves the edge of the window by an hour.
+  #
+  # The assessment time is handed in the way Task#assess gets it. Nothing sets
+  # config.time_zone, so that is a UTC value, and the whole point is that the
+  # window is then measured on the campus clock rather than on that one. Feed
+  # this a Melbourne time instead and it passes either way, because adding a
+  # duration to a value that is already in the campus zone does the right thing
+  # on its own and the test proves nothing.
+  def test_resubmission_extension_window_keeps_its_wall_clock_across_a_daylight_saving_boundary
+    melbourne = ActiveSupport::TimeZone['Australia/Melbourne']
+    unit, _td, task = create_task_for_resubmission_extension
+
+    assert_equal 'UTC', Time.zone.name, 'This test is only meaningful while the application zone is not the campus zone'
+
+    with_campus_timezone('Australia/Melbourne', task) do
+      # Nine in the morning in Melbourne on the Thursday before the clocks go
+      # forward, arriving as the UTC instant the application would hand over
+      forward_from = melbourne.local(2026, 10, 1, 9, 0, 0).in_time_zone(Time.zone)
+      forward_to = task.resubmission_extension_window_end(forward_from)
+
+      assert_equal 'UTC', forward_from.time_zone.name
+      assert_equal melbourne.local(2026, 10, 8, 9, 0, 0), forward_to,
+                   'Seven days after nine in the morning is nine in the morning, in the week the clocks go forward'
+      assert_equal 167, ((forward_to - forward_from) / 3600.0).round,
+                   'That week is 167 real hours, so a flat 168 would push the edge of the window an hour late'
+
+      back_from = melbourne.local(2026, 4, 2, 9, 0, 0).in_time_zone(Time.zone)
+      back_to = task.resubmission_extension_window_end(back_from)
+
+      assert_equal 'UTC', back_from.time_zone.name
+      assert_equal melbourne.local(2026, 4, 9, 9, 0, 0), back_to,
+                   'Seven days after nine in the morning is nine in the morning, in the week the clocks go back'
+      assert_equal 169, ((back_to - back_from) / 3600.0).round,
+                   'That week is 169 real hours, so a flat 168 would pull the edge of the window an hour early'
+    end
+
+    unit.destroy!
+  end
+
+  # The whole thing end to end, over the weekend the clocks actually change. A
+  # task due Monday 5 October 2026, sent back on Thursday 1 October, has to come
+  # out due Monday 12 October. Not Sunday the 11th, and not an hour either side
+  # of the end of the 12th.
+  def test_resubmission_extension_lands_on_the_right_day_across_a_daylight_saving_boundary
+    melbourne = ActiveSupport::TimeZone['Australia/Melbourne']
+    unit, td, task = create_task_for_resubmission_extension
+    tutor = unit.main_convenor_user
+
+    with_campus_timezone('Australia/Melbourne', task) do
+      td.update!(target_date: melbourne.local(2026, 10, 5, 10, 30, 0))
+      task.reload
+
+      assert_equal end_of_day_anywhere_on_earth(2026, 10, 5), task.effective_deadline
+
+      # Melbourne moves onto daylight saving on the Sunday in between
+      task.assess(TaskStatus.fix_and_resubmit, tutor, melbourne.local(2026, 10, 1, 9, 0, 0))
+      task.reload
+
+      assert_equal 1, task.extensions, 'A task due in four days should get the one week the unit grants'
+      assert_equal end_of_day_anywhere_on_earth(2026, 10, 12), task.effective_deadline,
+                   'One week after Monday the 5th is Monday the 12th, and the clock change must not make it the 11th'
+      assert_equal Date.new(2026, 10, 12), task.due_date.to_date
+
+      # And the guard still holds on the far side of the change
+      task.assess(TaskStatus.fix_and_resubmit, tutor, melbourne.local(2026, 10, 6, 9, 0, 0))
+      task.reload
+
+      assert_equal 1, task.extensions, 'Reassessing the same submission after the clocks change must not extend it again'
+      assert_equal end_of_day_anywhere_on_earth(2026, 10, 12), task.effective_deadline
+    end
+
+    unit.destroy!
+  end
+
+  # "Automatic" already meant something else on ExtensionComment - a request a
+  # student made that the unit approved without a person weighing it up. The
+  # extension OnTrack works out for itself is a different thing and answers to a
+  # different name, so a reader cannot take one for the other.
+  def test_a_student_request_is_not_reported_as_a_resubmission_extension
+    unit, _td, task = create_task_for_resubmission_extension(target_date: Time.zone.now - 3.weeks)
+    convenor = unit.main_convenor_user
+    student = unit.active_projects.first.student
+
+    requested = task.apply_for_extension(student, 'I have been unwell all week', 1)
+    task.reload
+
+    assert requested.assessed?, 'The unit approves requests inside the deadline without asking anyone'
+    assert requested.extension_granted
+    assert_not requested.resubmission_extension?, 'A student asking for time is not something OnTrack worked out itself'
+    assert_not requested.serialize(convenor)[:resubmission_extension]
+    assert_nil requested.serialize(convenor)[:source_status]
+
+    task.assess(TaskStatus.fix_and_resubmit, convenor)
+    task.reload
+    worked_out = task.resubmission_extension_comment
+
+    assert_not_nil worked_out, 'Sending the task back near the deadline should still earn its own extension'
+    assert worked_out.resubmission_extension?, 'That one carries the status that triggered it'
+    assert_equal :fix_and_resubmit, worked_out.serialize(convenor)[:source_status]
+    assert_equal 2, task.extensions, 'The two are counted separately'
+
+    unit.destroy!
   end
 
   # The extension only applies when the deadline is close.
