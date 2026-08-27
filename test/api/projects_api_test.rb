@@ -166,6 +166,50 @@ class ProjectsApiTest < ActiveSupport::TestCase
                  Date.parse(grade_due_dates.first.fetch('start_date'))
   end
 
+  def test_projects_with_inactive_task_definitions_avoids_per_record_queries
+    student = FactoryBot.create(:user, :student)
+    units = 2.times.map do
+      unit = FactoryBot.create(
+        :unit,
+        with_students: false,
+        task_count: 4,
+        tutorials: 1,
+        outcome_count: 0,
+        active: true
+      )
+      project = unit.enrol_student(student, unit.tutorials.first.campus)
+      unit.task_definitions.each do |task_definition|
+        project.task_for_task_definition(task_definition)
+      end
+      unit
+    end
+    units.last.update!(active: false)
+    add_auth_header_for(user: student)
+
+    query_count = 0
+    count_query = lambda do |_name, _started, _finished, _unique_id, payload|
+      next if payload[:cached] || %w[SCHEMA TRANSACTION].include?(payload[:name])
+
+      query_count += 1
+    end
+
+    ActiveSupport::Notifications.subscribed(count_query, 'sql.active_record') do
+      get '/api/projects?include_inactive=true&include_task_definitions=true'
+    end
+
+    assert_equal 200, last_response.status, last_response_body
+    assert_equal 2, last_response_body.length
+    active_states = last_response_body.pluck('unit').pluck('active')
+    assert_equal [false, true], (active_states.sort_by { |active| active ? 1 : 0 })
+    assert_equal 8, (last_response_body.sum { |project| project.fetch('tasks').length })
+    task_definition_count = last_response_body.sum do |project|
+      project.fetch('unit').fetch('task_definitions').length
+    end
+    assert_equal 8, task_definition_count
+    assert_operator query_count, :<=, 45,
+                    "Expected a bounded project query graph, got #{query_count} SQL queries"
+  end
+
   def test_get_project_response_is_correct
     user = FactoryBot.create(:user, :student, enrol_in: 1)
     project = user.projects.first

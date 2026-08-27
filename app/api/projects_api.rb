@@ -1,6 +1,14 @@
 require 'grape'
 
 class ProjectsApi < Grape::API
+  TASK_DEFINITION_PRELOADS = [
+    :discussion_prompts,
+    :grade_due_dates,
+    { learning_outcomes: :linked_outcomes },
+    :overseer_steps,
+    :tutorial_stream
+  ].freeze
+
   helpers AuthenticationHelpers
   helpers AuthorisationHelpers
   helpers DbHelpers
@@ -41,7 +49,7 @@ class ProjectsApi < Grape::API
 
     projects = Project.eager_load(:unit, :user).for_user current_user, include_inactive
     if include_task_definitions
-      projects = projects.preload(unit: { task_definitions: :grade_due_dates })
+      projects = projects.preload(unit: { task_definitions: TASK_DEFINITION_PRELOADS })
     end
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, include_task_definitions: include_task_definitions, user: current_user
   end

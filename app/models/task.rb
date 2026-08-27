@@ -1145,6 +1145,7 @@ class Task < ApplicationRecord
   rescue StandardError => e
     logger.error "Failed to raise discussion_request_created notification for task #{id}: #{e.message}"
   end
+  private :notify_discussion_request_recipient
 
   # TODO: Refactor to attachment comment (with inheritance on model)
   def add_comment_with_attachment(user, tempfile, reply_to_id = nil)

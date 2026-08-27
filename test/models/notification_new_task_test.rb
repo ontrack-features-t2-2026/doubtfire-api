@@ -278,8 +278,9 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
 
     assert_difference 'Notification.count', 1 do
       NewTaskAvailableNotificationJob.new.perform(replacement.id)
-      NotificationEmailJob.drain
     end
+    # This call bypasses run_job, so it has to drain the mail queue itself.
+    NotificationEmailJob.drain
 
     assert_equal 2, ActionMailer::Base.deliveries.count
   end

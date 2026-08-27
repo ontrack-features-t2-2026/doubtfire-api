@@ -302,7 +302,7 @@ class Project < ApplicationRecord
   end
 
   def task_details_for_shallow_serializer(user)
-    tasks
+    task_rows = tasks
       .joins(:task_status)
       .joins("LEFT JOIN task_comments ON task_comments.task_id = tasks.id AND (task_comments.type IS NULL OR task_comments.type <> 'TaskStatusComment')")
       .joins("LEFT JOIN comments_read_receipts crr ON crr.task_comment_id = task_comments.id AND crr.user_id = #{user.id}")
@@ -318,27 +318,38 @@ class Project < ApplicationRecord
         'completion_date', 'times_assessed', 'submission_date', 'grade', 'quality_pts',
         'include_in_portfolio', 'grade'
       )
-      .map do |r|
-        t = Task.find(r.id)
-        {
-          id: r.id,
-          status: TaskStatus.id_to_key(r.status_id),
-          task_definition_id: r.task_definition_id,
-          include_in_portfolio: r.include_in_portfolio,
-          times_assessed: r.times_assessed,
-          grade: r.grade,
-          quality_pts: r.quality_pts,
-          num_new_comments: r.number_unread,
-          similarity_flag: AuthorisationHelpers.authorise?(user, t, :view_plagiarism) ? r.similar_to_count > 0 : false,
-          extensions: t.extensions,
-          scorm_extensions: t.scorm_extensions,
-          due_date: t.due_date,
-          submission_date: t.submission_date,
-          completion_date: t.completion_date,
-          target_start_date: t.target_start_date,
-          target_due_date: t.target_due_date
-        }
-      end
+      .to_a
+
+    # The aggregate rows intentionally select only the fields used directly in
+    # the response. Reload their complete Task records in one batch so due-date
+    # and authorisation helpers can use preloaded associations instead of doing
+    # a Task.find (plus project/unit/task-definition lookups) for every task.
+    tasks_by_id = Task
+      .where(id: task_rows.map(&:id))
+      .preload(:task_definition, project: %i[unit user])
+      .index_by(&:id)
+
+    task_rows.map do |r|
+      t = tasks_by_id.fetch(r.id)
+      {
+        id: r.id,
+        status: TaskStatus.id_to_key(r.status_id),
+        task_definition_id: r.task_definition_id,
+        include_in_portfolio: r.include_in_portfolio,
+        times_assessed: r.times_assessed,
+        grade: r.grade,
+        quality_pts: r.quality_pts,
+        num_new_comments: r.number_unread,
+        similarity_flag: AuthorisationHelpers.authorise?(user, t, :view_plagiarism) ? r.similar_to_count > 0 : false,
+        extensions: t.extensions,
+        scorm_extensions: t.scorm_extensions,
+        due_date: t.due_date,
+        submission_date: t.submission_date,
+        completion_date: t.completion_date,
+        target_start_date: t.target_start_date,
+        target_due_date: t.target_due_date
+      }
+    end
   end
 
   def assigned_tasks
