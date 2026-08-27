@@ -58,7 +58,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     end
     NotificationEmailJob.drain
 
-    notification = Notification.recent_first.first
+    notification = Notification.find_by!(user: @student, event: 'portfolio_received')
 
     assert_equal @student, notification.user
     assert_equal 'portfolio', notification.notification_type
