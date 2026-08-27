@@ -37,7 +37,8 @@ class NotificationGroupTest < ActiveSupport::TestCase
     )
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/groups"
+      expected_link: "/projects/#{@project.id}/groups",
+      expected_body: 'Your group membership changed.'
     )
 
     assert_equal 1, ActionMailer::Base.deliveries.count
@@ -45,6 +46,7 @@ class NotificationGroupTest < ActiveSupport::TestCase
 
     # Confirms the event-specific template is being used.
     assert_includes delivered_body, 'group membership changed'
+    assert_includes delivered_body, notification.message
   end
 
   def test_removing_a_member_notifies_that_student
@@ -87,7 +89,7 @@ class NotificationGroupTest < ActiveSupport::TestCase
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
 
-  def test_switch_to_tutorial_does_not_send_leave_then_join_notifications
+  def test_switch_to_tutorial_sends_tutorial_changes_without_leave_then_join_notifications
     unit = FactoryBot.create(
       :unit,
       group_sets: 1,
@@ -112,11 +114,23 @@ class NotificationGroupTest < ActiveSupport::TestCase
 
     ActionMailer::Base.deliveries.clear
 
-    assert_no_difference 'Notification.count' do
-      group.switch_to_tutorial(new_tutorial)
+    assert_difference -> { Notification.where(event: 'tutorial_changed').count }, 2 do
+      assert_no_difference -> { Notification.where(event: 'group_membership_changed').count } do
+        group.switch_to_tutorial(new_tutorial)
+      end
     end
 
-    assert_equal 0, ActionMailer::Base.deliveries.count
+    tutorial_notifications = Notification.where(event: 'tutorial_changed').recent_first.limit(2)
+
+    assert_equal(
+      [project_one.student.id, project_two.student.id].sort,
+      tutorial_notifications.map(&:user_id).sort
+    )
+    assert_equal 2, ActionMailer::Base.deliveries.count
+    assert_equal(
+      [project_one.student.email, project_two.student.email].sort,
+      ActionMailer::Base.deliveries.flat_map(&:to).sort
+    )
   end
 
   def test_notification_failure_does_not_stop_membership_change
