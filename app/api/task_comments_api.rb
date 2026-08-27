@@ -48,7 +48,7 @@ class TaskCommentsApi < Grape::API
       error!(error: 'Original comment is not in this task.') if task.all_comments.find(reply_to_id).blank?
     end
 
-    logger.info("#{current_user.username} - added comment for task #{task.id} (#{task_definition.abbreviation})")
+    logger.info("user_id=#{current_user.id} added comment for task #{task.id} (#{task_definition.abbreviation})")
 
     if attached_file.blank?
       error!({ error: 'Comment text is empty, unable to add new comment' }, 403) if text_comment.blank?

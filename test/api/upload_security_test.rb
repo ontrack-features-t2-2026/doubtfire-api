@@ -5,7 +5,9 @@ require 'zip'
 
 # FILE-S01 – Upload Authorisation and Abuse Tests
 #
-# Covers every item in the FILE-S01 security-review checklist:
+# Exercises the FILE-S01 controls that can be verified deterministically in the
+# API test environment. The threat model and findings disposition in
+# docs/security/ describe the covered controls and the deliberately open gaps.
 #
 #  1.  Direct API upload without using the frontend
 #  2.  Access to another student's or project's attachment
@@ -15,8 +17,8 @@ require 'zip'
 #  6.  Path traversal, control characters, and unusual Unicode filenames
 #  7.  Download headers and active-content rendering behaviour
 #  8.  Macro-enabled documents, archives, encrypted files
-#  9.  Repeated-upload / storage-exhaustion
-# 10.  Cleanup of rejected, failed, and abandoned uploads
+#  9.  Sequential duplicate upload and archive resource-exhaustion controls
+# 10.  Cleanup before staging for rejected uploads
 
 class UploadSecurityTest < ActiveSupport::TestCase
   include Rack::Test::Methods
@@ -63,6 +65,33 @@ class UploadSecurityTest < ActiveSupport::TestCase
   def post_submission(project, task_def, uploaded_file, trigger: 'ready_for_feedback')
     data = { trigger: trigger, file0: uploaded_file }
     post "/api/projects/#{project.id}/task_def_id/#{task_def.id}/submission", data
+  end
+
+  def upload_storage_entries
+    roots = [
+      File.join(Dir.tmpdir, 'doubtfire', 'new'),
+      FileHelper.student_work_dir(:new, nil, false),
+      FileHelper.student_work_dir(:in_process, nil, false)
+    ]
+
+    roots.flat_map do |root|
+      next [] unless Dir.exist?(root)
+
+      Dir.glob(File.join(root, '**', '*'))
+    end.sort
+  end
+
+  def capture_rails_logs(level: Logger::DEBUG)
+    output = StringIO.new
+    test_logger = Logger.new(output)
+    test_logger.level = level
+    original_logger = Rails.logger
+    Rails.logger = test_logger
+
+    yield
+    output.string
+  ensure
+    Rails.logger = original_logger if defined?(original_logger) && original_logger
   end
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -120,12 +149,28 @@ class UploadSecurityTest < ActiveSupport::TestCase
     # Authenticate as student A but post to project B's endpoint.
     add_auth_header_for(user: project_a.student)
 
+    side_effects_before = {
+      tasks: Task.count,
+      submissions: TaskSubmission.count,
+      jobs: AcceptSubmissionJob.jobs.size,
+      storage: upload_storage_entries
+    }
+
     with_tempfile('.py', "print('owned')") do |f|
       post_submission(project_b, td, Rack::Test::UploadedFile.new(f.path, 'text/plain'))
     end
 
-    assert_includes [401, 403], last_response.status,
-                    'Expected 401 or 403 when student submits to another student\'s project'
+    assert_equal 401, last_response.status,
+                 'Expected the current submission API contract to return 401 for a cross-project POST'
+    assert_match(/not authorised to submit task/i, last_response.body)
+    assert_equal side_effects_before[:tasks], Task.count,
+                 'Rejected cross-project POST must not create a task'
+    assert_equal side_effects_before[:submissions], TaskSubmission.count,
+                 'Rejected cross-project POST must not create a submission row'
+    assert_equal side_effects_before[:jobs], AcceptSubmissionJob.jobs.size,
+                 'Rejected cross-project POST must not enqueue submission processing'
+    assert_equal side_effects_before[:storage], upload_storage_entries,
+                 'Rejected cross-project POST must not write submission files'
   ensure
     unit.destroy
   end
@@ -142,8 +187,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
 
     get "/api/projects/#{project_a.id}/task_def_id/#{td.id}/submission"
 
-    assert_includes [401, 403], last_response.status,
-                    'Expected 401 or 403 when student fetches another student\'s submission'
+    assert_equal 401, last_response.status,
+                 'Expected the current submission API contract to return 401 for a cross-project GET'
+    assert_match(/not authorised to get task/i, last_response.body)
   ensure
     unit.destroy
   end
@@ -159,8 +205,8 @@ class UploadSecurityTest < ActiveSupport::TestCase
 
     get "/api/projects/#{project_a.id}/task_def_id/#{td.id}/submission_histories"
 
-    assert_includes [401, 403], last_response.status,
-                    'Expected 401 or 403 when student requests another student\'s submission history'
+    assert_equal 401, last_response.status,
+                 'Expected the current history API contract to return 401 for cross-project access'
   ensure
     unit.destroy
   end
@@ -564,9 +610,10 @@ class UploadSecurityTest < ActiveSupport::TestCase
   end
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 9. Repeated-upload / storage-exhaustion controls
-  #    The zip abuse defences (bomb, compression-ratio, entry count) should
-  #    hold regardless of how many times the same upload is attempted.
+  # 9. Sequential duplicate-upload / storage-exhaustion controls
+  #    The zip abuse defences limit per-archive resource use. The API also
+  #    rejects a later duplicate while the first accepted upload is queued.
+  #    A true simultaneous race requires a separate multi-connection test.
   # ─────────────────────────────────────────────────────────────────────────────
 
   test 'zip compression-ratio limit is enforced' do
@@ -634,25 +681,37 @@ class UploadSecurityTest < ActiveSupport::TestCase
     Doubtfire::Application.config.zip_uncompressed_size_multiplier = original_multiplier
   end
 
-  test 'concurrent upload attempt is blocked while submission is processing' do
-    # The API uses a filesystem-based processing lock (folder_exists_in_new? or
-    # folder_exists_in_process?). A second upload while the first is still being
-    # processed must be rejected with 403, not silently accepted.
+  test 'sequential duplicate upload is blocked while first submission is queued' do
+    # This deliberately exercises a later request, not a simultaneous race. The
+    # first request leaves its payload in :new; the second must be rejected
+    # without changing state, storing another payload, or enqueuing another job.
     unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     project = unit.active_projects.first
     td      = create_task_definition(unit: unit)
+    task    = project.task_for_task_definition(td)
 
     add_auth_header_for(user: project.student)
 
-    # First upload — should succeed and leave files in the :new folder.
+    jobs_before = AcceptSubmissionJob.jobs.size
     data = with_file('test_files/submissions/normal.py', 'text/plain',
                      { trigger: 'ready_for_feedback' })
     post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission", data
     assert_equal 201, last_response.status,
                  "First upload should succeed (got: #{last_response.body})"
+    assert_equal jobs_before + 1, AcceptSubmissionJob.jobs.size,
+                 'First upload must enqueue exactly one processing job'
+    assert_equal :ready_for_feedback, task.reload.status,
+                 'First upload must perform the requested state transition'
 
-    # Immediately attempt a second upload without clearing the lock.
-    # The processing folder still exists so the API must block it.
+    queued_dir = FileHelper.student_work_dir(:new, task, false)
+    payloads_after_first = Dir.glob(File.join(queued_dir, '*')).select { |path| File.file?(path) }
+    assert_equal 1, payloads_after_first.size,
+                 'First upload must leave exactly one payload queued for processing'
+
+    first_submission_count = TaskSubmission.where(task: task).count
+    first_submission_date = task.submission_date
+    jobs_after_first = AcceptSubmissionJob.jobs.size
+
     data2 = with_file('test_files/submissions/normal.py', 'text/plain',
                       { trigger: 'need_help' })
     post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission", data2
@@ -661,27 +720,46 @@ class UploadSecurityTest < ActiveSupport::TestCase
                  'Second upload while processing should be blocked with 403'
     assert_match(/already being processed/i, last_response.body,
                  'Response should explain the submission is already being processed')
+    assert_equal jobs_after_first, AcceptSubmissionJob.jobs.size,
+                 'Rejected duplicate must not enqueue another processing job'
+    assert_equal payloads_after_first, Dir.glob(File.join(queued_dir, '*')).select { |path| File.file?(path) },
+                 'Rejected duplicate must not add or replace queued payloads'
+    assert_equal first_submission_count, TaskSubmission.where(task: task).count,
+                 'Rejected duplicate must not add a submission row'
+    assert_equal :ready_for_feedback, task.reload.status,
+                 'Rejected duplicate must not change the accepted submission state'
+    assert_equal first_submission_date, task.submission_date,
+                 'Rejected duplicate must not change the accepted submission timestamp'
   ensure
     unit.destroy
   end
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 10. Cleanup of rejected, failed, and abandoned uploads
-  #     Tempfiles written during failed validations must not persist on disk.
+  # 10. Cleanup before staging for rejected uploads
+  #     Early validation failures must not create task-owned staging paths.
+  #     Post-staging failure and abandoned-worker cleanup remain open findings.
   # ─────────────────────────────────────────────────────────────────────────────
 
-  test 'no orphan tempfiles remain after a rejected upload' do
+  test 'early MIME rejection creates no task-owned staging artifacts' do
     unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     project = unit.active_projects.first
     td      = create_task_definition(unit: unit)
+    task    = project.task_for_task_definition(td)
 
     add_auth_header_for(user: project.student)
 
-    tmp_dir      = Dir.tmpdir
-    # Snapshot all files recursively under tmpdir before the request.
-    files_before = Dir.glob(File.join(tmp_dir, '**', '*')).to_set
+    owned_staging_paths = [
+      File.join(Dir.tmpdir, 'doubtfire', 'new', task.id.to_s),
+      FileHelper.student_work_dir(:new, task, false),
+      FileHelper.student_work_dir(:in_process, task, false)
+    ]
+    assert owned_staging_paths.none? { |path| File.exist?(path) },
+           'Fresh task must not already have submission staging paths'
 
-    # Send a file that should be rejected (ELF binary disguised as .txt).
+    jobs_before = AcceptSubmissionJob.jobs.size
+    submissions_before = TaskSubmission.where(task: task).count
+    status_before = task.status
+
     elf_magic = "\x7fELF\x02\x01\x01\x00#{"\x00" * 8}"
     with_tempfile('.txt', elf_magic, binary: true) do |f|
       post_submission(project, td, Rack::Test::UploadedFile.new(f.path, 'text/plain', true))
@@ -692,14 +770,14 @@ class UploadSecurityTest < ActiveSupport::TestCase
     assert_equal 403, last_response.status,
                  "Expected MIME validation to reject the upload, got: #{last_response.body}"
     assert_match(/invalid file MIME type/i, last_response.body)
-
-    # Give the GC a chance to clean up Tempfile objects.
-    GC.start
-    files_after = Dir.glob(File.join(tmp_dir, '**', '*')).to_set
-    new_files   = (files_after - files_before).reject { |f| File.directory?(f) }
-
-    assert new_files.empty?,
-           "Expected no orphan tempfiles after rejected upload, found: #{new_files.to_a}"
+    assert owned_staging_paths.none? { |path| File.exist?(path) },
+           'Early rejection must not create task-owned staging files or directories'
+    assert_equal jobs_before, AcceptSubmissionJob.jobs.size,
+                 'Early rejection must not enqueue submission processing'
+    assert_equal submissions_before, TaskSubmission.where(task: task).count,
+                 'Early rejection must not create a submission row'
+    assert_equal status_before, task.reload.status,
+                 'Early rejection must not transition task state'
   ensure
     unit.destroy
   end
@@ -709,93 +787,129 @@ class UploadSecurityTest < ActiveSupport::TestCase
   #     student information
   # ─────────────────────────────────────────────────────────────────────────────
 
-  test 'rejection log messages do not include raw file content' do
-    log_output = StringIO.new
-    test_logger = Logger.new(log_output)
-    # Test environment sets log_level :warn — force debug so all messages
-    # are captured and we can assert on their content.
-    test_logger.level = Logger::DEBUG
-    original_logger = Rails.logger
-    Rails.logger = test_logger
-
-    sensitive_content = 'SENSITIVE_STUDENT_DATA_12345'
-
-    with_tempfile('.exe', sensitive_content) do |f|
-      FileHelper.accept_file(
-        { filename: 'malware.exe', 'tempfile' => f },
-        'Code',
-        'code'
-      )
-    end
-
-    Rails.logger = original_logger
-    logged = log_output.string
-
-    assert_not_includes logged, sensitive_content,
-                        'Log output must not contain raw file content from a rejected upload'
-  ensure
-    Rails.logger = original_logger if defined?(original_logger) && original_logger
-  end
-
-  test 'rejection log messages do not include student username or email' do
+  test 'rejected submission logs a safe marker without content or student identifiers' do
     unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     project = unit.active_projects.first
     student = project.student
     td      = create_task_definition(unit: unit)
-
-    log_output = StringIO.new
-    test_logger = Logger.new(log_output)
-    test_logger.level = Logger::DEBUG
-    original_logger = Rails.logger
-    Rails.logger = test_logger
+    project.task_for_task_definition(td)
 
     add_auth_header_for(user: student)
 
+    sensitive_content = 'SENSITIVE_STUDENT_DATA_12345'
+    unsafe_filename = "rejected-#{student.username}-#{student.email}.txt"
     elf_magic = "\x7fELF\x02\x01\x01\x00#{"\x00" * 8}"
-    with_tempfile('.txt', elf_magic, binary: true) do |f|
-      uploaded = Rack::Test::UploadedFile.new(f.path, 'text/plain', true)
-      post_submission(project, td, uploaded)
+
+    logged = capture_rails_logs do
+      with_tempfile('.txt', elf_magic + sensitive_content, binary: true) do |f|
+        uploaded = Rack::Test::UploadedFile.new(
+          f.path,
+          'text/plain',
+          true,
+          original_filename: unsafe_filename
+        )
+        post_submission(project, td, uploaded)
+      end
     end
 
-    Rails.logger = original_logger
-    logged = log_output.string
-
+    assert_equal 403, last_response.status,
+                 'Rejected submission must reach and fail MIME validation'
+    assert_match(/invalid file MIME type/i, last_response.body)
+    assert_includes logged, 'File MIME check failed',
+                    'Expected safe validation marker proving the rejection path logged'
+    assert_not_includes logged, sensitive_content,
+                        'Rejected submission log must not include file content'
     assert_not_includes logged, student.email,
-                        'Log output must not include the student email on rejection'
-    # NOTE: username may appear in file paths at debug level - this is acceptable
-    # as long as it does not appear alongside file content or sensitive data.
-    # Production log level :warn suppresses these debug path messages.
+                        'Rejected submission log must not include student email'
+    assert_not_includes logged, student.username,
+                        'Rejected submission log must not include student username'
+    assert_not_includes logged, unsafe_filename,
+                        'Rejected submission log must not include the client filename'
   ensure
-    Rails.logger = original_logger if defined?(original_logger) && original_logger
     unit.destroy
   end
 
-  test 'accepted upload log messages do not include raw file content' do
+  test 'accepted submission logs safe markers without content or student identifiers' do
     unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     project = unit.active_projects.first
+    student = project.student
     td      = create_task_definition(unit: unit)
+    project.task_for_task_definition(td)
 
-    log_output = StringIO.new
-    test_logger = Logger.new(log_output)
-    test_logger.level = Logger::DEBUG
-    original_logger = Rails.logger
-    Rails.logger = test_logger
-
-    add_auth_header_for(user: project.student)
+    add_auth_header_for(user: student)
 
     sensitive_content = "print('SENSITIVE_STUDENT_CODE_67890')"
-    with_tempfile('.py', sensitive_content) do |f|
-      uploaded = Rack::Test::UploadedFile.new(f.path, 'text/plain', true)
-      post_submission(project, td, uploaded)
+    unsafe_filename = "accepted-#{student.username}-#{student.email}.py"
+
+    logged = capture_rails_logs do
+      with_tempfile('.py', sensitive_content) do |f|
+        uploaded = Rack::Test::UploadedFile.new(
+          f.path,
+          'text/plain',
+          true,
+          original_filename: unsafe_filename
+        )
+        post_submission(project, td, uploaded)
+      end
     end
 
-    Rails.logger = original_logger
-    logged = log_output.string
-
+    assert_equal 201, last_response.status,
+                 'Accepted submission logging test must exercise the successful path'
+    assert_includes logged, 'Uploaded file is accepted',
+                    'Expected safe file-validation success marker'
+    assert_includes logged, 'Submission accepted! Status for task',
+                    'Expected safe submission success marker'
     assert_not_includes logged, sensitive_content,
-                        'Log output must not contain raw file content from an accepted upload'
+                        'Accepted submission log must not include file content'
+    assert_not_includes logged, student.email,
+                        'Accepted submission log must not include student email'
+    assert_not_includes logged, student.username,
+                        'Accepted submission log must not include student username'
+    assert_not_includes logged, unsafe_filename,
+                        'Accepted submission log must not include the client filename'
   ensure
-    Rails.logger = original_logger if defined?(original_logger) && original_logger
+    unit.destroy
+  end
+
+  test 'comment attachment logs a safe marker without content or student identifiers' do
+    unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    project = unit.active_projects.first
+    student = project.student
+    td      = create_task_definition(unit: unit)
+    task    = project.task_for_task_definition(td)
+
+    add_auth_header_for(user: student)
+
+    sensitive_comment = 'SENSITIVE_COMMENT_BODY_24680'
+    unsafe_filename = "comment-#{student.username}-#{student.email}.pdf"
+    pdf_path = Rails.root.join('test_files/submissions/00_question.pdf')
+
+    logged = capture_rails_logs do
+      post "/api/projects/#{project.id}/task_def_id/#{td.id}/comments",
+           comment: sensitive_comment,
+           attachment: Rack::Test::UploadedFile.new(
+             pdf_path,
+             'application/pdf',
+             true,
+             original_filename: unsafe_filename
+           )
+    end
+
+    assert_equal 201, last_response.status,
+                 'Comment logging test must exercise a successful attachment upload'
+    assert_includes logged, "user_id=#{student.id} added comment for task #{task.id}",
+                    'Expected safe comment audit marker using an internal user id'
+    assert_includes logged, 'Uploaded file is accepted',
+                    'Expected safe attachment-validation success marker'
+    assert_not_includes logged, sensitive_comment,
+                        'Comment attachment log must not include comment content'
+    assert_not_includes logged, student.email,
+                        'Comment attachment log must not include student email'
+    assert_not_includes logged, student.username,
+                        'Comment attachment log must not include student username'
+    assert_not_includes logged, unsafe_filename,
+                        'Comment attachment log must not include the client filename'
+  ensure
     unit.destroy
   end
 

@@ -636,7 +636,7 @@ class Project < ApplicationRecord
   # task if the task does not exist for this project.
   #
   def task_for_task_definition(td)
-    logger.debug "Finding task #{td.abbreviation} for project #{log_details}"
+    logger.debug "Finding task #{td.abbreviation} for project_id=#{id}"
     result = tasks.where(task_definition: td).first
     if result.nil?
       begin

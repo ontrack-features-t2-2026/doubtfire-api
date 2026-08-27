@@ -31,7 +31,7 @@ module AuthenticationHelpers
     if user.present? && token.present?
       # has the tolken not expired?
       if token.auth_token_expiry > Time.zone.now
-        logger.info("Authenticated #{user.username} from #{request.ip}")
+        logger.info("Authenticated user_id=#{user.id} from #{request.ip}")
         :valid
       else
         # Token is timed out - destroy it and return error
