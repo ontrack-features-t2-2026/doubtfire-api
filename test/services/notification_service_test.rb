@@ -266,4 +266,63 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal 0, NotificationEmailJob.jobs.size
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
+
+  def test_dedupe_key_delivers_only_once
+    user = FactoryBot.create(:user)
+    attributes = {
+      user: user,
+      type: 'task',
+      event: 'new_task_available',
+      message: 'A task is available.',
+      dedupe_key: 'new_task_available:task-definition:123'
+    }
+
+    assert_difference 'Notification.count', 1 do
+      first = NotificationService.notify(**attributes)
+      second = NotificationService.notify(**attributes)
+
+      assert_equal first, second
+      assert_not_nil first.delivered_at
+    end
+
+    # Email is queued by Notification's after_commit hook, on create. The second
+    # notify returns the existing row rather than creating one, so it queues
+    # nothing and the unique index is what makes the email single, not
+    # delivered_at.
+    assert_equal 1, NotificationEmailJob.jobs.size
+    NotificationEmailJob.drain
+    assert_equal 1, ActionMailer::Base.deliveries.count
+  end
+
+  def test_failed_channel_delivery_is_retried_at_least_once
+    user = FactoryBot.create(:user)
+    attributes = {
+      user: user,
+      type: 'task',
+      event: 'new_task_available',
+      message: 'A task is available.',
+      dedupe_key: 'new_task_available:task-definition:456'
+    }
+    failure = ->(_notification) { raise StandardError, 'push interrupted' }
+
+    PushNotificationService.stub(:deliver, failure) do
+      assert_raises(StandardError) { NotificationService.notify(**attributes) }
+    end
+
+    notification = Notification.find_by!(dedupe_key: attributes[:dedupe_key])
+    assert_nil notification.delivered_at
+    assert_equal 1, NotificationEmailJob.jobs.size
+
+    assert_no_difference 'Notification.count' do
+      NotificationService.notify(**attributes)
+    end
+
+    assert_not_nil notification.reload.delivered_at
+    # Still exactly one email. The retry re-delivers the push channel only,
+    # because the row already existed so no second after_commit ran. A failed
+    # push must not put a duplicate email in the student's inbox.
+    assert_equal 1, NotificationEmailJob.jobs.size
+    NotificationEmailJob.drain
+    assert_equal 1, ActionMailer::Base.deliveries.count
+  end
 end

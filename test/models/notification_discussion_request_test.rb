@@ -86,6 +86,8 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
       expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
     )
 
+    # Email is queued rather than sent inline since EN-F03.
+    NotificationEmailJob.drain
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end

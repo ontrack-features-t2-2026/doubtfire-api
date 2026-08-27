@@ -23,6 +23,7 @@ class Notification < ApplicationRecord
   validates :notification_type, presence: true, inclusion: { in: TYPES }
   validates :event, presence: true, length: { maximum: 255 }
   validates :message, presence: true, length: { maximum: 500 }
+  validates :dedupe_key, length: { maximum: 191 }, allow_nil: true
 
   # Queue the email only once the transaction that created the notification has
   # committed. Several callers raise notifications from inside a transaction,
