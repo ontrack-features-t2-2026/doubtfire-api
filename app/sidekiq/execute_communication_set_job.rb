@@ -150,16 +150,38 @@ class ExecuteCommunicationSetJob
       subject = render_template(action.subject, project, unit, rule, projects.length)
       body = render_template(action.body, project, unit, rule, projects.length)
 
-      CommunicationsMailer.communication_email(
-        to: formatted_email(recipient),
-        from: sender,
-        subject: subject,
-        body: body,
-        recipient: recipient,
-        sender: sender_user_for(unit),
-        unit: unit,
-        rule: rule
-      ).deliver_now
+      begin
+        CommunicationsMailer.communication_email(
+          to: formatted_email(recipient),
+          from: sender,
+          subject: subject,
+          body: body,
+          recipient: recipient,
+          sender: sender_user_for(unit),
+          unit: unit,
+          rule: rule
+        ).deliver_now
+      rescue StandardError => e
+        # One unroutable address used to take the whole run down. The job then
+        # retried from the top and re-mailed everybody it had already reached,
+        # because nothing here records who has been sent to. Record the failure
+        # against the one recipient and carry on. StandardError and not
+        # Exception, so an Interrupt or a SIGTERM still stops the job.
+        logger.error(
+          "ExecuteCommunicationSetJob delivery failed for project #{project.id} " \
+          "<#{recipient.email}>: #{e.class} #{e.message}"
+        )
+
+        next {
+          action_id: action.id,
+          action_type: action.type,
+          status: 'failed',
+          project_id: project.id,
+          username: recipient.username,
+          recipient_email: recipient.email,
+          reason: e.message
+        }
+      end
 
       {
         action_id: action.id,
