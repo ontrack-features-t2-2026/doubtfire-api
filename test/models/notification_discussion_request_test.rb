@@ -92,14 +92,14 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
     @student.update!(receive_feedback_notifications: false)
 
     assert_no_difference 'Notification.count' do
-      @task.notify_discussion_request_recipient(notification_target)
+      @task.send(:notify_discussion_request_recipient, notification_target)
     end
 
     assert_empty ActionMailer::Base.deliveries
   end
 
   def test_email_uses_the_event_template_without_assessment_content
-    @task.notify_discussion_request_recipient(notification_target)
+    @task.send(:notify_discussion_request_recipient, notification_target)
 
     body = delivered_body
 
