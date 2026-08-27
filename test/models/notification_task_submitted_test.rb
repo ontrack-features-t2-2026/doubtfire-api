@@ -1,4 +1,5 @@
 require 'test_helper'
+require 'cgi'
 require 'minitest/mock'
 
 # EN-V06: a student submission notifies the responsible tutor once.
@@ -76,11 +77,13 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
     parts.each_value do |body|
       assert_not_empty body
       assert_includes body, "Hi #{@tutor.first_name}"
-      assert_includes body, expected_message
       assert_includes body, 'The submission and any assessment content are not included in this email.'
       assert_includes body, notification.link
       assert_includes body, '/edit_profile'
     end
+
+    assert_includes parts[:text], expected_message
+    assert_includes parts[:html], CGI.escapeHTML(expected_message)
   end
 
   def test_missing_tutor_is_safely_ignored

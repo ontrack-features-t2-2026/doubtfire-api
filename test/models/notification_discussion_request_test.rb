@@ -86,6 +86,8 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
       expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
     )
 
+    # Email is queued rather than sent inline since EN-F03.
+    NotificationEmailJob.drain
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
@@ -94,7 +96,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
     @student.update!(receive_feedback_notifications: false)
 
     assert_no_difference 'Notification.count' do
-      @task.notify_discussion_request_recipient(notification_target)
+      @task.send(:notify_discussion_request_recipient, notification_target)
     end
 
     assert_empty ActionMailer::Base.deliveries
@@ -109,7 +111,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
     @unit.update!(name: private_unit_name)
     @tutor.update!(first_name: 'PrivateTutor7429', last_name: 'SensitiveName7429')
 
-    @task.notify_discussion_request_recipient(notification_target)
+    @task.send(:notify_discussion_request_recipient, notification_target)
     NotificationEmailJob.drain
 
     body = delivered_body

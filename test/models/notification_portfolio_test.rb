@@ -36,6 +36,11 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     )
 
     assert_equal 200, last_response.status, last_response.body
+
+    # Email is queued rather than sent inline since EN-F03. Draining here keeps
+    # every deliveries assertion in this file reading the way it did before,
+    # and it is the same shape as run_job in the other notification tests.
+    NotificationEmailJob.drain
   end
 
   def delivered_body
@@ -135,6 +140,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     first_submission_date = @project.reload.portfolio_submission_date
     @project.update!(compile_portfolio: false)
     ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
 
     travel_to Time.zone.parse('2026-08-24 01:15:00 UTC') do
       assert_difference 'Notification.count', 1 do
