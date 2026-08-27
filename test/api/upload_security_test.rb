@@ -71,7 +71,7 @@ class UploadSecurityTest < ActiveSupport::TestCase
   #    whether a frontend-originated cookie/CSRF token is present.
   # ─────────────────────────────────────────────────────────────────────────────
 
-  test 'unauthenticated direct API upload is rejected with 401' do
+  test 'unauthenticated direct API upload is rejected with 419' do
     unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     project = unit.active_projects.first
     td      = create_task_definition(unit: unit)
@@ -187,8 +187,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, uploaded)
     end
 
-    assert_includes [400, 403, 422], last_response.status,
-                    'Expected rejection for PDF extension with non-PDF MIME content'
+    assert_equal 403, last_response.status,
+                 'Expected MIME validation to reject PDF extension with non-PDF content'
+    assert_match(/invalid file MIME type/i, last_response.body)
   ensure
     unit.destroy
   end
@@ -207,8 +208,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, uploaded)
     end
 
-    assert_includes [400, 403, 422], last_response.status,
-                    'Expected rejection for ELF binary with .txt extension'
+    assert_equal 403, last_response.status,
+                 'Expected MIME validation to reject ELF binary with .txt extension'
+    assert_match(/invalid file MIME type/i, last_response.body)
   ensure
     unit.destroy
   end
@@ -229,8 +231,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, uploaded)
     end
 
-    assert_includes [400, 403, 422], last_response.status,
-                    'Expected rejection for PHP payload with .jpg extension'
+    assert_equal 403, last_response.status,
+                 'Expected MIME validation to reject PHP payload with .jpg extension'
+    assert_match(/invalid file MIME type/i, last_response.body)
   ensure
     unit.destroy
   end
@@ -276,11 +279,7 @@ class UploadSecurityTest < ActiveSupport::TestCase
   # 5. Empty, oversized, malformed, and unsupported files
   # ─────────────────────────────────────────────────────────────────────────────
 
-  test 'empty file is handled without server error' do
-    # FileHelper has no explicit empty-file rejection (see FU-5). This test
-    # documents the current behaviour and ensures the server handles it gracefully.
-    # The response must be a valid HTTP status (200/201 accepted or 4xx rejected)
-    # and must never be a 500 server error.
+  test 'empty file is rejected by MIME validation' do
     unit    = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     project = unit.active_projects.first
     td      = create_task_definition(unit: unit)
@@ -292,8 +291,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, uploaded)
     end
 
-    assert_includes [200, 201, 400, 403, 422], last_response.status,
-                    "Expected a valid handled response for empty file, got #{last_response.status}: #{last_response.body}"
+    assert_equal 403, last_response.status,
+                 "Expected MIME validation to reject an empty file, got: #{last_response.body}"
+    assert_match(/invalid file MIME type/i, last_response.body)
   ensure
     unit.destroy
   end
@@ -313,8 +313,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, uploaded)
     end
 
-    assert_includes [400, 403, 413, 422], last_response.status,
-                    'Expected rejection for file exceeding max_file_size'
+    assert_equal 403, last_response.status,
+                 'Expected upload validation to reject a file exceeding max_file_size'
+    assert_match(/exceeds the \d+MB file limit/i, last_response.body)
   ensure
     unit.destroy
     Doubtfire::Application.config.max_file_size = original_max
@@ -437,10 +438,8 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, uploaded)
     end
 
-    # The request must reach the upload handler and return a valid response.
-    # 201 = accepted, 4xx = gracefully rejected. 500 means the server crashed.
-    assert_includes [200, 201, 400, 403, 422], last_response.status,
-                    "Expected valid handled response for Unicode filename, got #{last_response.status}: #{last_response.body}"
+    assert_equal 201, last_response.status,
+                 "Expected a valid Unicode filename to be accepted, got: #{last_response.body}"
   ensure
     unit.destroy
   end
@@ -517,12 +516,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
     assert_match(/encrypt/i, result[:msg])
   end
 
-  test 'rejects Word document - DOCX files are either blocked or require conversion' do
-    # FileHelper.accept_file handles DOCX in one of two ways depending on
-    # whether Gotenberg is configured:
-    # - Not configured: rejected immediately with "not supported" message
-    # - Configured: passed to conversion (encrypted files caught before conversion)
-    # In both cases accept_file must return a result hash — never raise or crash.
+  test 'rejects unsupported Word document extension' do
+    # Production accepts PDF only for document uploads. DOCX is not a known
+    # extension and no conversion path runs from FileHelper.accept_file.
     with_tempfile('.docx', "PK\x03\x04fake docx content", binary: true) do |f|
       result = FileHelper.accept_file(
         { filename: 'report.docx', 'tempfile' => f },
@@ -530,18 +526,8 @@ class UploadSecurityTest < ActiveSupport::TestCase
         'document'
       )
 
-      assert result.is_a?(Hash),
-             'accept_file must return a result Hash for a DOCX file'
-      assert result.key?(:accepted),
-             'accept_file result must include :accepted key'
-      assert result.key?(:msg),
-             'accept_file result must include :msg key'
-      # In CI (no Gotenberg) the file must be rejected.
-      # Locally with Gotenberg it may proceed to conversion.
-      unless result[:accepted]
-        assert_match(/not supported|conversion|mime|word|pdf|extension/i, result[:msg],
-                     "Expected a meaningful rejection or conversion message, got: #{result[:msg]}")
-      end
+      assert_not result[:accepted], 'Expected DOCX to be rejected for document uploads'
+      assert_equal 'invalid file extension.', result[:msg]
     end
   end
 
@@ -701,9 +687,11 @@ class UploadSecurityTest < ActiveSupport::TestCase
       post_submission(project, td, Rack::Test::UploadedFile.new(f.path, 'text/plain', true))
     end
 
-    # Assert the upload was actually rejected — not silently accepted or failed on auth.
-    assert_includes [400, 403, 422], last_response.status,
-                    "Expected upload to be rejected (got #{last_response.status}: #{last_response.body})"
+    # Assert the upload reached file validation and was rejected for its MIME,
+    # rather than passing on an unrelated authentication or processing error.
+    assert_equal 403, last_response.status,
+                 "Expected MIME validation to reject the upload, got: #{last_response.body}"
+    assert_match(/invalid file MIME type/i, last_response.body)
 
     # Give the GC a chance to clean up Tempfile objects.
     GC.start
@@ -745,6 +733,8 @@ class UploadSecurityTest < ActiveSupport::TestCase
 
     assert_not_includes logged, sensitive_content,
                         'Log output must not contain raw file content from a rejected upload'
+  ensure
+    Rails.logger = original_logger if defined?(original_logger) && original_logger
   end
 
   test 'rejection log messages do not include student username or email' do
@@ -776,6 +766,7 @@ class UploadSecurityTest < ActiveSupport::TestCase
     # as long as it does not appear alongside file content or sensitive data.
     # Production log level :warn suppresses these debug path messages.
   ensure
+    Rails.logger = original_logger if defined?(original_logger) && original_logger
     unit.destroy
   end
 
@@ -804,6 +795,7 @@ class UploadSecurityTest < ActiveSupport::TestCase
     assert_not_includes logged, sensitive_content,
                         'Log output must not contain raw file content from an accepted upload'
   ensure
+    Rails.logger = original_logger if defined?(original_logger) && original_logger
     unit.destroy
   end
 
@@ -903,28 +895,4 @@ class UploadSecurityTest < ActiveSupport::TestCase
     unit.destroy
   end
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Private helpers that mirror the existing test suite conventions
-  # ─────────────────────────────────────────────────────────────────────────────
-
-  private
-
-  def with_word_document_conversion_configured
-    config = Doubtfire::Application.config
-    return yield unless config.respond_to?(:gotenberg_image)
-
-    original_image    = config.gotenberg_image
-    original_mount    = config.gotenberg_workdir_volume_mount
-    original_fallback = config.gotenberg_fallback_volume_container
-    config.gotenberg_image = 'doubtfire-gotenberg:test'
-    config.gotenberg_workdir_volume_mount = nil
-    config.gotenberg_fallback_volume_container = 'fallback-container'
-    yield
-  ensure
-    if config.respond_to?(:gotenberg_image)
-      config.gotenberg_image = original_image
-      config.gotenberg_workdir_volume_mount = original_mount
-      config.gotenberg_fallback_volume_container = original_fallback
-    end
-  end
 end
