@@ -24,6 +24,14 @@ poll_communication_set_schedules:
   cron: "every 5 minutes"
   class: "PollCommunicationSetSchedulesJob"
 
+# Recheck effective task start dates once a day. Directly created, copied and
+# imported tasks are queued immediately; this sweep handles students whose
+# flexible or future-dated start arrives later, with a bounded catch-up window
+# for short worker outages and late enrolment.
+send_new_task_available_notifications:
+  cron: "every day at 8:10am"
+  class: "SendNewTaskAvailableNotificationsJob"
+
 # Once a day, in the morning.
 #
 # A deadline moves once a day, so nothing is gained by sweeping for one every

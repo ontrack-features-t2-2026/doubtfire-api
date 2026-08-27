@@ -6,21 +6,33 @@
 
 ## Purpose
 
-Notifies eligible students when a new task becomes available through the normal convenor task-creation workflow.
+Notifies eligible students when a newly created task becomes available.
 
 ## Trigger
 
-The notification fan-out is queued after a new task definition is successfully created through the normal task-definition API.
+The notification fan-out is queued after a task definition is successfully
+created through any supported workflow:
 
-The hook is located in:
+- the normal task-definition API;
+- CSV task import; or
+- task copying during unit rollover.
 
-`app/api/task_definitions_api.rb`
+These workflows enqueue only after the task definition is fully populated. A
+general `TaskDefinition` `after_create` callback is intentionally not used
+because CSV import and rollover save intermediate records before their full
+workflow is complete.
 
-immediately after:
+`SendNewTaskAvailableNotificationsJob` also checks active units once a day.
+It sends on or shortly after the student's effective start date, covering task,
+target-grade and student-specific future dates without creating missing `Task`
+rows. A seven-day catch-up window tolerates short worker outages and late
+enrolment without announcing historical tasks.
 
-`task_def.save!`
-
-A general `TaskDefinition` `after_create` callback is intentionally not used because task definitions are also created through rollover, copy and import workflows. Triggering from the model could therefore generate unexpected or duplicate notifications.
+A tracking timestamp marks definitions that are ready for this sweep. New
+application code leaves the marker empty until an explicit workflow completes;
+the database supplies a UTC marker only for writes from an older process during
+a rolling deployment. The sweep gives those compatibility rows an hour to
+settle before evaluating them.
 
 ## Notification
 
@@ -35,26 +47,39 @@ A general `TaskDefinition` `after_create` callback is intentionally not used bec
 
 A student receives the notification only when all of the following are true:
 
-- The task was created through the normal convenor API.
+- The task was created through a supported direct, copy/rollover or import workflow.
 - The unit is active.
 - The student is currently enrolled in the unit.
 - The task applies to the student's target grade.
-- The student's effective task start date is now or earlier.
+- The student's effective task start date is now or earlier for an immediate
+  creation fan-out, or within the scheduled release check's bounded window.
 - The student has task notifications enabled.
 
-The student's effective start date is determined using the existing `Task#local_start_date` behaviour so that flexible dates, target-grade dates and supported student-specific date adjustments are respected.
+The student's effective start date is determined with
+`Webcal.start_date_for_task_definition`, the same calculation used by the
+student calendar. Flexible dates, target-grade dates and supported
+student-specific date adjustments are therefore respected.
 
 ## Fan-out
 
 Notification delivery is not performed directly inside the API request.
 
-After the task definition is saved, the API enqueues:
+After a task-definition creation workflow completes, it enqueues:
 
 `NewTaskAvailableNotificationJob`
 
-The job processes enrolled projects in batches and sends one notification to each eligible student.
+The job processes enrolled projects in batches and sends one notification to
+each eligible student whose task is already available. The scheduled release
+job processes future start dates in daily batches.
 
-Duplicate notifications for the same student and task are prevented if the fan-out job is executed more than once.
+Duplicate notifications for the same student and task are prevented by an
+immutable task-definition key backed by a unique database index. Renaming a
+task does not resend it, while a genuinely new definition that reuses an old
+abbreviation can still notify. Delivery is serialized on the notification row,
+outside the student's project lock, so normal retries do not duplicate a
+completed delivery. External email and push remain at-least-once: a process
+failure after a provider accepts a message but before completion is recorded
+can repeat that external message on retry.
 
 ## Email templates
 
@@ -72,22 +97,17 @@ The notification links the student to the new task on their project dashboard:
 
 `/projects/:project_id/dashboard/:task_abbreviation`
 
-## Future-dated tasks
+## Future and bulk-created tasks
 
-Students whose effective task start date is in the future are not notified when the task definition is created.
+Future-dated tasks are not announced early. The scheduled release job notifies
+each student on or shortly after their effective start date. Unit rollover and
+CSV import enqueue only after their multi-step workflow completes, so a worker
+cannot observe a partially populated task definition. Updated CSV rows do not
+generate a new-task notification.
 
-The create endpoint will not execute again when that future start date arrives.
-
-Scheduled release-time notifications for future-dated tasks are therefore outside the scope of this first EN-V02 implementation and should be handled as follow-up work.
-
-## Out of scope
-
-The following task-definition creation paths are deliberately outside this first implementation:
-
-- unit rollover
-- task copying
-- CSV/import workflows
-- scheduled notifications when a future effective start date is reached
+All paths use the same event, preference gate and duplicate guard. A bulk import
+may deliberately enqueue one cohort fan-out per newly created task, but none of
+that email delivery happens in the API request.
 
 ## Tests
 
@@ -103,13 +123,17 @@ The tests cover:
 - unenrolled students
 - task target-grade eligibility
 - inactive units
-- future effective start dates
-- duplicate prevention
+- future base, target-grade and student-specific start dates
+- rollover/copy and new CSV-import rows
+- no notification for updated CSV rows
+- no `Task` rows created by the scheduled sweep
+- immutable database deduplication and retry state
+- rolling-deployment tracking compatibility
 
 Test command:
 
 `bundle exec rails test test/models/notification_new_task_test.rb`
 
-Current result:
+The focused tests are also in:
 
-`8 runs, 52 assertions, 0 failures, 0 errors, 0 skips`
+`test/sidekiq/send_new_task_available_notifications_job_test.rb`

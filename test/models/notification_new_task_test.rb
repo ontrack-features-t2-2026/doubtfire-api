@@ -74,7 +74,9 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
 
   def test_available_task_notifies_eligible_student
     assert_difference 'Notification.count', 1 do
-      run_job
+      assert_no_difference 'Task.count' do
+        run_job
+      end
     end
 
     notification = event_notifications.last
@@ -193,17 +195,27 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
   end
 
   def test_notification_failure_makes_job_fail_for_retry
-    notification_failure = lambda do |**_args|
+    notification_failure = lambda do |_notification|
       raise StandardError, 'temporary notification failure'
     end
 
-    NotificationService.stub(:notify, notification_failure) do
+    NotificationService.stub(:deliver, notification_failure) do
       error = assert_raises(RuntimeError) do
         run_job
       end
 
       assert_includes error.message, @project.id.to_s
     end
+
+    notification = event_notifications.find_by!(user: @student)
+    assert_nil notification.delivered_at
+
+    assert_no_difference 'Notification.count' do
+      run_job
+    end
+
+    assert_not_nil notification.reload.delivered_at
+    assert_equal 1, ActionMailer::Base.deliveries.count
   end
 
   def test_job_has_limited_retries
@@ -225,5 +237,51 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
 
     assert_equal 1, event_notifications.count
     assert_equal 1, ActionMailer::Base.deliveries.count
+  end
+
+  def test_delivery_rechecks_a_stale_project_after_withdrawal
+    stale_project = Project.find(@project.id)
+    @project.update!(enrolled: false)
+
+    assert_no_difference 'Notification.count' do
+      NewTaskAvailableNotificationJob.deliver(stale_project, @task_definition)
+    end
+
+    assert_empty ActionMailer::Base.deliveries
+  end
+
+  def test_renaming_a_task_does_not_send_a_second_availability_notification
+    run_job
+    @task_definition.update!(abbreviation: "RENAMED#{SecureRandom.hex(3)}")
+
+    assert_no_difference 'Notification.count' do
+      run_job
+    end
+
+    assert_equal 1, ActionMailer::Base.deliveries.count
+  end
+
+  def test_reusing_an_abbreviation_for_a_new_task_still_notifies
+    reused_abbreviation = @task_definition.abbreviation
+    run_job
+    @task_definition.update!(abbreviation: "RETIRED#{SecureRandom.hex(3)}")
+
+    replacement = FactoryBot.create(
+      :task_definition,
+      unit: @unit,
+      outcome_count: 0,
+      abbreviation: reused_abbreviation,
+      target_grade: 1,
+      start_date: 1.day.ago,
+      target_date: 1.week.from_now
+    )
+
+    assert_difference 'Notification.count', 1 do
+      NewTaskAvailableNotificationJob.new.perform(replacement.id)
+    end
+    # This call bypasses run_job, so it has to drain the mail queue itself.
+    NotificationEmailJob.drain
+
+    assert_equal 2, ActionMailer::Base.deliveries.count
   end
 end

@@ -651,7 +651,7 @@ class DatabasePopulator
 
     if (File.exist? csv_to_import) && (File.exist? zip_to_import)
       echo "----> CSV file found, importing tasks from #{csv_to_import} \n"
-      result = unit.import_tasks_from_csv(File.open(csv_to_import))
+      result = unit.import_tasks_from_csv(File.open(csv_to_import), notify: false)
       unless result[:errors].empty?
         raise("----> Task import from CSV failed with the following errors: #{result[:errors]} \n")
       end
