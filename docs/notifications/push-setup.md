@@ -57,7 +57,9 @@ errors. When rotating a VAPID pair, explicitly delete all existing
 notification id. A Sidekiq worker reloads the notification and calls
 `PushNotificationService.deliver`, so **every event that queues an email also
 queues a push, with no per-event work**. Provider network I/O never blocks the
-request or runs under the notification hand-off lock.
+request or runs under the notification hand-off lock. Push jobs use the
+dedicated `notifications` queue; every environment that enables Web Push must
+run a worker for that queue.
 
 `deliver` loops over `notification.user.push_subscriptions` and sends this
 payload to each:
@@ -152,8 +154,11 @@ fails:
 2. `PushNotificationService.configured?` is true.
 3. A `push_subscriptions` row exists for the user the notification went to. It is
    easy to subscribe as one account and then trigger a notification for another.
-4. `docker logs doubtfire-api | grep -i "push"`. Delivery failures are logged and
-   swallowed, so this is the only place they show up.
+4. The Sidekiq worker consumes the `notifications` queue. The normal development
+   stack starts it with `-q mailers -q notifications`; it deliberately does not
+   consume the unrelated `default` queue.
+5. `docker logs doubtfire-sidekiq | grep -i "push"`. Delivery failures happen in
+   the worker, so this is the process that reports them.
 
 ## Why the gem is pinned
 

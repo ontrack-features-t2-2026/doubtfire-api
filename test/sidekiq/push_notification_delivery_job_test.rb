@@ -68,8 +68,9 @@ class PushNotificationDeliveryJobTest < ActiveSupport::TestCase
 
     assert_not_nil job
     assert_equal 'PushNotificationDeliveryJob', job['class']
-    assert_equal 'default', job['queue']
+    assert_equal 'notifications', job['queue']
     assert_equal [notification.id], job['args']
+    assert_equal 'notifications', PushNotificationDeliveryJob.get_sidekiq_options['queue'].to_s
     assert_equal 3, PushNotificationDeliveryJob.get_sidekiq_options['retry']
   end
 
