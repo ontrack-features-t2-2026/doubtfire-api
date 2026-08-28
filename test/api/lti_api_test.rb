@@ -388,6 +388,18 @@ class LtiApiTest < ActiveSupport::TestCase
     assert_equal 0, unit.projects.where(user_id: student.id).count
   end
 
+  # The replay record belongs to the account whose launch spent it. It must not
+  # turn the new foreign key into a reason an otherwise unused account cannot be
+  # deleted.
+  def test_consumed_lti_token_is_removed_with_its_user
+    user = lti_user(:student)
+    consumed = ConsumedLtiToken.create!(jti: SecureRandom.uuid, user: user, expires_at: 1.minute.from_now)
+
+    user.destroy!
+
+    assert_not ConsumedLtiToken.exists?(consumed.id)
+  end
+
   # The loser of a race on the unique index saw nothing recorded when it
   # started, and still must not spend the token a second time.
   def test_lti_enrol_rejects_a_concurrent_replay

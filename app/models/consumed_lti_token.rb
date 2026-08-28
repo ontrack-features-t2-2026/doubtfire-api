@@ -10,7 +10,7 @@ class ConsumedLtiToken < ApplicationRecord
   #
   class AlreadyUsed < StandardError; end
 
-  belongs_to :user
+  belongs_to :user, inverse_of: :consumed_lti_tokens
 
   validates :jti, presence: true
   validates :expires_at, presence: true

@@ -157,6 +157,7 @@ class User < ApplicationRecord
   has_many    :engagements, dependent: :restrict_with_exception, inverse_of: :user
   has_many    :engagement_comments, dependent: :restrict_with_exception, inverse_of: :user
   has_many    :auth_tokens, dependent: :destroy, inverse_of: :user
+  has_many    :consumed_lti_tokens, dependent: :destroy, inverse_of: :user
   has_many    :user_oauth_tokens, dependent: :destroy, inverse_of: :user
   has_many    :user_oauth_states, dependent: :destroy, inverse_of: :user
   has_one     :webcal, dependent: :destroy, inverse_of: :user
