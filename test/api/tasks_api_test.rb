@@ -832,6 +832,116 @@ class TasksApiTest < ActiveSupport::TestCase
     assert_equal TaskStatus.complete, task.task_status
   end
 
+  # A helper for the refused-transition tests below. An ordinary task definition,
+  # nothing about it restricted, so the only reason a transition can be refused is
+  # the one the test is asking about.
+  def ordinary_task_definition_for(unit, restrict: false)
+    TaskDefinition.create!({
+                             unit_id: unit.id,
+                             tutorial_stream: unit.tutorial_streams.first,
+                             name: "Refusal reporting task #{restrict}",
+                             description: 'Task used to check refused transitions are reported',
+                             weighting: 4,
+                             target_grade: 0,
+                             start_date: Time.zone.now - 2.weeks,
+                             target_date: Time.zone.now + 1.week,
+                             abbreviation: "RefuseTask#{restrict ? 'R' : 'O'}",
+                             restrict_status_updates: restrict,
+                             requires_discussion: false,
+                             upload_requirements: [],
+                             plagiarism_warn_pct: 0.8,
+                             is_graded: false,
+                             max_quality_pts: 0
+                           })
+  end
+
+  # A student asking for a staff status is refused inside trigger_transition, which
+  # returns nil and adds no error. That used to reach the 200 at the end of the
+  # handler, so the client showed the change as accepted.
+  def test_refused_transition_to_a_staff_status_returns_403
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = ordinary_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+    status_before = task.task_status
+
+    add_auth_header_for(user: project.student)
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'complete' }
+
+    assert_equal 403, last_response.status, last_response.body
+    assert_equal 'This status change is not allowed for this task.', last_response_body['error']
+
+    task.reload
+    assert_equal status_before, task.task_status
+  end
+
+  # An unrecognised trigger string falls through the case statement and is refused
+  # the same silent way, whoever sends it.
+  def test_unrecognised_trigger_returns_403
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = ordinary_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+    status_before = task.task_status
+
+    add_auth_header_for(user: unit.tutors.first)
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'competed' }
+
+    assert_equal 403, last_response.status, last_response.body
+    assert_equal 'This status change is not allowed for this task.', last_response_body['error']
+
+    task.reload
+    assert_equal status_before, task.task_status
+  end
+
+  # The regression check. This change makes a permissive endpoint strict, so the
+  # failure mode is that ordinary marking stops working.
+  def test_allowed_transitions_still_return_200
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = ordinary_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+
+    add_auth_header_for(user: project.student)
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'working_on_it' }
+    assert_equal 200, last_response.status, last_response.body
+    task.reload
+    assert_equal TaskStatus.working_on_it, task.task_status
+
+    add_auth_header_for(user: unit.tutors.first)
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'discuss' }
+    assert_equal 200, last_response.status, last_response.body
+    task.reload
+    assert_equal TaskStatus.discuss, task.task_status
+  end
+
+  # The restricted message is the one sentence in this endpoint that tells a
+  # student something they can act on, so it has to survive ahead of the generic
+  # one. Nothing in the test tree protected it before.
+  def test_restricted_task_keeps_its_own_refusal_message
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = ordinary_task_definition_for(unit, restrict: true)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+
+    # Put the task at a staff assigned status first, which is the condition the
+    # restricted guard actually tests.
+    add_auth_header_for(user: unit.tutors.first)
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'discuss' }
+    assert_equal 200, last_response.status, last_response.body
+
+    add_auth_header_for(user: project.student)
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'working_on_it' }
+
+    assert_equal 403, last_response.status, last_response.body
+    assert_equal 'This task can only be updated by your tutor.', last_response_body['error']
+
+    task.reload
+    assert_equal TaskStatus.discuss, task.task_status
+  end
+
   def test_require_comment_for_feedback_submission_assess_in_portfolio
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
     td1 = unit.task_definitions.first
