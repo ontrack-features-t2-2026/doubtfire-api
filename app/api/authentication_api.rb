@@ -13,6 +13,7 @@ class AuthenticationApi < Grape::API
   helpers AuthenticationHelpers
   helpers AuthorisationHelpers
   helpers LtiHelper
+  helpers FederatedIdentityHelper
 
   #
   # Sign in - only mounted if AAF and SAML auth is NOT used (database auth)
@@ -108,12 +109,11 @@ class AuthenticationApi < Grape::API
 
       logger.info "Authenticate #{user_id_data[:email]} from #{request.ip}"
 
-      # Lookup using login_id if it exists
-      # Lookup using email otherwise and set login_id
-      # Otherwise create new
-      user = User.find_by(login_id: user_id_data[:login_id]) ||
-             User.find_by(username: user_id_data[:username]) ||
-             User.find_by(email: user_id_data[:email]) ||
+      # Lookup on what the identity provider asserted, otherwise create new
+      user = user_for_asserted_identity(login_id: user_id_data[:login_id],
+                                        email: user_id_data[:email],
+                                        derived_username: user_id_data[:username],
+                                        source: request.ip) ||
              User.create do |new_user|
                # Update new user with details from the SAML response
                Doubtfire::Application.config.institution_settings.update_user_from_saml_response(
@@ -219,12 +219,11 @@ class AuthenticationApi < Grape::API
 
       logger.info "Authenticate #{user_id_data[:email]} from #{request.ip}"
 
-      # Lookup using login_id if it exists
-      # Lookup using email otherwise and set login_id
-      # Otherwise create new
-      user = User.find_by(login_id: user_id_data[:login_id]) ||
-             User.find_by(username: user_id_data[:username]) ||
-             User.find_by(email: user_id_data[:email]) ||
+      # Lookup on what the identity provider asserted, otherwise create new
+      user = user_for_asserted_identity(login_id: user_id_data[:login_id],
+                                        email: user_id_data[:email],
+                                        derived_username: user_id_data[:username],
+                                        source: request.ip) ||
              User.create do |new_user|
                # Update new user with details from the LTI response
                Doubtfire::Application.config.institution_settings.update_user_from_lti_response(
@@ -298,12 +297,11 @@ class AuthenticationApi < Grape::API
 
       logger.info "Authenticate #{email} from #{request.ip}"
 
-      # Lookup using login_id if it exists
-      # Lookup using email otherwise and set login_id
-      # Otherwise create new
-      user = User.find_by(login_id: login_id) ||
-             User.find_by(username: email[/(.*)@/, 1]) ||
-             User.find_by(email: email) ||
+      # Lookup on what the identity provider asserted, otherwise create new
+      user = user_for_asserted_identity(login_id: login_id,
+                                        email: email,
+                                        derived_username: email[/(.*)@/, 1],
+                                        source: request.ip) ||
              User.find_or_create_by(login_id: login_id) do |new_user|
                role = Role.aaf_affiliation_to_role_id(attrs[:edupersonscopedaffiliation])
                first_name = (attrs[:givenname] || attrs[:cn]).capitalize

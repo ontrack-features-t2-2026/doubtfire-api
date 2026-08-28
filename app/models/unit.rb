@@ -1720,8 +1720,10 @@ class Unit < ApplicationRecord
       return nil if day_num.nil?
 
       start_day_num = start_date.wday
+      day_offset = day_num - start_day_num
+      day_offset += 7 if day_offset.negative?
 
-      start_date + (week - 1).weeks + (day_num - start_day_num).days
+      start_date + (week - 1).weeks + day_offset.days
     end
   end
 
