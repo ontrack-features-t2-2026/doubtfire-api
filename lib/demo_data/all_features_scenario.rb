@@ -503,7 +503,7 @@ module DemoData
           type: 'feedback',
           event: 'demo_feedback_ready',
           message: 'New feedback is ready for WORK in DEMO10001.',
-          link: "/projects/#{project.id}/dashboard/WORK",
+          link: "/projects/#{project.id}/dashboard/WORK/feedback",
           age: 2.hours,
           read: false
         },
