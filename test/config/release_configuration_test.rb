@@ -113,6 +113,8 @@ class ReleaseConfigurationTest < Minitest::Test
   def test_unit_test_workflow_fits_runner_slots_and_uses_the_source_free_ci_image
     workflow = read('.github/workflows/push.yml')
     dockerfile = read('Dockerfile')
+    bake = read('docker-bake.ci.hcl')
+    seeded_database_key = workflow.lines.find { |line| line.include?('key: seeded-test-database') }
 
     expected_workers = (1..5).to_a.join(', ')
     assert_includes workflow, "worker: [#{expected_workers}]"
@@ -121,9 +123,21 @@ class ReleaseConfigurationTest < Minitest::Test
     assert_includes workflow, 'SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE: "true"'
     assert_includes workflow, '--env SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE'
     assert_equal false, workflow.include?('max-parallel:')
-    assert_includes workflow, "target: ci\n"
-    assert_includes workflow, 'tags: doubtfire-api-ci:local'
+    assert_includes workflow, 'Build test images concurrently'
+    assert_includes workflow, 'docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b'
+    assert_includes workflow, 'targets: ${{ steps.plan_shard.outputs.bake_targets }}'
+    assert_includes workflow, 'load: true'
+    assert_equal false, workflow.include?('docker/build-push-action')
     assert_equal false, workflow.include?('maus007/docker-run-action-fork')
+    assert_includes bake, 'target     = "ci"'
+    assert_includes bake, 'tags       = ["doubtfire-api-ci:local"]'
+    assert_includes bake, 'target "api-cache-writer"'
+    assert_includes bake, 'target "texlive-cache-writer"'
+    assert_includes bake, 'target "jplag-cache-writer"'
+    assert_includes bake, 'tags       = ["doubtfire-texlive-development:local"]'
+    assert_includes bake, 'tags       = ["doubtfire-jplag-development:local"]'
+    assert_instance_of String, seeded_database_key
+    assert_includes seeded_database_key, "'docker-bake.ci.hcl'"
 
     ci_stage = dockerfile.index("FROM dependencies AS ci\n")
     development_stage = dockerfile.index("FROM dependencies AS development\n")

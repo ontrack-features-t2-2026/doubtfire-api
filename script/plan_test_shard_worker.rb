@@ -44,6 +44,12 @@ unless github_output_path.to_s.empty?
       output.puts "writes_#{service}_cache=#{logical_shards.include?(cache_writers.fetch(service))}"
     end
     output.puts "logical_shards=#{logical_shards.join(',')}"
+    bake_targets = TestShard.image_build_targets(
+      shards: shards,
+      logical_shards: logical_shards,
+      api_cache_writer: worker_number == 1
+    )
+    output.puts "bake_targets=#{bake_targets.join(',')}"
   end
 end
 

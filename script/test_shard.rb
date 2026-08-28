@@ -223,6 +223,24 @@ module TestShard
     end
   end
 
+  def image_build_targets(shards:, logical_shards:, api_cache_writer:)
+    targets = [api_cache_writer ? 'api-cache-writer' : 'api']
+    selected_runnables = logical_shards.flat_map do |shard_number|
+      shards.fetch(shard_number - 1).fetch(:runnables)
+    end
+    required = required_services(selected_runnables)
+    cache_writers = cache_writer_shards(shards)
+
+    SERVICE_TEST_FILES.each_key do |service|
+      next unless required.fetch(service)
+
+      target = service.to_s
+      target += '-cache-writer' if logical_shards.include?(cache_writers.fetch(service))
+      targets << target
+    end
+    targets
+  end
+
   # Pack logical shards onto the smaller number of hosted runners available to
   # the repository. Each worker runs its assigned logical shards concurrently,
   # so balancing their combined measured weight avoids four waves of queued

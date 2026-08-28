@@ -125,6 +125,51 @@ class TestShardTest < ActiveSupport::TestCase
     assert_equal({ texlive: 2, jplag: 3 }, TestShard.cache_writer_shards(shards))
   end
 
+  def test_image_build_targets_select_only_required_images_and_cache_writers
+    shards = [
+      { runnables: ['test/api/users_api_test.rb'] },
+      { runnables: ['test/models/task_test.rb:254'] },
+      { runnables: ['test/models/task_similarity_test.rb'] },
+      { runnables: ['test/api/projects_api_test.rb'] },
+      { runnables: ['test/models/task_test.rb:300'] }
+    ]
+
+    assert_equal(
+      %w[api-cache-writer texlive-cache-writer jplag-cache-writer],
+      TestShard.image_build_targets(
+        shards: shards,
+        logical_shards: [1, 2, 3],
+        api_cache_writer: true
+      )
+    )
+    assert_equal(
+      %w[api texlive],
+      TestShard.image_build_targets(
+        shards: shards,
+        logical_shards: [4, 5],
+        api_cache_writer: false
+      )
+    )
+  end
+
+  def test_image_build_targets_have_one_cache_writer_per_scope_across_all_workers
+    shards = TestShard.build(test_root: Rails.root.join('test'), shard_count: 20)
+    workers = TestShard.worker_assignments(shards: shards, worker_count: 5)
+    worker_targets = workers.each_with_index.map do |worker, index|
+      TestShard.image_build_targets(
+        shards: shards,
+        logical_shards: worker.fetch(:shard_numbers),
+        api_cache_writer: index.zero?
+      )
+    end
+    all_targets = worker_targets.flatten
+
+    assert(worker_targets.all? { |targets| targets.one? { |target| target.start_with?('api') } })
+    %w[api-cache-writer texlive-cache-writer jplag-cache-writer].each do |writer|
+      assert_equal 1, all_targets.count(writer), "expected exactly one #{writer}"
+    end
+  end
+
   def test_worker_assignments_balance_and_cover_every_logical_shard_once
     shards = [9, 8, 7, 6, 5, 4, 3, 2].map do |weight|
       { weight: weight.to_f, runnables: ["test_#{weight}"] }
