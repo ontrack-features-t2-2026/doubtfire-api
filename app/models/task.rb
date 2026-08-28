@@ -140,6 +140,11 @@ class Task < ApplicationRecord
   has_many :test_attempts, dependent: :destroy
   has_many :session_activities, dependent: :destroy
 
+  # Notifications that point at this task. They go with it, because a
+  # notification about a record that no longer exists can never be reached by
+  # the reader and so can never be cleared by reading it.
+  has_many :notifications, as: :notifiable, dependent: :destroy, inverse_of: :notifiable
+
   delegate :unit, to: :project
   delegate :student, to: :project
   delegate :upload_requirements, to: :task_definition
@@ -221,10 +226,37 @@ class Task < ApplicationRecord
     end
   end
 
+  # Reading the comments is also reading the notifications that pointed at them.
+  #
+  # The rule lives here rather than in the comments endpoint because this method
+  # is what "the user has now seen these comments" means, and it has more than
+  # one caller. A rule in one endpoint is a rule the next caller forgets.
+  #
+  # Only this user's notifications are touched, so a tutor opening a student's
+  # task cannot clear the student's bell. Only unread ones are touched, so a
+  # notification read three days ago keeps its original timestamp. One
+  # update_all over the whole set, because the loop above is already one write
+  # per comment.
+  #
+  # The type/id pairs are built by Rails from the records themselves rather than
+  # written out as SQL strings, so an STI subclass or a renamed class cannot
+  # leave a literal that still compiles and quietly matches nothing.
   def mark_comments_as_read(user, comments)
+    comments = comments.to_a
+
     comments.each do |comment|
       comment.mark_as_read(user, unit)
     end
+
+    unread = user.notifications.unread
+    # rubocop:disable Rails/SkipsModelValidations
+    # update_all on purpose. Setting read_at has no validation or callback to
+    # run, and the loop above is already one write per comment, so this is one
+    # statement rather than another N.
+    unread.where(notifiable: comments)
+          .or(unread.where(notifiable: self))
+          .update_all(read_at: Time.zone.now)
+    # rubocop:enable Rails/SkipsModelValidations
   end
 
   def mark_comments_as_unread(user, comments)
@@ -714,7 +746,8 @@ class Task < ApplicationRecord
       type: 'task',
       event: 'task_submitted',
       message: "#{student.name} submitted #{task_definition.name} for marking in #{product_name}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+      notifiable: self
     )
   rescue StandardError => e
     logger.error "Failed to raise task_submitted notification for task #{id}: #{e.message}"
@@ -748,7 +781,8 @@ class Task < ApplicationRecord
       type: 'task',
       event: 'task_status_changed',
       message: "#{by_user.name} updated the status of #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+      notifiable: self
     )
   rescue StandardError => e
     logger.error "Failed to raise task_status_changed notification for task #{id}: #{e.message}"
@@ -1048,7 +1082,8 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'task_comment_created',
       message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+      notifiable: comment
     )
   rescue StandardError => e
     logger.error "Failed to raise task_comment_created notification for task #{id}: #{e.message}"

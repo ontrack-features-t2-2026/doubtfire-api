@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_24_000001) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_27_000001) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -351,6 +351,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000001) do
     t.string "event", null: false
     t.string "dedupe_key", limit: 191
     t.datetime "delivered_at"
+    t.string "notifiable_type"
+    t.bigint "notifiable_id"
+    t.index ["notifiable_type", "notifiable_id"], name: "index_notifications_on_notifiable_type_and_notifiable_id"
     t.index ["user_id", "dedupe_key"], name: "index_notifications_on_user_and_dedupe_key", unique: true
     t.index ["user_id", "event"], name: "index_notifications_on_user_id_and_event"
     t.index ["user_id", "read_at"], name: "index_notifications_on_user_id_and_read_at"
