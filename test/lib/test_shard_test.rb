@@ -71,6 +71,81 @@ class TestShardTest < ActiveSupport::TestCase
     end
   end
 
+  def test_split_units_use_selector_runtime_weights
+    Dir.mktmpdir do |repository_root|
+      path = File.join(repository_root, 'test', 'models', 'task_test.rb')
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, <<~RUBY)
+        class TaskTest
+          def test_slow
+            assert true
+          end
+
+          def test_fast_one
+            assert true
+          end
+
+          def test_fast_two
+            assert true
+          end
+        end
+      RUBY
+      relative_path = 'test/models/task_test.rb'
+      selectors = TestShard.method_runnables(path, relative_path).map { |method| method.fetch(:runnable) }
+      runtime_weights = selectors.zip([100.0, 1.0, 1.0]).to_h
+
+      units = TestShard.split_units(path, relative_path, 2, runtime_weights: runtime_weights)
+
+      assert_equal [2.0, 100.0], units.map { |unit| unit.fetch(:weight) }.sort
+      assert_equal selectors.sort, units.flat_map { |unit| unit.fetch(:runnables) }.sort
+    end
+  end
+
+  def test_hosted_runtime_weights_require_the_exact_selector_inventory
+    Dir.mktmpdir do |test_root|
+      4.times do |index|
+        File.write(File.join(test_root, "file_#{index}_test.rb"), "# test line\n")
+      end
+      runnables = TestShard.all_runnables(test_root: test_root)
+      profile = {
+        selector_count: runnables.length,
+        fingerprint: TestShard.runnable_profile_fingerprint(test_root: test_root, runnables: runnables),
+        weights: [100.0, 3.0, 2.0, 1.0]
+      }
+
+      assert_equal(
+        runnables.zip(profile.fetch(:weights)).to_h,
+        TestShard.hosted_runtime_weights(test_root: test_root, runtime_profile: profile)
+      )
+      File.write(File.join(test_root, 'file_0_test.rb'), "# changed test source\n", mode: 'a')
+      assert_empty(TestShard.hosted_runtime_weights(test_root: test_root, runtime_profile: profile))
+      assert_empty(
+        TestShard.hosted_runtime_weights(
+          test_root: test_root,
+          runtime_profile: profile.merge(fingerprint: '0' * 64, weights: [])
+        )
+      )
+    end
+  end
+
+  def test_hosted_runtime_weights_reject_an_invalid_matching_profile
+    Dir.mktmpdir do |test_root|
+      File.write(File.join(test_root, 'file_test.rb'), "# test line\n")
+      runnables = TestShard.all_runnables(test_root: test_root)
+      profile = {
+        selector_count: runnables.length,
+        fingerprint: TestShard.runnable_profile_fingerprint(test_root: test_root, runnables: runnables),
+        weights: [0.0]
+      }
+
+      error = assert_raises(SystemExit) do
+        TestShard.hosted_runtime_weights(test_root: test_root, runtime_profile: profile)
+      end
+
+      assert_includes error.message, 'invalid weights'
+    end
+  end
+
   def test_split_units_reject_unsupported_dynamic_test_declarations
     Dir.mktmpdir do |repository_root|
       path = File.join(repository_root, 'test', 'models', 'task_test.rb')
@@ -148,6 +223,15 @@ class TestShardTest < ActiveSupport::TestCase
         shards: shards,
         logical_shards: [4, 5],
         api_cache_writer: false
+      )
+    )
+    assert_equal(
+      %w[api texlive jplag],
+      TestShard.image_build_targets(
+        shards: shards,
+        logical_shards: [1, 2, 3],
+        api_cache_writer: false,
+        cache_write_enabled: false
       )
     )
   end

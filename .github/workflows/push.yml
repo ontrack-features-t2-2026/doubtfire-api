@@ -22,6 +22,8 @@ concurrency:
 
 env:
   RAILS_ENV: "test"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  DOCKER_BUILD_SUMMARY: "false"
   DF_STUDENT_WORK_DIR: "/student-work"
   DF_INSTITUTION_HOST: "http://localhost:3000"
   DF_INSTITUTION_PRODUCT_NAME: "OnTrack"
@@ -56,6 +58,7 @@ jobs:
       TEST_SHARD_WORKER_COUNT: "5"
       TEST_SHARD_WORKER_NUMBER: ${{ matrix.worker }}
       TEST_SHARD_WORKER_PLAN: tmp/test-shard-worker-plan.tsv
+      CI_IMAGE_CACHE_WRITE: ${{ github.event_name != 'pull_request' }}
       SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE: "true"
     services:
       mariadb:

@@ -79,20 +79,14 @@ module TestShard
     jplag: 27.0
   }.freeze
 
-  # Filled from successful hosted runs only after the exact logical-shard
-  # layout is known. A fingerprint mismatch falls back to the live estimates,
-  # so test-tree changes cannot silently apply stale timings.
-  HOSTED_SHARD_RUNTIME_PROFILE = {
-    shard_count: 20,
-    worker_count: 5,
-    fingerprint: 'ff1d5b20cd6ba97566671be31b6842e4151a394e4cae2b5b3f66ce5058db1391',
-    weights: [
-      162.863179, 126.938919, 182.311113, 96.758206, 91.493972,
-      90.397486, 94.907570, 105.494115, 184.722252, 128.261832,
-      165.127718, 86.369374, 64.127241, 65.368940, 151.536852,
-      160.344219, 115.104388, 88.944252, 101.431738, 128.314199
-    ]
-  }.freeze
+  # Hosted Minitest timings for the exact sorted runnable inventory. Using
+  # selector-level weights fixes the large skew that source size cannot
+  # predict. Any inventory mismatch falls back to the conservative estimates.
+  HOSTED_RUNNABLE_RUNTIME_PROFILE = {}.freeze
+
+  # Optional second-level profile for packing already-built logical shards
+  # onto physical workers. The selector profile normally makes this redundant.
+  HOSTED_SHARD_RUNTIME_PROFILE = {}.freeze
 
   TEST_METHOD_PATTERN = /^\s*(?:def\s+test_[A-Za-z0-9_!?=]*|test\s*(?:\(\s*)?['":])/
   TEST_DECLARATION_CANDIDATE_PATTERN = /^\s*(?:def\s+test_|test\b|define_method\b.*test_)/
@@ -131,8 +125,10 @@ module TestShard
     FILE_RUNTIME_WEIGHTS.fetch(relative_path, line_count / DEFAULT_LINES_PER_SECOND)
   end
 
-  def split_units(path, relative_path, part_count)
-    methods = method_runnables(path, relative_path)
+  def split_units(path, relative_path, part_count, runtime_weights: {})
+    methods = method_runnables(path, relative_path).map do |method|
+      method.merge(weight: runtime_weights.fetch(method.fetch(:runnable), method.fetch(:weight)))
+    end
     abort "Cannot split #{relative_path} into #{part_count} non-empty parts" if part_count > methods.length
 
     parts = Array.new(part_count) { { weight: 0.0, line_count: 0, runnables: [] } }
@@ -145,18 +141,59 @@ module TestShard
     parts
   end
 
-  def runnable_units(test_root:)
+  def canonical_runnables(test_root:)
     test_files = Dir.glob(File.join(test_root, '**', '*_test.rb'))
     abort "No test files found under #{test_root}" if test_files.empty?
 
-    test_files.flat_map do |path|
+    test_files.sort.flat_map do |path|
       relative_path = repository_relative(path, test_root)
       part_count = SPLIT_TEST_FILES[relative_path]
-      next split_units(path, relative_path, part_count) if part_count
+      next method_runnables(path, relative_path).map { |method| method.fetch(:runnable) } if part_count
+
+      relative_path
+    end.sort
+  end
+
+  def runnable_profile_fingerprint(test_root:, runnables:)
+    digest = Digest::SHA256.new
+    digest << runnables.join("\0")
+    Dir.glob(File.join(test_root, '**', '*'), File::FNM_DOTMATCH).select { |path| File.file?(path) }.sort.each do |path|
+      relative_path = path.delete_prefix("#{test_root}/")
+      digest << "\0#{relative_path}\0" << File.binread(path)
+    end
+    digest.hexdigest
+  end
+
+  def hosted_runtime_weights(test_root:, runtime_profile:)
+    return {} if runtime_profile.empty?
+
+    runnables = canonical_runnables(test_root: test_root)
+    return {} unless runtime_profile.fetch(:selector_count, nil) == runnables.length
+    fingerprint = runnable_profile_fingerprint(test_root: test_root, runnables: runnables)
+    return {} unless runtime_profile.fetch(:fingerprint, nil) == fingerprint
+
+    weights = runtime_profile.fetch(:weights, nil)
+    valid_weights = weights.is_a?(Array) && weights.length == runnables.length && weights.all? do |weight|
+      weight.is_a?(Numeric) && weight.positive? && (!weight.respond_to?(:finite?) || weight.finite?)
+    end
+    abort 'The hosted runnable runtime profile contains invalid weights' unless valid_weights
+
+    runnables.zip(weights).to_h
+  end
+
+  def runnable_units(test_root:, runtime_profile: HOSTED_RUNNABLE_RUNTIME_PROFILE)
+    runtime_weights = hosted_runtime_weights(test_root: test_root, runtime_profile: runtime_profile)
+
+    Dir.glob(File.join(test_root, '**', '*_test.rb')).flat_map do |path|
+      relative_path = repository_relative(path, test_root)
+      part_count = SPLIT_TEST_FILES[relative_path]
+      if part_count
+        next split_units(path, relative_path, part_count, runtime_weights: runtime_weights)
+      end
 
       line_count = File.foreach(path).count
       [{
-        weight: file_weight(relative_path, line_count),
+        weight: runtime_weights.fetch(relative_path, file_weight(relative_path, line_count)),
         line_count: line_count,
         runnables: [relative_path]
       }]
@@ -164,11 +201,11 @@ module TestShard
   end
 
   def all_runnables(test_root:)
-    runnable_units(test_root: test_root).flat_map { |unit| unit.fetch(:runnables) }.sort
+    canonical_runnables(test_root: test_root)
   end
 
-  def build(test_root:, shard_count:)
-    units = runnable_units(test_root: test_root)
+  def build(test_root:, shard_count:, runtime_profile: HOSTED_RUNNABLE_RUNTIME_PROFILE)
+    units = runnable_units(test_root: test_root, runtime_profile: runtime_profile)
     abort "TEST_SHARD_COUNT cannot exceed the #{units.length} discovered runnable groups" if shard_count > units.length
 
     shards = Array.new(shard_count) do
@@ -239,7 +276,7 @@ module TestShard
     end
   end
 
-  def image_build_targets(shards:, logical_shards:, api_cache_writer:)
+  def image_build_targets(shards:, logical_shards:, api_cache_writer:, cache_write_enabled: true)
     targets = [api_cache_writer ? 'api-cache-writer' : 'api']
     selected_runnables = logical_shards.flat_map do |shard_number|
       shards.fetch(shard_number - 1).fetch(:runnables)
@@ -251,7 +288,9 @@ module TestShard
       next unless required.fetch(service)
 
       target = service.to_s
-      target += '-cache-writer' if logical_shards.include?(cache_writers.fetch(service))
+      if cache_write_enabled && logical_shards.include?(cache_writers.fetch(service))
+        target += '-cache-writer'
+      end
       targets << target
     end
     targets

@@ -17,6 +17,10 @@ logical_shards = workers.fetch(worker_number - 1).fetch(:shard_numbers)
 manifest_dir = ENV.fetch('TEST_SHARD_MANIFEST_DIR', File.join(repository_root, 'tmp/test-shard-manifests'))
 plan_path = ENV.fetch('TEST_SHARD_WORKER_PLAN', File.join(repository_root, 'tmp/test-shard-worker-plan.tsv'))
 github_output_path = ENV.fetch('TEST_SHARD_GITHUB_OUTPUT', nil)
+cache_write_value = ENV.fetch('CI_IMAGE_CACHE_WRITE', 'false')
+abort 'CI_IMAGE_CACHE_WRITE must be true or false' unless %w[true false].include?(cache_write_value)
+
+cache_write_enabled = cache_write_value == 'true'
 cache_writers = TestShard.cache_writer_shards(shards)
 if worker_number == 1
   selector_inventory_path = ENV.fetch('TEST_SHARD_SELECTOR_INVENTORY', nil)
@@ -45,13 +49,15 @@ unless github_output_path.to_s.empty?
     %i[texlive jplag].each_with_index do |service, service_index|
       service_column = service_index + 2
       output.puts "needs_#{service}=#{plan_rows.any? { |row| row.fetch(service_column) }}"
-      output.puts "writes_#{service}_cache=#{logical_shards.include?(cache_writers.fetch(service))}"
+      writes_cache = cache_write_enabled && logical_shards.include?(cache_writers.fetch(service))
+      output.puts "writes_#{service}_cache=#{writes_cache}"
     end
     output.puts "logical_shards=#{logical_shards.join(',')}"
     bake_targets = TestShard.image_build_targets(
       shards: shards,
       logical_shards: logical_shards,
-      api_cache_writer: worker_number == 1
+      api_cache_writer: cache_write_enabled && worker_number == worker_count,
+      cache_write_enabled: cache_write_enabled
     )
     output.puts "bake_targets=#{bake_targets.join(',')}"
   end

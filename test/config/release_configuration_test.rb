@@ -108,20 +108,25 @@ class ReleaseConfigurationTest < Minitest::Test
     assert_includes workflow, 'script/prepare_test_database.sh'
     assert_includes workflow, 'git diff --exit-code -- db/schema.rb'
     assert_includes database_preparation, "abort 'db:populate created no units' unless Unit.exists?"
+    assert_includes database_preparation, 'logical lanes import it directly'
   end
 
   def test_unit_test_workflow_fits_runner_slots_and_uses_the_source_free_ci_image
     workflow = read('.github/workflows/push.yml')
     dockerfile = read('Dockerfile')
     bake = read('docker-bake.ci.hcl')
+    shard_planner = read('script/plan_test_shard_worker.rb')
     seeded_database_key = workflow.lines.find { |line| line.include?('key: seeded-test-database') }
 
     expected_workers = (1..5).to_a.join(', ')
     assert_includes workflow, "worker: [#{expected_workers}]"
     assert_includes workflow, 'TEST_SHARD_COUNT: "20"'
     assert_includes workflow, 'TEST_SHARD_WORKER_COUNT: "5"'
+    assert_includes workflow, "CI_IMAGE_CACHE_WRITE: ${{ github.event_name != 'pull_request' }}"
     assert_includes workflow, 'SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE: "true"'
     assert_includes workflow, '--env SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE'
+    assert_includes workflow, 'DOCKER_BUILD_RECORD_UPLOAD: "false"'
+    assert_includes workflow, 'DOCKER_BUILD_SUMMARY: "false"'
     assert_equal false, workflow.include?('max-parallel:')
     assert_includes workflow, 'Build test images concurrently'
     assert_includes workflow, 'docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b'
@@ -129,6 +134,7 @@ class ReleaseConfigurationTest < Minitest::Test
     assert_includes workflow, 'load: true'
     assert_includes workflow, 'TEST_SHARD_SELECTOR_INVENTORY=tmp/test-selector-inventory.txt'
     assert_includes workflow, 'selector_inventory_path=tmp/all-test-shard-manifests/test-selector-inventory.txt'
+    assert_includes shard_planner, 'api_cache_writer: cache_write_enabled && worker_number == worker_count'
     assert_equal 1, workflow.scan('actions/checkout@').length
     assert_equal false, workflow.include?('docker/build-push-action')
     assert_equal false, workflow.include?('maus007/docker-run-action-fork')
