@@ -46,6 +46,28 @@ class AuthenticationApiTest < ActiveSupport::TestCase
     assert_equal user_count, User.count, 'Matching on login_id must not create a user'
   end
 
+  # Once an account and an assertion both carry a login id, that identifier has
+  # to decide the match on its own. Falling through to a shared or reused email
+  # address after a mismatch would issue a login token for the wrong account.
+  def test_assertion_does_not_fall_back_to_email_after_a_login_id_mismatch
+    account = FactoryBot.create(:user, username: 'sec07-email-owner', email: 'sec07-shared@example.com')
+    account.update(login_id: 'sec07-email-owner-login')
+
+    user_count = User.count
+
+    post '/api/auth/lti', {
+      ltik: lti_token_for(lti_member(login_id: 'sec07-other-login', email: 'sec07-shared@example.com'))
+    }
+
+    assert_equal 500, last_response.status, 'A mismatched asserted login id must not be rescued by the email'
+    assert_nil last_response_body['auth_token'], 'No token may be issued for the email owner'
+    assert_equal user_count, User.count, 'A refused assertion must not create an account'
+
+    account.reload
+    assert_equal 'sec07-email-owner-login', account.login_id
+    assert_nil account.auth_tokens.first, 'No token may be issued for the unrelated account'
+  end
+
   # An assertion whose derived username collides with an unrelated account must
   # not resolve to that account. The derived username is the local part of the
   # asserted email, so two people at different domains derive the same one.
