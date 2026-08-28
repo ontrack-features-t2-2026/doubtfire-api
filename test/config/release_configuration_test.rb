@@ -105,9 +105,34 @@ class ReleaseConfigurationTest < Minitest::Test
 
     assert_includes schema, 'default: -> { "current_timestamp(6)" }'
     assert_includes migration, "-> { 'CURRENT_TIMESTAMP(6)' }"
-    assert_includes workflow, 'run: script/prepare_test_database.sh'
+    assert_includes workflow, 'script/prepare_test_database.sh'
     assert_includes workflow, 'git diff --exit-code -- db/schema.rb'
     assert_includes database_preparation, "abort 'db:populate created no units' unless Unit.exists?"
+  end
+
+  def test_unit_test_workflow_fits_runner_slots_and_uses_the_source_free_ci_image
+    workflow = read('.github/workflows/push.yml')
+    dockerfile = read('Dockerfile')
+
+    expected_workers = (1..5).to_a.join(', ')
+    assert_includes workflow, "worker: [#{expected_workers}]"
+    assert_includes workflow, 'TEST_SHARD_COUNT: "20"'
+    assert_includes workflow, 'TEST_SHARD_WORKER_COUNT: "5"'
+    assert_includes workflow, 'SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE: "true"'
+    assert_includes workflow, '--env SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE'
+    assert_equal false, workflow.include?('max-parallel:')
+    assert_includes workflow, "target: ci\n"
+    assert_includes workflow, 'tags: doubtfire-api-ci:local'
+    assert_equal false, workflow.include?('maus007/docker-run-action-fork')
+
+    ci_stage = dockerfile.index("FROM dependencies AS ci\n")
+    development_stage = dockerfile.index("FROM dependencies AS development\n")
+    source_copy = dockerfile.index("COPY . .\n")
+    assert_instance_of Integer, ci_stage
+    assert_instance_of Integer, development_stage
+    assert_instance_of Integer, source_copy
+    assert_operator ci_stage, :<, development_stage
+    assert_operator development_stage, :<, source_copy
   end
 
   def test_development_compose_has_no_literal_institution_credential

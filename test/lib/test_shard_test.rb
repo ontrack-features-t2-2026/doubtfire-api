@@ -125,6 +125,34 @@ class TestShardTest < ActiveSupport::TestCase
     assert_equal({ texlive: 2, jplag: 3 }, TestShard.cache_writer_shards(shards))
   end
 
+  def test_worker_assignments_balance_and_cover_every_logical_shard_once
+    shards = [9, 8, 7, 6, 5, 4, 3, 2].map do |weight|
+      { weight: weight.to_f, runnables: ["test_#{weight}"] }
+    end
+
+    first = TestShard.worker_assignments(shards: shards, worker_count: 2)
+    second = TestShard.worker_assignments(shards: shards, worker_count: 2)
+    assigned = first.flat_map { |worker| worker.fetch(:shard_numbers) }
+
+    assert_equal first, second
+    assert_equal (1..8).to_a, assigned.sort
+    assert_equal assigned.length, assigned.uniq.length
+    assert(first.all? { |worker| worker.fetch(:shard_numbers).length == 4 })
+    assert_operator first.map { |worker| worker.fetch(:weight) }.max -
+                    first.map { |worker| worker.fetch(:weight) }.min, :<=, 1.0
+  end
+
+  def test_worker_assignments_reject_an_uneven_physical_topology
+    error = assert_raises(SystemExit) do
+      TestShard.worker_assignments(
+        shards: Array.new(6) { { weight: 1.0, runnables: ['test'] } },
+        worker_count: 4
+      )
+    end
+
+    assert_includes error.message, 'divisible'
+  end
+
   def test_write_github_output_appends_boolean_service_flags
     Dir.mktmpdir do |directory|
       output_path = File.join(directory, 'github-output')

@@ -175,8 +175,12 @@ class DatabasePopulator
       tag: 'bash:latest'
     )
 
-    echo_line "---> Pulling overseer image #{overseer_image.tag}"
-    overseer_image.pull_from_docker
+    if ENV['SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE'] == 'true'
+      echo_line "---> Skipping overseer image pull for #{overseer_image.tag}"
+    else
+      echo_line "---> Pulling overseer image #{overseer_image.tag}"
+      overseer_image.pull_from_docker
+    end
   end
 
   #

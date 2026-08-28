@@ -223,6 +223,46 @@ module TestShard
     end
   end
 
+  # Pack logical shards onto the smaller number of hosted runners available to
+  # the repository. Each worker runs its assigned logical shards concurrently,
+  # so balancing their combined measured weight avoids four waves of queued
+  # GitHub jobs when the account has five runner slots.
+  def worker_assignments(shards:, worker_count:)
+    abort 'TEST_SHARD_WORKER_COUNT must be a positive integer' unless worker_count.positive?
+    if worker_count > shards.length
+      abort "TEST_SHARD_WORKER_COUNT cannot exceed the #{shards.length} logical shards"
+    end
+    unless (shards.length % worker_count).zero?
+      abort 'Logical shard count must be divisible by TEST_SHARD_WORKER_COUNT'
+    end
+
+    shards_per_worker = shards.length / worker_count
+    workers = Array.new(worker_count) { { weight: 0.0, shard_numbers: [] } }
+    weighted_shards = shards.each_with_index.sort_by do |shard, index|
+      [-shard.fetch(:weight), index]
+    end
+    weighted_shards.each do |shard, index|
+      eligible_workers = workers.each_index.select do |worker_index|
+        workers.fetch(worker_index).fetch(:shard_numbers).length < shards_per_worker
+      end
+      worker_index = eligible_workers.min_by do |candidate|
+        [workers.fetch(candidate).fetch(:weight), candidate]
+      end
+      worker = workers.fetch(worker_index)
+      worker.fetch(:shard_numbers) << (index + 1)
+      worker[:weight] += shard.fetch(:weight)
+    end
+    workers.each { |worker| worker.fetch(:shard_numbers).sort! }
+
+    assigned = workers.flat_map { |worker| worker.fetch(:shard_numbers) }
+    expected = (1..shards.length).to_a
+    unless assigned.sort == expected && assigned.uniq.length == expected.length
+      abort 'Internal error: worker packing did not assign every logical shard exactly once'
+    end
+
+    workers
+  end
+
   def write_github_output(path, selected_runnables, cache_writer_services: {})
     return if path.to_s.empty?
 
