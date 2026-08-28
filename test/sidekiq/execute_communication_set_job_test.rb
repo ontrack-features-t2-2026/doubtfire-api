@@ -141,6 +141,16 @@ class ExecuteCommunicationSetJobTest < ActiveSupport::TestCase
     assert_equal 2, email_rows.count { |row| row[:status] == 'sent' }
     assert_equal 'mailbox unavailable', failed.first[:reason]
     assert_includes projects.map(&:id), failed.first[:project_id]
+
+    rule = communication_set.communication_rules.first
+    csv = ExecuteCommunicationSetJob.new.send(:build_action_log_csv, rule, projects, email_rows)
+    failed_csv_row = CSV.parse(csv, headers: true).find { |row| row['status'] == 'failed' }
+
+    assert_not_nil failed_csv_row
+    assert_equal(
+      "Failed to send email to #{failed.first[:recipient_email]}: mailbox unavailable",
+      failed_csv_row['details']
+    )
   end
 
   # The check on an over-eager rescue. Nothing about a clean run changes.

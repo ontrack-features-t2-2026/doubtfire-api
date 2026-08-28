@@ -470,6 +470,8 @@ class ExecuteCommunicationSetJob
                   elsif result[:status] == 'commented'
                     task_definition = TaskDefinition.find_by(id: result[:task_definition_id])
                     "Added comment to #{task_definition_label(task_definition)}"
+                  elsif result[:status] == 'failed'
+                    "Failed to send email to #{result[:recipient_email]}: #{result[:reason]}"
                   elsif result[:recipient_email].present?
                     "Sent email to #{result[:recipient_email]}"
                   else
