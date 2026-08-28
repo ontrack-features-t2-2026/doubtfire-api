@@ -118,13 +118,13 @@ class UsersApi < Grape::API
           error!({ error: "No such role name #{user_parameters[:role]}" }, 403)
         end
 
-        if old_role == Role.auditor
-          action - :promote_user
-        elsif new_role == Role.auditor
-          action = old_role == Role.student ? :promote_user : :demote_user
-        else
-          action = new_role.id > old_role.id ? :promote_user : :demote_user
-        end
+        action = if old_role == Role.auditor
+                   :promote_user
+                 elsif new_role == Role.auditor
+                   old_role == Role.student ? :promote_user : :demote_user
+                 else
+                   new_role.id > old_role.id ? :promote_user : :demote_user
+                 end
 
         # current user not authorised to peform action with new role?
         unless authorise? current_user, User, action, User.get_change_role_perm_fn, [old_role.to_sym, new_role.to_sym]

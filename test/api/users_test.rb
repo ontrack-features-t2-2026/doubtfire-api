@@ -394,4 +394,19 @@ class UnitsTest < ActiveSupport::TestCase
     test_put_update_user_custom_token ''
   end
 
+  # Regression for the promote/demote branch: changing an Auditor's role used to
+  # hit `action - :promote_user` (a minus, not an assignment), which raised a
+  # NameError and returned 500 for every auditor role change. Promoting an
+  # auditor to tutor must now succeed.
+  def test_put_promote_auditor_to_tutor
+    admin = FactoryBot.create(:user, :admin)
+    auditor = FactoryBot.create(:user, :auditor)
+
+    add_auth_header_for(user: admin)
+    put_json "/api/users/#{auditor.id}", { user: { system_role: 'Tutor' } }
+
+    assert_equal 200, last_response.status, last_response_body
+    assert_equal Role.tutor.id, auditor.reload.role_id
+  end
+
 end
