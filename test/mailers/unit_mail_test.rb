@@ -32,7 +32,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     assert_equal 1, mail.from.count
     assert_equal convenor.email, mail.from.first
-    assert mail.html_part.body.include? "projects/#{project.id}/portfolio"
+    assert mail.html_part.body.include? "#{Doubtfire::Application.config.institution[:host]}/projects/#{project.id}/portfolio"
     # The text-only part must carry the same deep link so plain-text recipients
     # have something to act on (BGW-29).
     assert mail.text_part.body.include?("projects/#{project.id}/portfolio"), mail.text_part.body.to_s
@@ -53,7 +53,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     assert_equal 1, mail.from.count
     assert_equal convenor.email, mail.from.first
-    assert mail.html_part.body.include? "projects/#{project.id}/portfolio"
+    assert mail.html_part.body.include? "#{Doubtfire::Application.config.institution[:host]}/projects/#{project.id}/portfolio"
     assert mail.text_part.body.include?("projects/#{project.id}/portfolio"), mail.text_part.body.to_s
     unit.destroy!
   end
@@ -75,7 +75,7 @@ class UnitMailTest < ActionMailer::TestCase
     assert_equal 1, mail.from.count
     assert_equal convenor.email, mail.from.first
     assert_equal project.student.email, mail.to.first
-    assert mail.html_part.body.include? "projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
+    assert mail.html_part.body.include? "#{Doubtfire::Application.config.institution[:host]}/projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
     assert mail.text_part.body.include?("projects/#{project.id}/dashboard/Portfolio%20Reflection"), mail.text_part.body.to_s
   end
 
