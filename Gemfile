@@ -135,3 +135,5 @@ gem "sentry-ruby"
 # OAuth integration, neither of which has anything to do with push. 3.0.0 works
 # against the jwt already in the lockfile and keeps the diff to one gem.
 gem 'web-push', '3.0.0'
+
+# CI baseline probe marker (no-op, do not merge)
