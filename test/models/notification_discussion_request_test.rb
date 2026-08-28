@@ -83,7 +83,7 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
     assert_equal 'A discussion prompt is ready for you.', notification.message
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}/feedback"
     )
 
     # Email is queued rather than sent inline since EN-F03.

@@ -37,7 +37,7 @@ class PushNotificationService
   MAX_CLICK_LINK_LENGTH = 256
   FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#%]/
   SAFE_PROJECT_ROOT_LINK = %r{\A/projects/[1-9]\d*/(?:dashboard|groups)\z}
-  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z}x
+  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}(?:/feedback)?\z}x
   # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
   # service that accepts a connection and then never answers holds a Sidekiq
