@@ -704,4 +704,32 @@ class CommentTest < ActiveSupport::TestCase
 
     td.destroy!
   end
+
+  # Regression: marking a comment unread called `delete_all(user:, task_comment:)`,
+  # but delete_all has taken no arguments since Rails 5.1, so the endpoint raised
+  # ArgumentError and returned 500. Reading a comment then marking it unread must
+  # succeed and remove the read receipt.
+  def test_mark_comment_as_unread
+    project = FactoryBot.create(:project)
+    unit = project.unit
+    user = project.student
+    convenor = unit.main_convenor_user
+    task_definition = unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+
+    comment = task.add_text_comment(convenor, 'Hello World')
+
+    # The student reads their comments, which records a read receipt.
+    add_auth_header_for user: user
+    get "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments"
+    assert_equal 200, last_response.status, last_response_body
+    assert CommentsReadReceipts.exists?(user: user, task_comment: comment), 'expected a read receipt after reading'
+
+    # Marking it unread must succeed (201, the Grape default for this POST) and
+    # remove that receipt. Before the fix this endpoint raised and returned 500.
+    add_auth_header_for user: user
+    post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments/#{comment.id}"
+    assert_equal 201, last_response.status, last_response_body
+    refute CommentsReadReceipts.exists?(user: user, task_comment: comment), 'expected the read receipt to be removed'
+  end
 end
