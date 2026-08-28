@@ -12,7 +12,7 @@
 #     type: 'feedback',
 #     event: 'task_comment_created',
 #     message: "New feedback is ready for #{task_definition.name}.",
-#     link: "/#/projects/#{project.id}"
+#     link: "/projects/#{project.id}"
 #   )
 class NotificationService
   # Raise a notification for a user. Returns the created Notification, or nil if
