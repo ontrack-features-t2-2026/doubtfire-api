@@ -30,9 +30,9 @@ class NotificationsMailer < ApplicationMailer
     # other's work.
     mail(
       to: email_with_name,
-      from: from_address,
       subject: subject,
-      template_name: event_template_name(notification.event)
+      template_name: event_template_name(notification.event),
+      **outbound_sender_headers(development_from: from_address)
     )
   end
 
@@ -80,7 +80,11 @@ class NotificationsMailer < ApplicationMailer
     convenor_email = %("#{@convenor.name}" <#{@convenor.email}>)
     subject = "#{@unit.name}: Weekly Summary"
 
-    mail(to: email_with_name, from: convenor_email, subject: subject)
+    mail(
+      { to: email_with_name, subject: subject }.merge(
+        outbound_sender_headers(development_from: convenor_email, reply_to: convenor_email)
+      )
+    )
   end
 
   def weekly_student_summary(project, summary_stats, did_revert_to_pass)
@@ -116,7 +120,11 @@ class NotificationsMailer < ApplicationMailer
     tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
     subject = "#{project.unit.name}: Weekly Summary"
 
-    mail(to: email_with_name, from: tutor_email, subject: subject)
+    mail(
+      { to: email_with_name, subject: subject }.merge(
+        outbound_sender_headers(development_from: tutor_email, reply_to: tutor_email)
+      )
+    )
   end
 
   def top_task_desc(tt)
