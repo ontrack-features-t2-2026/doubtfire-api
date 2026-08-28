@@ -17,12 +17,14 @@ class UserTest < ActiveSupport::TestCase
       nickname: 'Test',
       role_id: 1,
       email: 'test@test.org',
-      username: 'metoo',
-      password: 'password',
-      password_confirmation: 'password'
+      username: 'metoo'
     }
-    User.create!(profile)
-    assert User.last, profile
+    user = User.new(profile)
+    user.password = 'password'
+    user.save!
+
+    assert_equal profile.stringify_keys, user.attributes.slice(*profile.stringify_keys.keys)
+    assert user.authenticate?('password')
     assert User.last.display_peer_progress?
   end
 
