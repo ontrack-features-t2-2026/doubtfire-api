@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_24_000003) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -157,6 +157,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000003) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["unit_id"], name: "index_communication_sets_on_unit_id"
+  end
+
+  create_table "consumed_lti_tokens", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.string "jti", null: false
+    t.bigint "user_id", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expires_at"], name: "index_consumed_lti_tokens_on_expires_at"
+    t.index ["jti"], name: "index_consumed_lti_tokens_on_jti", unique: true
+    t.index ["user_id"], name: "index_consumed_lti_tokens_on_user_id"
   end
 
   create_table "d2l_assessment_mappings", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -1037,6 +1048,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_24_000003) do
 
   add_foreign_key "chip_usages", "feedback_chips"
   add_foreign_key "chip_usages", "users", column: "tutor_id"
+  add_foreign_key "consumed_lti_tokens", "users"
   add_foreign_key "feedback_chips", "feedback_chips", column: "parent_chip_id"
   add_foreign_key "feedback_chips", "learning_outcomes"
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "source_id"
