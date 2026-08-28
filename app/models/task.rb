@@ -1188,7 +1188,7 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'task_comment_created',
       message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}/feedback"
     )
   rescue StandardError => e
     logger.error "Failed to raise task_comment_created notification for task #{id}: #{e.message}"

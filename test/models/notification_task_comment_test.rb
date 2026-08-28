@@ -40,7 +40,7 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_equal 'task_comment_created', notification.event
     assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}/feedback"
     )
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
@@ -95,11 +95,11 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_includes message, @task_definition.abbreviation
   end
 
-  def test_the_link_points_at_the_task_on_the_student_dashboard
+  def test_the_link_points_at_the_task_feedback_on_the_student_dashboard
     @task.add_text_comment(@tutor, 'Link check.')
 
     assert_equal(
-      "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}",
+      "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}/feedback",
       Notification.recent_first.first.link
     )
   end
