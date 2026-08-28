@@ -79,7 +79,8 @@ class ImportStudentsLtiJob
         result[:errors] << { row: member, message: "Failed to create user" }
       end
     rescue StandardError => e
-      result[:errors] << { row: member, message: e }
+      Rails.logger.error("ImportStudentsLtiJob failed for #{member}: #{e.class}: #{e.message}\n#{e.backtrace&.join("\n")}")
+      result[:errors] << { row: member, message: "#{e.class}: #{e.message}" }
     end
 
     store(result: result.to_json)

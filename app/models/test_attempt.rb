@@ -99,7 +99,10 @@ class TestAttempt < ApplicationRecord
     # attributes derived from cmi keys: completion_status, success_status, score_scaled
     self.completion_status = new_data['cmi.completion_status'] == 'completed'
     self.success_status = new_data['cmi.success_status'] == 'passed'
-    self.score_scaled = new_data['cmi.score.scaled']
+    # A pass/fail SCORM activity may report success without ever setting
+    # cmi.score.scaled. Coalesce to 0 so the column keeps its float default
+    # instead of writing NULL, which later breaks the score_scaled comparisons.
+    self.score_scaled = new_data['cmi.score.scaled'] || 0
 
     write_attribute(:cmi_datamodel, new_data.to_json)
   end

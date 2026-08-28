@@ -495,4 +495,23 @@ class TestAttemptsTest < ActiveSupport::TestCase
     td.destroy!
     unit.destroy!
   end
+
+  # Regression: a pass/fail SCORM activity can report cmi.success_status = passed
+  # without ever setting cmi.score.scaled. The raw copy wrote NULL over the float
+  # default, and success_status_description then evaluated `nil < 1` and raised.
+  # score_scaled must coalesce to 0 and the description must not blow up.
+  def test_success_status_without_score_scaled
+    unit = FactoryBot.create(:unit)
+    project = unit.projects.first
+    task_definition = unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+    attempt = TestAttempt.create({ task_id: task.id })
+
+    attempt.cmi_datamodel = { 'cmi.completion_status' => 'completed', 'cmi.success_status' => 'passed' }.to_json
+
+    assert_equal 0.0, attempt.score_scaled
+    assert_equal 'Passed', attempt.success_status_description
+
+    unit.destroy!
+  end
 end
