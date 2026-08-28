@@ -237,7 +237,7 @@ module AuthenticationHelpers
       token = current_user.auth_tokens.where(token_type: :refresh_token).last
 
       # Generate a new token when the old one is absent or getting close to expiring
-      if token.nil? || token.auth_token_expiry <= Time.zone.now - 12.hours
+      if token.nil? || token.auth_token_expiry <= Time.zone.now + 12.hours
         token = current_user.generate_authentication_token!(token_type: :refresh_token)
       end
 
