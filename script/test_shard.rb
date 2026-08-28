@@ -82,7 +82,17 @@ module TestShard
   # Filled from successful hosted runs only after the exact logical-shard
   # layout is known. A fingerprint mismatch falls back to the live estimates,
   # so test-tree changes cannot silently apply stale timings.
-  HOSTED_SHARD_RUNTIME_PROFILE = {}.freeze
+  HOSTED_SHARD_RUNTIME_PROFILE = {
+    shard_count: 20,
+    worker_count: 5,
+    fingerprint: 'ff1d5b20cd6ba97566671be31b6842e4151a394e4cae2b5b3f66ce5058db1391',
+    weights: [
+      162.863179, 126.938919, 182.311113, 96.758206, 91.493972,
+      90.397486, 94.907570, 105.494115, 184.722252, 128.261832,
+      165.127718, 86.369374, 64.127241, 65.368940, 151.536852,
+      160.344219, 115.104388, 88.944252, 101.431738, 128.314199
+    ]
+  }.freeze
 
   TEST_METHOD_PATTERN = /^\s*(?:def\s+test_[A-Za-z0-9_!?=]*|test\s*(?:\(\s*)?['":])/
   TEST_DECLARATION_CANDIDATE_PATTERN = /^\s*(?:def\s+test_|test\b|define_method\b.*test_)/
