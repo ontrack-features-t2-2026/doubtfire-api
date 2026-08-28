@@ -32,7 +32,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     assert_equal 1, mail.from().count
     assert_equal convenor.email, mail.from().first
-    assert mail.html_part.body.include? "projects/#{project.id}/portfolio"
+    assert mail.html_part.body.include? "#{Doubtfire::Application.config.institution[:host]}/projects/#{project.id}/portfolio"
     unit.destroy!
   end
 
@@ -50,7 +50,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     assert_equal 1, mail.from().count
     assert_equal convenor.email, mail.from().first
-    assert mail.html_part.body.include? "projects/#{project.id}/portfolio"
+    assert mail.html_part.body.include? "#{Doubtfire::Application.config.institution[:host]}/projects/#{project.id}/portfolio"
     unit.destroy!
   end
 
@@ -70,7 +70,7 @@ class UnitMailTest < ActionMailer::TestCase
     assert_equal 1, mail.from.count
     assert_equal convenor.email, mail.from.first
     assert_equal project.student.email, mail.to.first
-    assert mail.html_part.body.include? "projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
+    assert mail.html_part.body.include? "#{Doubtfire::Application.config.institution[:host]}/projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
   end
 
 end
