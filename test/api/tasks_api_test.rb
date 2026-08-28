@@ -889,6 +889,100 @@ class TasksApiTest < ActiveSupport::TestCase
     assert_equal comment, text_comment.comment
   end
 
+  # A task definition with one upload requirement, used by the finalised-task
+  # upload tests below.
+  def uploadable_task_definition_for(unit)
+    td = unit.task_definitions.first
+    td.update!(
+      upload_requirements: [{ "key" => 'file0', "name" => 'Shape Class', "type" => 'code' }],
+      target_grade: 0,
+      start_date: Time.zone.now - 2.weeks,
+      target_date: Time.zone.now + 1.week,
+      assess_in_portfolio_only: false,
+      restrict_status_updates: false
+    )
+    td
+  end
+
+  # A signed off task used to keep accepting uploads. The upload rewrote
+  # submission_date and file_uploaded_at and deleted the assessed pdf, and only
+  # the status transition was skipped, so the damage was silent.
+  def test_student_cannot_upload_to_a_complete_task
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+    td = uploadable_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+
+    task.update!(task_status: TaskStatus.complete, submission_date: Time.zone.now - 1.day)
+    submission_date_before = task.reload.submission_date
+
+    add_auth_header_for(user: project.user)
+    post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission",
+         with_file('test_files/submissions/program.cs', 'application/json', { trigger: 'ready_for_feedback' })
+
+    assert_equal 403, last_response.status, last_response.body
+    assert_equal 'This task is closed for new submissions.', last_response_body['error']
+
+    task.reload
+    assert_equal TaskStatus.complete, task.task_status
+    assert_equal submission_date_before.to_i, task.submission_date.to_i
+  end
+
+  # feedback_exceeded is the state students are otherwise barred from leaving, so
+  # it is the one where a silent upload is most misleading.
+  def test_student_cannot_upload_to_a_feedback_exceeded_task
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+    td = uploadable_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+
+    task.update!(task_status: TaskStatus.feedback_exceeded, submission_date: Time.zone.now - 1.day)
+    submission_date_before = task.reload.submission_date
+
+    add_auth_header_for(user: project.user)
+    post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission",
+         with_file('test_files/submissions/program.cs', 'application/json', { trigger: 'ready_for_feedback' })
+
+    assert_equal 403, last_response.status, last_response.body
+
+    task.reload
+    assert_equal TaskStatus.feedback_exceeded, task.task_status
+    assert_equal submission_date_before.to_i, task.submission_date.to_i
+  end
+
+  # Staff go through on purpose. A tutor uploads on a student's behalf when a file
+  # is corrupt or was submitted against the wrong task.
+  def test_staff_can_still_upload_to_a_complete_task
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+    td = uploadable_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+
+    task.update!(task_status: TaskStatus.complete)
+
+    add_auth_header_for(user: unit.main_convenor_user)
+    post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission",
+         with_file('test_files/submissions/program.cs', 'application/json', { trigger: 'ready_for_feedback' })
+
+    assert_equal 201, last_response.status, last_response.body
+  end
+
+  # The regression check. Ordinary resubmission is untouched.
+  def test_student_can_still_upload_to_an_open_task
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 2)
+    td = uploadable_task_definition_for(unit)
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+
+    task.update!(task_status: TaskStatus.ready_for_feedback)
+
+    add_auth_header_for(user: project.user)
+    post "/api/projects/#{project.id}/task_def_id/#{td.id}/submission",
+         with_file('test_files/submissions/program.cs', 'application/json', { trigger: 'ready_for_feedback' })
+
+    assert_equal 201, last_response.status, last_response.body
+  end
+
   def test_resubmission_doesnt_change_submission_date
     Sidekiq::Testing.inline! do
       unit = FactoryBot.create(
