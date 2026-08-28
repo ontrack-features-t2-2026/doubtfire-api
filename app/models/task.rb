@@ -292,13 +292,39 @@ class Task < ApplicationRecord
     folder_exists_in_new? || folder_exists_in_process?
   end
 
+  # The time zone this task's deadlines are read in.
+  #
+  # A deadline written as a day belongs to the student's day, so the zone comes
+  # from the campus the student is enrolled at. Campus#timezone already falls
+  # back to the application zone when the column is not set, and a project with
+  # no campus falls back to the same place, so an install that has not filled in
+  # campus time zones behaves exactly as it did before. Nothing here depends on
+  # config.time_zone being set to anything in particular.
+  def deadline_time_zone
+    name = project&.campus&.timezone
+    zone = ActiveSupport::TimeZone[name] if name.present?
+
+    zone || Time.zone
+  end
+
+  # The calendar day a deadline falls on, read in this task's own zone.
+  #
+  # Reading it in whatever zone the value happened to be loaded in is what let
+  # the day move. A campus on Australian time changes its offset from UTC by an
+  # hour twice a year, so the same wall clock deadline sat on one UTC day in
+  # summer and the next one in winter, and every date built from those parts
+  # drifted with it.
+  def deadline_date(value)
+    value.in_time_zone(deadline_time_zone).to_date
+  end
+
   # Get the raw extension date - with extensions representing weeks
   def raw_extension_date
-    target_date.to_date + extensions.weeks
+    deadline_date(target_date) + extensions.weeks
   end
 
   def max_date_with_spec_con_days
-    task_definition.due_date.to_date + project.spec_con_days.days
+    deadline_date(task_definition.due_date) + project.spec_con_days.days
   end
 
   # Get the adjusted extension date, which ensures it is never past the due date
@@ -374,6 +400,123 @@ class Task < ApplicationRecord
     else
       return false
     end
+  end
+
+  #
+  # The effective resubmission deadline
+  #
+  # When staff send a task back for more work the student needs time to do that
+  # work, so a task whose deadline is close is extended by the unit's
+  # resubmission extension. The rule itself is the four methods below, so a
+  # change to the rule is a change in one place.
+  #
+  # See docs/submission-lifecycle/effective-resubmission-deadline.md
+  #
+
+  # The statuses that hand a task back to the student for more work
+  def resubmission_extension_statuses
+    [TaskStatus.fix_and_resubmit, TaskStatus.discuss, TaskStatus.rediscuss, TaskStatus.demonstrate]
+  end
+
+  # How close the deadline has to be before a resubmission earns an extension
+  def resubmission_extension_window
+    7.days
+  end
+
+  # How many weeks the unit adds when a resubmission earns an extension
+  def resubmission_extension_weeks
+    unit.extension_weeks_on_resubmit_request
+  end
+
+  # The moment this task's deadline actually passes.
+  #
+  # A deadline set as a day runs to the end of that day anywhere on earth, and
+  # which day that is is read in the task's own zone. This is the "effective
+  # deadline" the ticket is named after and it is the one value the window, the
+  # late check and the interface should all agree on.
+  def effective_deadline
+    to_same_day_anywhere_on_earth(due_date)
+  end
+
+  # The far edge of the window: seven calendar days after this assessment, in
+  # the task's own zone.
+  #
+  # The window is added as a duration to a time in that zone, so it lands at the
+  # same wall clock seven days later even when the clocks change in between. The
+  # week Melbourne moves onto daylight saving is 167 real hours long and the
+  # week it moves off is 169, and counting either as a flat 168 moved the edge of
+  # the window by an hour.
+  def resubmission_extension_window_end(assess_date = Time.zone.now)
+    assess_date.in_time_zone(deadline_time_zone) + resubmission_extension_window
+  end
+
+  # Is the deadline close enough, at the moment of this assessment, for the
+  # resubmission extension to apply? The assessment's own time is used rather
+  # than the wall clock, so that reprocessing an event gives the answer it gave
+  # when it happened, and so dependent tasks fixed recursively are judged at the
+  # same moment as the task that triggered them.
+  #
+  # Both sides of this comparison are resolved in the task's own zone rather
+  # than in whatever the application zone happens to be, so the answer does not
+  # depend on config.time_zone being set.
+  def resubmission_extension_window_open?(assess_date = Time.zone.now)
+    effective_deadline < resubmission_extension_window_end(assess_date)
+  end
+
+  # The resubmission extension recorded for the current round of feedback, or
+  # nil if this round has not earned one. A round starts when the
+  # student submits, which is the same signal times_assessed uses, so a genuine
+  # resubmission earns a new extension while a repeated assessment, a re-save or
+  # a duplicate event does not.
+  def resubmission_extension_comment
+    return nil if submission_date.nil?
+
+    comments
+      .where(type: 'ExtensionComment')
+      .where.not(task_status_id: nil)
+      .where('date_extension_assessed >= ?', submission_date)
+      .order(:id)
+      .last
+  end
+
+  # Apply the resubmission extension for this assessment, if the rule calls for
+  # one and this round of feedback has not already had one. Returns the comment
+  # recording the extension, or nil when no extension was applied.
+  def grant_resubmission_extension(status, by_user, assess_date = Time.zone.now)
+    return nil unless resubmission_extension_statuses.include?(status)
+    return nil unless resubmission_extension_weeks > 0
+    return nil unless can_apply_for_extension?
+    return nil unless resubmission_extension_window_open?(assess_date)
+
+    # One resubmission extension per round of feedback - reprocessing must not move
+    # the deadline a second time
+    return nil if resubmission_extension_comment.present?
+
+    weeks = [resubmission_extension_weeks, weeks_can_extend].min
+    return nil unless grant_extension(by_user, weeks)
+
+    record_resubmission_extension(status, by_user, assess_date, weeks)
+  end
+
+  # Record why the deadline moved and which assessment moved it, so the
+  # interface and the notifications can explain the change, and so a repeat of
+  # the same assessment can see that it has already been handled.
+  def record_resubmission_extension(status, by_user, assess_date, weeks)
+    extension = ExtensionComment.new
+    extension.task = self
+    extension.user = by_user
+    extension.recipient = by_user == project.student ? tutor : project.student
+    extension.content_type = :extension
+    extension.task_status = status
+    extension.assessor = by_user
+    extension.extension_weeks = weeks
+    extension.extension_granted = true
+    extension.date_extension_assessed = assess_date
+    extension.comment = "**Automated Message:** This task was set to #{status.name} within a week of its deadline, so it was extended by #{weeks} #{'week'.pluralize(weeks)} to give you time to resubmit."
+    extension.extension_response = "Time extended to #{due_date.strftime('%a %b %e')}"
+    extension.save!
+
+    extension
   end
 
   # Applying for a scorm extension will create a scorm extension comment
@@ -856,13 +999,10 @@ class Task < ApplicationRecord
     else
       self.completion_date = nil
 
-      # Grant an extension on fix if due date is within 1 week
-      case task_status
-      when TaskStatus.fix_and_resubmit, TaskStatus.discuss, TaskStatus.rediscuss, TaskStatus.demonstrate
-        if to_same_day_anywhere_on_earth(due_date) < Time.zone.now + 7.days && can_apply_for_extension? && unit.extension_weeks_on_resubmit_request > 0
-          grant_extension(assessor, unit.extension_weeks_on_resubmit_request)
-        end
-      end
+      # Grant an extension on fix if the deadline is close - see
+      # #grant_resubmission_extension for the rule and for why this only
+      # happens once per round of feedback
+      grant_resubmission_extension(task_status, assessor, assess_date)
     end
 
     # Save the task
@@ -1961,9 +2101,17 @@ class Task < ApplicationRecord
     end
   end
 
-  # Use the current DateTime to calculate a new DateTime for the last moment of the same
-  # day anywhere on earth
+  # The last moment of the same day anywhere on earth.
+  #
+  # A deadline set as a day is not over until that day is over everywhere, which
+  # is 23:59:59 at UTC-12. Which day that is has to be read in the task's own
+  # zone, because a timestamp near midnight belongs to different calendar days
+  # in different zones. This used to read the day, month and year straight off
+  # the value as it happened to be loaded, so the answer moved by a whole day
+  # when a campus changed its offset for daylight saving. The result is built at
+  # a fixed -12:00 offset, which never observes daylight saving itself.
   def to_same_day_anywhere_on_earth(date)
-    DateTime.new(date.year, date.month, date.day, 23, 59, 59, '-12:00')
+    day = deadline_date(date)
+    Time.new(day.year, day.month, day.day, 23, 59, 59, '-12:00')
   end
 end

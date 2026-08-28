@@ -1,6 +1,21 @@
 class ExtensionComment < TaskComment
   belongs_to :assessor, class_name: 'User', optional: true
 
+  # The status that triggered a resubmission extension. It is nil on extensions
+  # a student asked for, which is what tells the two kinds apart.
+  belongs_to :task_status, optional: true
+
+  # An extension OnTrack worked out for itself when staff sent the task back for
+  # more work, rather than one a student asked for.
+  #
+  # Do not call this "automatic". #assess_extension already uses that word for
+  # something else, an extension a student requested that was approved without a
+  # person weighing it up, and one word meaning two things in one class is how
+  # the wrong branch gets taken.
+  def resubmission_extension?
+    task_status.present?
+  end
+
   def serialize(user)
     json = super(user)
     json[:granted] = extension_granted
@@ -9,6 +24,8 @@ class ExtensionComment < TaskComment
     json[:weeks_requested] = extension_weeks
     json[:extension_response] = extension_response
     json[:task_status] = task.status
+    json[:resubmission_extension] = resubmission_extension?
+    json[:source_status] = resubmission_extension? ? task_status.status_key : nil
     json
   end
 
@@ -27,7 +44,11 @@ class ExtensionComment < TaskComment
     super if assessed? || user == project.student || user != recipient
   end
 
-  def assess_extension(user, granted, automatic = false)
+  # Assess an extension a student asked for. `auto_approved` says the unit
+  # approved it without a person weighing it up, which only changes the wording
+  # the student sees. It is not the same idea as #resubmission_extension?, which
+  # is about where the extension came from rather than who signed it off.
+  def assess_extension(user, granted, auto_approved = false)
     if self.assessed?
       errors.add(:extension, 'could not be applied')
       return false
@@ -48,7 +69,7 @@ class ExtensionComment < TaskComment
     should_notify = true
 
     if self.extension_granted
-      if automatic
+      if auto_approved
         self.extension_response = "Time extended to #{self.task.due_date.strftime('%a %b %e')}"
       else
         self.extension_response = "Extension granted to #{self.task.due_date.strftime('%a %b %e')}"
