@@ -168,6 +168,12 @@ class TasksApi < Grape::API
 
     # check the user can put this task
     if authorise? current_user, project, :make_submission
+      # Only staff who can assess this task may write its grade. This is checked
+      # before anything below writes, so a refused request leaves the task alone.
+      if !grade.nil? && !authorise?(current_user, project, :assess)
+        error!({ error: 'You are not permitted to assess this task' }, 403)
+      end
+
       task = project.task_for_task_definition(task_definition)
 
       if !params[:discussed].nil? && authorise?(current_user, project, :assess)
