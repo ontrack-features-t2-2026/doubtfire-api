@@ -173,8 +173,7 @@ module UnitSimilarityModule
     moss = MossRuby.new(moss_key)
 
     task_definitions.where(plagiarism_updated: true).find_each do |td|
-      td.plagiarism_updated = false
-      td.save
+      had_unexpected_error = false
 
       # Get results
       url = td.plagiarism_report_url
@@ -189,8 +188,8 @@ module UnitSimilarityModule
         task_id1 = %r{.*/(\d+)/$}.match(match[0][:filename])[1]
         task_id2 = %r{.*/(\d+)/$}.match(match[1][:filename])[1]
 
-        t1 = Task.find(task_id1)
-        t2 = Task.find(task_id2)
+        t1 = Task.find_by(id: task_id1)
+        t2 = Task.find_by(id: task_id2)
 
         if t1.nil? || t2.nil?
           logger.error "Could not find tasks #{task_id1} or #{task_id2} for plagiarism stats check!"
@@ -210,7 +209,19 @@ module UnitSimilarityModule
         else # just link the individuals...
           create_moss_plagiarism_link(t1, t2, match, warn_pct)
         end
+      rescue StandardError => e
+        had_unexpected_error = true
+        logger.error "Skipped a MOSS plagiarism match for task definition #{td.id}: #{e.class}: #{e.message}"
+        next
       end
+
+      # A missing task is a permanent, clean skip. Any other failure means the
+      # report was not fully linked, so keep plagiarism_updated set and let the
+      # next run retry it instead of silently dropping the results.
+      next if had_unexpected_error
+
+      td.plagiarism_updated = false
+      td.save
     end
 
     self.last_plagarism_scan = Time.zone.now
@@ -374,8 +385,8 @@ module UnitSimilarityModule
             task2_id = entry.name.split('/')[2].to_i
           end
         end
-        first_submission = Task.find(task1_id) if task1_id
-        second_submission = Task.find(task2_id) if task2_id
+        first_submission = Task.find_by(id: task1_id) if task1_id
+        second_submission = Task.find_by(id: task2_id) if task2_id
 
         if first_submission.nil? || second_submission.nil?
           logger.error "Could not find tasks #{comparison[:first_submission]} or #{comparison[:second_submission]} for plagiarism stats check!"
