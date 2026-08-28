@@ -127,6 +127,9 @@ class ReleaseConfigurationTest < Minitest::Test
     assert_includes workflow, 'docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b'
     assert_includes workflow, 'targets: ${{ steps.plan_shard.outputs.bake_targets }}'
     assert_includes workflow, 'load: true'
+    assert_includes workflow, 'TEST_SHARD_SELECTOR_INVENTORY=tmp/test-selector-inventory.txt'
+    assert_includes workflow, 'selector_inventory_path=tmp/all-test-shard-manifests/test-selector-inventory.txt'
+    assert_equal 1, workflow.scan('actions/checkout@').length
     assert_equal false, workflow.include?('docker/build-push-action')
     assert_equal false, workflow.include?('maus007/docker-run-action-fork')
     assert_includes bake, 'target     = "ci"'

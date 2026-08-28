@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require 'fileutils'
+require 'digest'
 require 'open3'
 
 # Split the Rails test suite into deterministic, approximately even shards.
@@ -77,6 +78,11 @@ module TestShard
     texlive: 25.0,
     jplag: 27.0
   }.freeze
+
+  # Filled from successful hosted runs only after the exact logical-shard
+  # layout is known. A fingerprint mismatch falls back to the live estimates,
+  # so test-tree changes cannot silently apply stale timings.
+  HOSTED_SHARD_RUNTIME_PROFILE = {}.freeze
 
   TEST_METHOD_PATTERN = /^\s*(?:def\s+test_[A-Za-z0-9_!?=]*|test\s*(?:\(\s*)?['":])/
   TEST_DECLARATION_CANDIDATE_PATTERN = /^\s*(?:def\s+test_|test\b|define_method\b.*test_)/
@@ -241,11 +247,31 @@ module TestShard
     targets
   end
 
+  def shard_plan_fingerprint(shards)
+    contents = shards.each_with_index.map do |shard, index|
+      "#{index + 1}\0#{shard.fetch(:runnables).sort.join("\0")}"
+    end
+    Digest::SHA256.hexdigest(contents.join("\n"))
+  end
+
+  def scheduling_weights(shards:, worker_count:, runtime_profile:)
+    fallback = shards.map { |shard| shard.fetch(:weight) }
+    return fallback unless runtime_profile.fetch(:shard_count, nil) == shards.length
+    return fallback unless runtime_profile.fetch(:worker_count, nil) == worker_count
+    return fallback unless runtime_profile.fetch(:fingerprint, nil) == shard_plan_fingerprint(shards)
+
+    weights = runtime_profile.fetch(:weights, nil)
+    unless weights.is_a?(Array) && weights.length == shards.length && weights.all?(&:positive?)
+      abort 'The hosted shard runtime profile contains invalid weights'
+    end
+    weights
+  end
+
   # Pack logical shards onto the smaller number of hosted runners available to
   # the repository. Each worker runs its assigned logical shards concurrently,
   # so balancing their combined measured weight avoids four waves of queued
   # GitHub jobs when the account has five runner slots.
-  def worker_assignments(shards:, worker_count:)
+  def worker_assignments(shards:, worker_count:, runtime_profile: HOSTED_SHARD_RUNTIME_PROFILE)
     abort 'TEST_SHARD_WORKER_COUNT must be a positive integer' unless worker_count.positive?
     if worker_count > shards.length
       abort "TEST_SHARD_WORKER_COUNT cannot exceed the #{shards.length} logical shards"
@@ -254,12 +280,17 @@ module TestShard
       abort 'Logical shard count must be divisible by TEST_SHARD_WORKER_COUNT'
     end
 
+    worker_weights = scheduling_weights(
+      shards: shards,
+      worker_count: worker_count,
+      runtime_profile: runtime_profile
+    )
     shards_per_worker = shards.length / worker_count
     workers = Array.new(worker_count) { { weight: 0.0, shard_numbers: [] } }
-    weighted_shards = shards.each_with_index.sort_by do |shard, index|
-      [-shard.fetch(:weight), index]
+    weighted_shard_indices = shards.each_index.sort_by do |index|
+      [-worker_weights.fetch(index), index]
     end
-    weighted_shards.each do |shard, index|
+    weighted_shard_indices.each do |index|
       eligible_workers = workers.each_index.select do |worker_index|
         workers.fetch(worker_index).fetch(:shard_numbers).length < shards_per_worker
       end
@@ -268,7 +299,7 @@ module TestShard
       end
       worker = workers.fetch(worker_index)
       worker.fetch(:shard_numbers) << (index + 1)
-      worker[:weight] += shard.fetch(:weight)
+      worker[:weight] += worker_weights.fetch(index)
     end
     workers.each { |worker| worker.fetch(:shard_numbers).sort! }
 

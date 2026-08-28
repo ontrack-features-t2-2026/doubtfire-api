@@ -198,6 +198,50 @@ class TestShardTest < ActiveSupport::TestCase
     assert_includes error.message, 'divisible'
   end
 
+  def test_worker_assignments_use_a_matching_hosted_profile
+    shards = Array.new(20) { |index| { weight: 1.0, runnables: ["test_#{index + 1}"] } }
+    runtime_profile = {
+      shard_count: 20,
+      worker_count: 5,
+      fingerprint: TestShard.shard_plan_fingerprint(shards),
+      weights: [
+        156.687, 118.980, 125.551, 125.041, 107.933,
+        76.164, 113.087, 110.238, 175.824, 134.411,
+        162.326, 139.937, 67.487, 71.771, 143.119,
+        125.460, 113.024, 97.667, 145.716, 120.757
+      ]
+    }
+    workers = TestShard.worker_assignments(shards: shards, worker_count: 5, runtime_profile: runtime_profile)
+
+    assert_equal(
+      [
+        [4, 8, 9, 13],
+        [11, 16, 17, 18],
+        [1, 2, 3, 14],
+        [6, 10, 19, 20],
+        [5, 7, 12, 15]
+      ],
+      workers.map { |worker| worker.fetch(:shard_numbers) }
+    )
+  end
+
+  def test_worker_assignments_ignore_a_stale_hosted_profile
+    heavy_shards = [4, 8, 9, 13]
+    shards = Array.new(20) do |index|
+      weight = heavy_shards.include?(index + 1) ? 1000.0 : 1.0
+      { weight: weight, runnables: ["test_#{index + 1}"] }
+    end
+    stale_profile = {
+      shard_count: 20,
+      worker_count: 5,
+      fingerprint: '0' * 64,
+      weights: Array.new(20, 1.0)
+    }
+    workers = TestShard.worker_assignments(shards: shards, worker_count: 5, runtime_profile: stale_profile)
+
+    assert_equal 1, workers.map { |worker| (worker.fetch(:shard_numbers) & heavy_shards).length }.max
+  end
+
   def test_write_github_output_appends_boolean_service_flags
     Dir.mktmpdir do |directory|
       output_path = File.join(directory, 'github-output')

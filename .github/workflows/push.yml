@@ -96,6 +96,7 @@ jobs:
         id: plan_shard
         run: |
           TEST_SHARD_MANIFEST_DIR=tmp/test-shard-manifests \
+            TEST_SHARD_SELECTOR_INVENTORY=tmp/test-selector-inventory.txt \
             TEST_SHARD_GITHUB_OUTPUT="$GITHUB_OUTPUT" \
             ruby script/plan_test_shard_worker.rb
           echo "seed_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
@@ -191,6 +192,7 @@ jobs:
             tmp/test-shard-manifests/
             tmp/test-shard-run-counts/
             tmp/test-shard-executed-runnables/
+            tmp/test-selector-inventory.txt
             tmp/test-runnable-inventory.txt
           if-no-files-found: error
 
@@ -200,8 +202,6 @@ jobs:
     needs: unit_test_shards
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Download test shard manifests
         id: download_manifests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -215,6 +215,7 @@ jobs:
           manifest_dir=tmp/all-test-shard-manifests/test-shard-manifests
           run_count_dir=tmp/all-test-shard-manifests/test-shard-run-counts
           executed_runnables_dir=tmp/all-test-shard-manifests/test-shard-executed-runnables
+          selector_inventory_path=tmp/all-test-shard-manifests/test-selector-inventory.txt
           inventory_path=tmp/all-test-shard-manifests/test-runnable-inventory.txt
 
           manifest_count=$(find "$manifest_dir" -type f -name 'shard-*.txt' | wc -l)
@@ -223,7 +224,11 @@ jobs:
             exit 1
           fi
 
-          ruby script/test_shard.rb --list-runnables | LC_ALL=C sort > expected-tests.txt
+          if [ ! -s "$selector_inventory_path" ]; then
+            echo "::error::The canonical test selector inventory is missing."
+            exit 1
+          fi
+          LC_ALL=C sort "$selector_inventory_path" > expected-tests.txt
           cat "$manifest_dir"/shard-*.txt | LC_ALL=C sort > assigned-tests.txt
           LC_ALL=C uniq -d assigned-tests.txt > duplicate-tests.txt
 

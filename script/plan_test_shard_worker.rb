@@ -18,6 +18,10 @@ manifest_dir = ENV.fetch('TEST_SHARD_MANIFEST_DIR', File.join(repository_root, '
 plan_path = ENV.fetch('TEST_SHARD_WORKER_PLAN', File.join(repository_root, 'tmp/test-shard-worker-plan.tsv'))
 github_output_path = ENV.fetch('TEST_SHARD_GITHUB_OUTPUT', nil)
 cache_writers = TestShard.cache_writer_shards(shards)
+if worker_number == 1
+  selector_inventory_path = ENV.fetch('TEST_SHARD_SELECTOR_INVENTORY', nil)
+  TestShard.write_manifest(selector_inventory_path, TestShard.all_runnables(test_root: test_root))
+end
 
 FileUtils.mkdir_p(manifest_dir)
 FileUtils.mkdir_p(File.dirname(plan_path))
@@ -54,4 +58,4 @@ unless github_output_path.to_s.empty?
 end
 
 puts "Test worker #{worker_number}/#{worker_count}: logical shards #{logical_shards.join(', ')}; " \
-     "estimated combined weight #{workers.fetch(worker_number - 1).fetch(:weight).round(1)}"
+     "scheduling weight #{workers.fetch(worker_number - 1).fetch(:weight).round(1)}"
