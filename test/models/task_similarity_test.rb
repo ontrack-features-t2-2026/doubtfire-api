@@ -273,7 +273,7 @@ class TaskSimilarityTest < ActiveSupport::TestCase
 
     get "/api/tasks/#{task.id}/similarities/#{sim.id}/viewer_url"
     assert_equal 200, last_response.status
-    assert last_response.body.include? "https://viewer.url"
+    assert_equal 'https://viewer.url', JSON.parse(last_response.body)
 
     add_auth_header_for(user: task.project.student)
     get "/api/tasks/#{task.id}/similarities/#{sim.id}/viewer_url"

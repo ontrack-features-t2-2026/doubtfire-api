@@ -105,9 +105,57 @@ class ReleaseConfigurationTest < Minitest::Test
 
     assert_includes schema, 'default: -> { "current_timestamp(6)" }'
     assert_includes migration, "-> { 'CURRENT_TIMESTAMP(6)' }"
-    assert_includes workflow, 'run: script/prepare_test_database.sh'
+    assert_includes workflow, 'script/prepare_test_database.sh'
     assert_includes workflow, 'git diff --exit-code -- db/schema.rb'
     assert_includes database_preparation, "abort 'db:populate created no units' unless Unit.exists?"
+    assert_includes database_preparation, 'logical lanes import it directly'
+  end
+
+  def test_unit_test_workflow_fits_runner_slots_and_uses_the_source_free_ci_image
+    workflow = read('.github/workflows/push.yml')
+    dockerfile = read('Dockerfile')
+    bake = read('docker-bake.ci.hcl')
+    shard_planner = read('script/plan_test_shard_worker.rb')
+    seeded_database_key = workflow.lines.find { |line| line.include?('key: seeded-test-database') }
+
+    expected_workers = (1..5).to_a.join(', ')
+    assert_includes workflow, "worker: [#{expected_workers}]"
+    assert_includes workflow, 'TEST_SHARD_COUNT: "20"'
+    assert_includes workflow, 'TEST_SHARD_WORKER_COUNT: "5"'
+    assert_includes workflow, "CI_IMAGE_CACHE_WRITE: ${{ github.event_name != 'pull_request' }}"
+    assert_includes workflow, 'SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE: "true"'
+    assert_includes workflow, '--env SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE'
+    assert_includes workflow, 'DOCKER_BUILD_RECORD_UPLOAD: "false"'
+    assert_includes workflow, 'DOCKER_BUILD_SUMMARY: "false"'
+    assert_equal false, workflow.include?('max-parallel:')
+    assert_includes workflow, 'Build test images concurrently'
+    assert_includes workflow, 'docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b'
+    assert_includes workflow, 'targets: ${{ steps.plan_shard.outputs.bake_targets }}'
+    assert_includes workflow, 'load: true'
+    assert_includes workflow, 'TEST_SHARD_SELECTOR_INVENTORY=tmp/test-selector-inventory.txt'
+    assert_includes workflow, 'selector_inventory_path=tmp/all-test-shard-manifests/test-selector-inventory.txt'
+    assert_includes shard_planner, 'api_cache_writer: cache_write_enabled && worker_number == worker_count'
+    assert_equal 1, workflow.scan('actions/checkout@').length
+    assert_equal false, workflow.include?('docker/build-push-action')
+    assert_equal false, workflow.include?('maus007/docker-run-action-fork')
+    assert_includes bake, 'target     = "ci"'
+    assert_includes bake, 'tags       = ["doubtfire-api-ci:local"]'
+    assert_includes bake, 'target "api-cache-writer"'
+    assert_includes bake, 'target "texlive-cache-writer"'
+    assert_includes bake, 'target "jplag-cache-writer"'
+    assert_includes bake, 'tags       = ["doubtfire-texlive-development:local"]'
+    assert_includes bake, 'tags       = ["doubtfire-jplag-development:local"]'
+    assert_instance_of String, seeded_database_key
+    assert_includes seeded_database_key, "'docker-bake.ci.hcl'"
+
+    ci_stage = dockerfile.index("FROM dependencies AS ci\n")
+    development_stage = dockerfile.index("FROM dependencies AS development\n")
+    source_copy = dockerfile.index("COPY . .\n")
+    assert_instance_of Integer, ci_stage
+    assert_instance_of Integer, development_stage
+    assert_instance_of Integer, source_copy
+    assert_operator ci_stage, :<, development_stage
+    assert_operator development_stage, :<, source_copy
   end
 
   def test_development_compose_has_no_literal_institution_credential

@@ -175,8 +175,12 @@ class DatabasePopulator
       tag: 'bash:latest'
     )
 
-    echo_line "---> Pulling overseer image #{overseer_image.tag}"
-    overseer_image.pull_from_docker
+    if ENV['SKIP_OVERSEER_IMAGE_PULL_ON_POPULATE'] == 'true'
+      echo_line "---> Skipping overseer image pull for #{overseer_image.tag}"
+    else
+      echo_line "---> Pulling overseer image #{overseer_image.tag}"
+      overseer_image.pull_from_docker
+    end
   end
 
   #
@@ -211,10 +215,9 @@ class DatabasePopulator
       if AuthenticationHelpers.aaf_auth?
         user = User.create!(profile)
       else
-        user = User.create!(profile.merge({
-                                            password: 'password',
-                                            password_confirmation: 'password'
-                                          }))
+        user = User.new(profile)
+        user.password = 'password'
+        user.save!
       end
 
       @user_cache[user_key] = user

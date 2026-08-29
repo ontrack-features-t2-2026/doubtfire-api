@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require 'fileutils'
+require 'digest'
 require 'open3'
 
 # Split the Rails test suite into deterministic, approximately even shards.
@@ -78,6 +79,71 @@ module TestShard
     jplag: 27.0
   }.freeze
 
+  # Hosted Minitest timings for the exact sorted runnable inventory. Using
+  # selector-level weights fixes the large skew that source size cannot
+  # predict. Any inventory mismatch falls back to the conservative estimates.
+  HOSTED_RUNNABLE_RUNTIME_PROFILE = {
+    selector_count: 402,
+    fingerprint: '741ba43118789cb114a817d7f17713558d6a9197b9b27ff16e94f7de2f43014b',
+    weights: [
+      2.74, 5.42, 2.69, 0.12, 1.06, 30.10, 21.80, 16.62,
+      2.70, 35.88, 14.04, 10.22, 17.52, 2.76, 4.23, 1.43,
+      4.34, 0.04, 0.04, 0.06, 0.75, 0.04, 0.04, 0.06,
+      0.05, 0.04, 0.04, 0.06, 1.47, 35.98, 42.32, 4.47,
+      3.87, 4.22, 4.68, 4.26, 4.02, 4.37, 3.90, 3.86,
+      4.26, 22.90, 51.70, 4.64, 8.14, 5.90, 0.58, 0.62,
+      0.61, 0.58, 0.63, 0.61, 0.58, 0.62, 0.60, 0.62,
+      0.63, 0.62, 0.64, 0.60, 0.62, 0.60, 0.61, 0.87,
+      0.82, 0.60, 0.60, 0.90, 0.61, 0.60, 0.62, 0.57,
+      0.60, 0.64, 0.81, 0.62, 0.62, 0.60, 0.58, 0.60,
+      0.60, 0.65, 0.60, 0.62, 0.64, 0.63, 0.64, 1.48,
+      1.50, 0.59, 0.64, 0.56, 31.05, 6.25, 11.81, 0.08,
+      0.05, 33.12, 20.60, 10.06, 8.46, 2.26, 2.26, 2.16,
+      2.28, 1.46, 11.26, 2.72, 1.58, 6.30, 4.34, 4.44,
+      4.72, 3.64, 5.78, 4.65, 24.18, 4.98, 20.36, 2.18,
+      2.52, 3.20, 2.14, 2.22, 2.04, 2.20, 2.26, 2.44,
+      2.46, 0.78, 47.32, 9.34, 3.22, 7.22, 6.38, 8.64,
+      8.86, 8.48, 4.56, 4.48, 4.44, 4.57, 0.22, 4.26,
+      4.23, 4.20, 1.06, 4.26, 4.26, 4.32, 4.24, 4.25,
+      4.44, 4.31, 4.86, 4.33, 4.33, 4.40, 4.12, 4.50,
+      4.54, 4.68, 4.29, 4.62, 8.86, 8.99, 8.63, 8.92,
+      9.14, 8.57, 8.64, 7.04, 11.90, 3.08, 4.40, 4.14,
+      4.50, 4.12, 4.22, 4.40, 0.06, 0.34, 0.04, 0.22,
+      4.45, 15.84, 1.12, 1.30, 1.17, 1.20, 1.26, 1.28,
+      1.98, 2.06, 3.28, 22.22, 1.88, 2.14, 2.26, 2.37,
+      2.12, 2.23, 2.02, 2.10, 0.01, 0.01, 2.23, 2.04,
+      0.01, 0.01, 0.02, 0.01, 0.01, 0.01, 2.25, 1.96,
+      2.00, 0.02, 0.01, 0.01, 0.01, 0.02, 0.01, 0.01,
+      2.18, 2.10, 2.09, 2.00, 1.96, 2.10, 1.90, 2.18,
+      0.87, 8.53, 0.01, 47.11, 0.01, 0.01, 0.62, 19.13,
+      0.30, 0.04, 5.54, 18.47, 0.10, 0.12, 0.54, 0.04,
+      0.08, 0.94, 0.98, 4.66, 0.02, 9.63, 0.15, 2.68,
+      1.18, 4.91, 60.17, 0.01, 5.11, 6.30, 35.49, 11.04,
+      8.54, 8.98, 11.34, 7.56, 1.72, 6.88, 0.01, 18.04,
+      0.06, 0.01, 12.70, 57.64, 0.04, 5.86, 0.10, 0.01,
+      12.46, 10.00, 0.01, 20.75, 0.01, 8.72, 33.92, 31.71,
+      1.10, 0.92, 33.32, 2.12, 1.18, 2.44, 2.56, 3.36,
+      1.02, 2.38, 2.00, 2.14, 1.97, 2.41, 2.10, 1.00,
+      1.92, 1.85, 2.20, 2.04, 2.10, 2.10, 0.91, 12.57,
+      22.18, 1.08, 2.12, 11.26, 13.48, 15.02, 14.31, 1.00,
+      48.98, 25.62, 0.95, 12.70, 13.78, 0.96, 13.68, 1.08,
+      1.11, 1.66, 9.14, 17.96, 4.98, 0.01, 0.01, 17.82,
+      4.44, 13.40, 0.40, 1.55, 0.35, 0.35, 2.84, 18.26,
+      1.44, 2.26, 2.26, 1.66, 1.72, 1.24, 1.20, 2.36,
+      0.44, 0.54, 0.31, 2.78, 0.60, 2.04, 2.26, 1.16,
+      1.36, 1.16, 1.38, 1.56, 2.16, 1.54, 15.31, 9.02,
+      3.20, 6.63, 3.76, 3.48, 0.65, 1.46, 1.06, 2.00,
+      1.38, 1.40, 47.62, 2.18, 23.12, 0.03, 4.14, 17.76,
+      0.07, 0.08, 7.68, 0.01, 0.10, 0.08, 8.98, 0.94,
+      5.87, 1.44, 1.28, 0.06, 69.18, 8.36, 37.88, 11.08,
+      0.08, 0.24
+    ]
+  }.freeze
+
+  # Optional second-level profile for packing already-built logical shards
+  # onto physical workers. The selector profile normally makes this redundant.
+  HOSTED_SHARD_RUNTIME_PROFILE = {}.freeze
+
   TEST_METHOD_PATTERN = /^\s*(?:def\s+test_[A-Za-z0-9_!?=]*|test\s*(?:\(\s*)?['":])/
   TEST_DECLARATION_CANDIDATE_PATTERN = /^\s*(?:def\s+test_|test\b|define_method\b.*test_)/
 
@@ -115,8 +181,10 @@ module TestShard
     FILE_RUNTIME_WEIGHTS.fetch(relative_path, line_count / DEFAULT_LINES_PER_SECOND)
   end
 
-  def split_units(path, relative_path, part_count)
-    methods = method_runnables(path, relative_path)
+  def split_units(path, relative_path, part_count, runtime_weights: {})
+    methods = method_runnables(path, relative_path).map do |method|
+      method.merge(weight: runtime_weights.fetch(method.fetch(:runnable), method.fetch(:weight)))
+    end
     abort "Cannot split #{relative_path} into #{part_count} non-empty parts" if part_count > methods.length
 
     parts = Array.new(part_count) { { weight: 0.0, line_count: 0, runnables: [] } }
@@ -129,18 +197,59 @@ module TestShard
     parts
   end
 
-  def runnable_units(test_root:)
+  def canonical_runnables(test_root:)
     test_files = Dir.glob(File.join(test_root, '**', '*_test.rb'))
     abort "No test files found under #{test_root}" if test_files.empty?
 
-    test_files.flat_map do |path|
+    test_files.sort.flat_map do |path|
       relative_path = repository_relative(path, test_root)
       part_count = SPLIT_TEST_FILES[relative_path]
-      next split_units(path, relative_path, part_count) if part_count
+      next method_runnables(path, relative_path).map { |method| method.fetch(:runnable) } if part_count
+
+      relative_path
+    end.sort
+  end
+
+  def runnable_profile_fingerprint(test_root:, runnables:)
+    digest = Digest::SHA256.new
+    digest << runnables.join("\0")
+    Dir.glob(File.join(test_root, '**', '*'), File::FNM_DOTMATCH).select { |path| File.file?(path) }.sort.each do |path|
+      relative_path = path.delete_prefix("#{test_root}/")
+      digest << "\0#{relative_path}\0" << File.binread(path)
+    end
+    digest.hexdigest
+  end
+
+  def hosted_runtime_weights(test_root:, runtime_profile:)
+    return {} if runtime_profile.empty?
+
+    runnables = canonical_runnables(test_root: test_root)
+    return {} unless runtime_profile.fetch(:selector_count, nil) == runnables.length
+    fingerprint = runnable_profile_fingerprint(test_root: test_root, runnables: runnables)
+    return {} unless runtime_profile.fetch(:fingerprint, nil) == fingerprint
+
+    weights = runtime_profile.fetch(:weights, nil)
+    valid_weights = weights.is_a?(Array) && weights.length == runnables.length && weights.all? do |weight|
+      weight.is_a?(Numeric) && weight.positive? && (!weight.respond_to?(:finite?) || weight.finite?)
+    end
+    abort 'The hosted runnable runtime profile contains invalid weights' unless valid_weights
+
+    runnables.zip(weights).to_h
+  end
+
+  def runnable_units(test_root:, runtime_profile: HOSTED_RUNNABLE_RUNTIME_PROFILE)
+    runtime_weights = hosted_runtime_weights(test_root: test_root, runtime_profile: runtime_profile)
+
+    Dir.glob(File.join(test_root, '**', '*_test.rb')).flat_map do |path|
+      relative_path = repository_relative(path, test_root)
+      part_count = SPLIT_TEST_FILES[relative_path]
+      if part_count
+        next split_units(path, relative_path, part_count, runtime_weights: runtime_weights)
+      end
 
       line_count = File.foreach(path).count
       [{
-        weight: file_weight(relative_path, line_count),
+        weight: runtime_weights.fetch(relative_path, file_weight(relative_path, line_count)),
         line_count: line_count,
         runnables: [relative_path]
       }]
@@ -148,11 +257,11 @@ module TestShard
   end
 
   def all_runnables(test_root:)
-    runnable_units(test_root: test_root).flat_map { |unit| unit.fetch(:runnables) }.sort
+    canonical_runnables(test_root: test_root)
   end
 
-  def build(test_root:, shard_count:)
-    units = runnable_units(test_root: test_root)
+  def build(test_root:, shard_count:, runtime_profile: HOSTED_RUNNABLE_RUNTIME_PROFILE)
+    units = runnable_units(test_root: test_root, runtime_profile: runtime_profile)
     abort "TEST_SHARD_COUNT cannot exceed the #{units.length} discovered runnable groups" if shard_count > units.length
 
     shards = Array.new(shard_count) do
@@ -221,6 +330,91 @@ module TestShard
       end
       writers[service] = index && (index + 1)
     end
+  end
+
+  def image_build_targets(shards:, logical_shards:, api_cache_writer:, cache_write_enabled: true)
+    targets = [api_cache_writer ? 'api-cache-writer' : 'api']
+    selected_runnables = logical_shards.flat_map do |shard_number|
+      shards.fetch(shard_number - 1).fetch(:runnables)
+    end
+    required = required_services(selected_runnables)
+    cache_writers = cache_writer_shards(shards)
+
+    SERVICE_TEST_FILES.each_key do |service|
+      next unless required.fetch(service)
+
+      target = service.to_s
+      if cache_write_enabled && logical_shards.include?(cache_writers.fetch(service))
+        target += '-cache-writer'
+      end
+      targets << target
+    end
+    targets
+  end
+
+  def shard_plan_fingerprint(shards)
+    contents = shards.each_with_index.map do |shard, index|
+      "#{index + 1}\0#{shard.fetch(:runnables).sort.join("\0")}"
+    end
+    Digest::SHA256.hexdigest(contents.join("\n"))
+  end
+
+  def scheduling_weights(shards:, worker_count:, runtime_profile:)
+    fallback = shards.map { |shard| shard.fetch(:weight) }
+    return fallback unless runtime_profile.fetch(:shard_count, nil) == shards.length
+    return fallback unless runtime_profile.fetch(:worker_count, nil) == worker_count
+    return fallback unless runtime_profile.fetch(:fingerprint, nil) == shard_plan_fingerprint(shards)
+
+    weights = runtime_profile.fetch(:weights, nil)
+    unless weights.is_a?(Array) && weights.length == shards.length && weights.all?(&:positive?)
+      abort 'The hosted shard runtime profile contains invalid weights'
+    end
+    weights
+  end
+
+  # Pack logical shards onto the smaller number of hosted runners available to
+  # the repository. Each worker runs its assigned logical shards concurrently,
+  # so balancing their combined measured weight avoids four waves of queued
+  # GitHub jobs when the account has five runner slots.
+  def worker_assignments(shards:, worker_count:, runtime_profile: HOSTED_SHARD_RUNTIME_PROFILE)
+    abort 'TEST_SHARD_WORKER_COUNT must be a positive integer' unless worker_count.positive?
+    if worker_count > shards.length
+      abort "TEST_SHARD_WORKER_COUNT cannot exceed the #{shards.length} logical shards"
+    end
+    unless (shards.length % worker_count).zero?
+      abort 'Logical shard count must be divisible by TEST_SHARD_WORKER_COUNT'
+    end
+
+    worker_weights = scheduling_weights(
+      shards: shards,
+      worker_count: worker_count,
+      runtime_profile: runtime_profile
+    )
+    shards_per_worker = shards.length / worker_count
+    workers = Array.new(worker_count) { { weight: 0.0, shard_numbers: [] } }
+    weighted_shard_indices = shards.each_index.sort_by do |index|
+      [-worker_weights.fetch(index), index]
+    end
+    weighted_shard_indices.each do |index|
+      eligible_workers = workers.each_index.select do |worker_index|
+        workers.fetch(worker_index).fetch(:shard_numbers).length < shards_per_worker
+      end
+      worker_index = eligible_workers.min_by do |candidate|
+        [workers.fetch(candidate).fetch(:weight), candidate]
+      end
+      worker = workers.fetch(worker_index)
+      worker.fetch(:shard_numbers) << (index + 1)
+      worker[:weight] += worker_weights.fetch(index)
+    end
+    workers.each { |worker| worker.fetch(:shard_numbers).sort! }
+
+    assigned = workers.flat_map { |worker| worker.fetch(:shard_numbers) }
+    expected = (1..shards.length).to_a
+    unless assigned.sort == expected && assigned.uniq.length == expected.length
+      abort 'Internal error: worker packing did not assign every logical shard exactly once'
+    end
+
+    workers
   end
 
   def write_github_output(path, selected_runnables, cache_writer_services: {})
