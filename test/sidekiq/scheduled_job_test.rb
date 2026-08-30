@@ -16,7 +16,7 @@ class TiiCheckProgressJobTest < ActiveSupport::TestCase
     peer_progress_job =
       jobs.find { |job| job.name == 'aggregate_peer_progress' }
 
-    assert_equal 9, jobs.count, jobs.map(&:name)
+    assert_equal 10, jobs.count, jobs.map(&:name)
     assert_not_nil peer_progress_job
     assert_equal 'AggregatePeerProgressJob', peer_progress_job.klass
 
@@ -32,6 +32,7 @@ class TiiCheckProgressJobTest < ActiveSupport::TestCase
     assert_equal 1, PollCommunicationSetSchedulesJob.jobs.count
     assert_equal 1, SendNewTaskAvailableNotificationsJob.jobs.count
     assert_equal 1, SendDueSoonRemindersJob.jobs.count
+    assert_equal 1, CheckUnitSimilarityJob.jobs.count
     # assert_equal 1, ArchiveOldUnitsJob.jobs.count
   end
 end
