@@ -1,4 +1,8 @@
 # config/schedule.yml
+#
+# Sidekiq-cron owns the in-process scheduled jobs listed below.
+# The container's rake schedule lives in .ci-setup/crontab.
+# Edit this file for a Ruby job, .ci-setup/crontab for a rake task.
 
 register_webhooks:
   cron: "every day at 5"
