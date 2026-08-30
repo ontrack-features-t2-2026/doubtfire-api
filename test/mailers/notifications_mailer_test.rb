@@ -99,4 +99,24 @@ class NotificationsMailerTest < ActionMailer::TestCase
   ensure
     institution[:email_sender] = previous_sender
   end
+
+  def test_additional_copy_is_a_separate_message_without_recipient_disclosure
+    notification = FactoryBot.create(
+      :notification,
+      notification_type: 'feedback',
+      event: 'task_comment_created'
+    )
+
+    mail = NotificationsMailer.additional_notification_copy(
+      notification,
+      'secondary@example.org'
+    )
+
+    assert_equal ['secondary@example.org'], mail.to
+    assert_empty mail.cc.to_a
+    assert_empty mail.bcc.to_a
+    assert_not_includes mail.header.to_s, notification.user.email
+    assert mail.html_part.body.to_s.present?
+    assert mail.text_part.body.to_s.present?
+  end
 end

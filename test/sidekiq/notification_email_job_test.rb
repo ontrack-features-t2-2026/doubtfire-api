@@ -7,6 +7,7 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
   setup do
     ActionMailer::Base.deliveries.clear
     NotificationEmailJob.clear
+    AdditionalNotificationEmailDeliveryJob.clear
   end
 
   def test_perform_delivers_the_notification_email
@@ -128,5 +129,178 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     assert_equal 'mailers', job['queue']
     assert_equal [notification.id], job['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_verified_additional_address_receives_a_separate_copy_not_a_cc
+    user = FactoryBot.create(:user, email: 'primary@example.edu')
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+
+    assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+
+    copy_job = AdditionalNotificationEmailDeliveryJob.jobs.last
+    assert_equal [notification.id, additional.id, additional.verification_version], copy_job['args']
+    assert_not_includes copy_job.to_json, additional.email
+
+    assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+      AdditionalNotificationEmailDeliveryJob.new.perform(*copy_job['args'])
+    end
+
+    primary, copy = ActionMailer::Base.deliveries.last(2)
+    assert_equal [user.email], primary.to
+    assert_equal [additional.email], copy.to
+    assert_empty primary.cc.to_a
+    assert_empty copy.cc.to_a
+  end
+
+  def test_pending_or_removed_address_receives_no_copy
+    user = FactoryBot.create(:user)
+    AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+
+    assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+    assert_empty AdditionalNotificationEmailDeliveryJob.jobs
+
+    AdditionalNotificationEmailService.remove(user: user)
+    assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+    assert_empty AdditionalNotificationEmailDeliveryJob.jobs
+  end
+
+  def test_an_additional_copy_failure_does_not_fail_the_primary_delivery
+    user = FactoryBot.create(:user)
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+    failing_delivery = Class.new do
+      def deliver_now
+        raise 'secondary smtp rejection'
+      end
+    end.new
+
+    NotificationEmailJob.new.perform(notification.id)
+    copy_job = AdditionalNotificationEmailDeliveryJob.jobs.last
+
+    NotificationsMailer.stub(:additional_notification_copy, ->(_notification, _address) { failing_delivery }) do
+      assert_raises(RuntimeError) do
+        AdditionalNotificationEmailDeliveryJob.new.perform(*copy_job['args'])
+      end
+    end
+
+    assert_equal [user.email], ActionMailer::Base.deliveries.last.to
+    assert_equal 1,
+                 user.additional_notification_email_audits.where(event: 'notification_copy_failed').count
+  end
+
+  def test_audit_store_failure_does_not_retry_an_accepted_optional_copy
+    user = FactoryBot.create(:user)
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+    NotificationEmailJob.new.perform(notification.id)
+    copy_job = AdditionalNotificationEmailDeliveryJob.jobs.last
+
+    AdditionalNotificationEmailService.stub(:audit!, ->(*) { raise 'audit unavailable' }) do
+      assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+        AdditionalNotificationEmailDeliveryJob.new.perform(*copy_job['args'])
+      end
+    end
+  end
+
+  def test_queue_and_audit_failure_do_not_retry_an_accepted_primary_message
+    user = FactoryBot.create(:user)
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+
+    AdditionalNotificationEmailDeliveryJob.stub(:perform_async, ->(*) { raise 'queue unavailable' }) do
+      AdditionalNotificationEmailService.stub(:audit!, ->(*) { raise 'audit unavailable' }) do
+        assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+          NotificationEmailJob.new.perform(notification.id)
+        end
+      end
+    end
+  end
+
+  def test_category_opt_out_suppresses_both_destinations
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(
+      :notification,
+      :feedback,
+      user: user,
+      event: 'task_comment_created'
+    )
+    user.update!(receive_feedback_notifications: false)
+
+    assert_no_difference -> { ActionMailer::Base.deliveries.count } do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+    assert_empty AdditionalNotificationEmailDeliveryJob.jobs
+  end
+
+  def test_category_opt_out_after_primary_delivery_suppresses_the_optional_copy
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'secondary@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(
+      :notification,
+      :feedback,
+      user: user,
+      event: 'task_comment_created'
+    )
+
+    NotificationEmailJob.new.perform(notification.id)
+    copy_job = AdditionalNotificationEmailDeliveryJob.jobs.last
+    user.update!(receive_feedback_notifications: false)
+
+    assert_no_difference -> { ActionMailer::Base.deliveries.count } do
+      AdditionalNotificationEmailDeliveryJob.new.perform(*copy_job['args'])
+    end
+  end
+
+  def test_runtime_duplicate_suppression_prevents_two_messages
+    user = FactoryBot.create(:user, email: 'same@example.edu')
+    additional = AdditionalNotificationEmailService.request(
+      user: user,
+      email: 'different@example.org'
+    )
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    # Simulate a legacy duplicate that predates the validation guard.
+    additional.update_column(:email, 'SAME@example.edu') # rubocop:disable Rails/SkipsModelValidations
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+
+    assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+    assert_empty AdditionalNotificationEmailDeliveryJob.jobs
   end
 end

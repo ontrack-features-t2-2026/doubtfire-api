@@ -23,6 +23,34 @@ class NotificationEmailJob
     # switched off in the meantime stays off.
     return unless NotificationService.deliver_to?(notification.user, notification.notification_type)
 
+    # The institutional address is always the primary delivery. If this fails,
+    # raise so Sidekiq retries as before and do not mark an optional copy as a
+    # substitute for the primary channel.
     NotificationsMailer.single_notification(notification).deliver_now
+
+    additional = notification.user.additional_notification_email
+    return unless additional&.verified?
+    return if additional.email.casecmp?(notification.user.email)
+
+    begin
+      AdditionalNotificationEmailDeliveryJob.perform_async(
+        notification.id,
+        additional.id,
+        additional.verification_version
+      )
+    rescue StandardError => e
+      # The primary message has already been accepted. An optional destination
+      # cannot make that delivery retry (and potentially duplicate). The copy
+      # normally has its own retrying job; this branch is only a queue hand-off
+      # failure. Log only class/user/record identifiers: never address/content.
+      AdditionalNotificationEmailService.audit_delivery_event(
+        notification.user,
+        'notification_copy_failed'
+      )
+      Rails.logger.error(
+        "Additional notification copy queue failed for user_id=#{notification.user_id} " \
+        "notification_id=#{notification.id}: #{e.class}"
+      )
+    end
   end
 end
