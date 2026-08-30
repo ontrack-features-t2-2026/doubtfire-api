@@ -245,6 +245,10 @@ class Task < ApplicationRecord
         'task_comments.id AS id',
         'task_comments.comment AS comment',
         'task_comments.content_type AS content_type',
+        'task_comments.attachment_extension AS attachment_extension',
+        'task_comments.attachment_original_filename AS attachment_original_filename',
+        'task_comments.attachment_content_type AS attachment_content_type',
+        'task_comments.attachment_byte_size AS attachment_byte_size',
         "case when u_crr.created_at IS NULL then 1 else 0 end AS is_new",
         'r_crr.created_at AS recipient_read_time',
         'task_comments.created_at AS created_at',
@@ -1141,9 +1145,8 @@ class Task < ApplicationRecord
     task_definition.weighting.to_f
   end
 
-  def add_text_comment(user, text, reply_to_id = nil)
-    text = text.strip
-    return nil if user.nil? || text.nil? || text.empty?
+  def add_text_comment(user, text, reply_to_id = nil, client_request_id = nil)
+    return nil if user.nil? || text.blank?
 
     lc = comments.last
 
@@ -1159,6 +1162,7 @@ class Task < ApplicationRecord
     comment.content_type = :text
     comment.recipient = user == project.student ? project.tutor_for(task_definition) : project.student
     comment.reply_to_id = reply_to_id
+    comment.client_request_id = client_request_id
     comment.save!
 
     notify_comment_recipient(comment)
@@ -1296,28 +1300,46 @@ class Task < ApplicationRecord
   private :notify_discussion_request_recipient
 
   # TODO: Refactor to attachment comment (with inheritance on model)
-  def add_comment_with_attachment(user, tempfile, reply_to_id = nil)
+  def add_comment_with_attachment(user, tempfile, reply_to_id = nil, text = nil, client_request_id = nil)
     ensured_group_submission if group_task? && group
 
-    comment = TaskComment.create
-    comment.task = self
-    comment.user = user
-    comment.reply_to_id = reply_to_id
-    if FileHelper.accept_file(tempfile, "comment attachment audio test", "audio")[:accepted]
-      comment.content_type = :audio
-    elsif FileHelper.accept_file(tempfile, "comment attachment image test", "image")[:accepted]
-      comment.content_type = :image
-    elsif FileHelper.accept_file(tempfile, "comment attachment pdf", "document")[:accepted]
-      comment.content_type = :pdf
-    else
-      raise "Unknown comment attachment type"
+    attachment_type =
+      if FileHelper.accept_file(tempfile, 'comment attachment audio test', 'audio')[:accepted]
+        :audio
+      elsif FileHelper.accept_file(tempfile, 'comment attachment image test', 'image')[:accepted]
+        :image
+      elsif FileHelper.accept_file(tempfile, 'comment attachment PDF', 'document')[:accepted]
+        :pdf
+      elsif FileHelper.accept_file(tempfile, 'comment attachment DOCX', 'word_document')[:accepted]
+        :document
+      end
+
+    return nil if attachment_type.nil?
+
+    comment = TaskComment.new(
+      task: self,
+      user: user,
+      recipient: user == project.student ? project.tutor_for(task_definition) : project.student,
+      reply_to_id: reply_to_id,
+      comment: text.presence,
+      content_type: attachment_type,
+      client_request_id: client_request_id
+    )
+
+    TaskComment.transaction do
+      # Allocate the id inside the transaction because the attachment storage
+      # path is id-based. Any conversion/storage failure rolls the row and its
+      # read receipt back together.
+      comment.save!
+      raise 'Error attaching uploaded file.' unless comment.add_attachment(tempfile)
     end
 
-    comment.recipient = user == project.student ? project.tutor_for(task_definition) : project.student
-    raise "Error attaching uploaded file." unless comment.add_attachment(tempfile)
-
-    comment.save!
     comment
+  rescue StandardError
+    # Filesystem operations are not transactional. Remove any partially moved
+    # or converted file before propagating the failure to the endpoint.
+    FileUtils.rm_f(comment.attachment_path) if comment&.attachment_extension.present?
+    raise
   end
 
   def add_feedback_review_request_comment(current_user)
