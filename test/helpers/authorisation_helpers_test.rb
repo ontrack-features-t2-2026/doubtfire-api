@@ -1,12 +1,13 @@
 require 'test_helper'
+require 'minitest/mock'
 
 class AuthorisationHelpersTest < ActiveSupport::TestCase
   # Capture Rails.logger.warn for the duration of the block, tolerating any
   # arity so an unrelated warn elsewhere does not blow up the test.
-  def capture_warnings
+  def capture_warnings(&block)
     warnings = []
-    Rails.logger.stub(:warn, ->(*args, &blk) { warnings << (args.first || blk&.call) }) do
-      yield
+    Rails.logger.stub(:warn, ->(*args, &warn_block) { warnings << (args.first || warn_block&.call) }) do
+      block.call
     end
     warnings
   end
@@ -16,7 +17,7 @@ class AuthorisationHelpersTest < ActiveSupport::TestCase
     outsider = FactoryBot.create(:user, :student)
 
     warnings = capture_warnings do
-      refute AuthorisationHelpers.authorise?(outsider, unit, :get)
+      assert_not AuthorisationHelpers.authorise?(outsider, unit, :get)
     end
 
     assert warnings.any? { |m| m.to_s.include?('authorisation denied') && m.to_s.include?('get') },
@@ -35,7 +36,7 @@ class AuthorisationHelpersTest < ActiveSupport::TestCase
     perms = ->(_role, _hash, _other) { [:some_allowed_action] }
 
     warnings = capture_warnings do
-      refute AuthorisationHelpers.authorise?(convenor, unit, :a_denied_action, perms)
+      assert_not AuthorisationHelpers.authorise?(convenor, unit, :a_denied_action, perms)
     end
 
     assert warnings.any? { |m| m.to_s.include?('authorisation denied') && m.to_s.include?('a_denied_action') },
@@ -51,7 +52,7 @@ class AuthorisationHelpersTest < ActiveSupport::TestCase
       assert AuthorisationHelpers.authorise?(convenor, unit, :some_allowed_action, perms)
     end
 
-    refute warnings.any? { |m| m.to_s.include?('authorisation denied') },
-           "expected no denial warning, got: #{warnings.inspect}"
+    assert_not warnings.any? { |m| m.to_s.include?('authorisation denied') },
+               "expected no denial warning, got: #{warnings.inspect}"
   end
 end
