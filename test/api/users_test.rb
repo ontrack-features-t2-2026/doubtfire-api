@@ -417,4 +417,19 @@ class UnitsTest < ActiveSupport::TestCase
     test_put_update_user_custom_token ''
   end
 
+  # Changing an auditor's role hit `action - :promote_user` (a typo for `=`). That
+  # line sits before any real `action =`, so `action` was not yet a local and Ruby
+  # raised NameError, returning 500 for every auditor role change. An admin
+  # promoting an auditor to tutor must now succeed.
+  def test_put_promote_auditor_to_tutor
+    admin = FactoryBot.create(:user, :admin)
+    auditor = FactoryBot.create(:user, :auditor)
+
+    add_auth_header_for(user: admin)
+    put_json "/api/users/#{auditor.id}", { user: { system_role: 'Tutor' } }
+
+    assert_equal 200, last_response.status, last_response_body
+    assert_equal 'Tutor', auditor.reload.role.name
+  end
+
 end
