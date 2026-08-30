@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'test_helper'
+require 'minitest/mock'
 require 'tempfile'
 
 class SendNewTaskAvailableNotificationsJobTest < ActiveSupport::TestCase
@@ -172,14 +173,25 @@ class SendNewTaskAvailableNotificationsJobTest < ActiveSupport::TestCase
 
     imported = @unit.task_definitions.find_by!(abbreviation: abbreviation)
     assert_not_nil imported.new_task_notifications_from
-    assert_no_difference 'Notification.count' do
-      assert_no_difference 'Task.count' do
-        NewTaskAvailableNotificationJob.new.perform(imported.id)
+    notification_count = lambda do
+      Notification.where(
+        user: @student,
+        event: 'new_task_available',
+        link: "/projects/#{@project.id}/dashboard/#{imported.abbreviation}"
+      ).count
+    end
+
+    travel_to (@release_date - 1.day).noon do
+      assert_operator imported.start_date.to_date, :>, Time.zone.today
+      assert_no_difference notification_count do
+        assert_no_difference 'Task.count' do
+          NewTaskAvailableNotificationJob.new.perform(imported.id)
+        end
       end
     end
 
     travel_to @release_date.noon do
-      assert_difference 'Notification.count', 1 do
+      assert_difference notification_count, 1 do
         assert_no_difference 'Task.count' do
           run_job
         end
