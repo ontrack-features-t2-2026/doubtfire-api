@@ -62,6 +62,7 @@ class UsersApi < Grape::API
       optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
       optional :has_run_first_time_setup, type: Boolean, desc: 'Whether or not user has run first-time setup'
+      optional :theme_preference, type: String, desc: 'Theme preference for the user [light, dark, system]; null means never chosen'
     end
   end
   put '/users/:id' do
@@ -97,7 +98,8 @@ class UsersApi < Grape::API
                                                       :receive_feedback_notifications,
                                                       :display_peer_progress,
                                                       :opt_in_to_research,
-                                                      :has_run_first_time_setup
+                                                      :has_run_first_time_setup,
+                                                      :theme_preference
                                                     )
 
       user.role = Role.student if user.role.nil?
@@ -138,6 +140,13 @@ class UsersApi < Grape::API
         end
         # update :role to actual Role object rather than String type
         user_parameters[:role] = new_role
+      end
+
+      # An explicit preference is a synchronization write, even when its value
+      # matches the stored value. Clients use this timestamp to reconcile a
+      # newer offline choice with the account copy.
+      if user_parameters.key?(:theme_preference)
+        user.theme_preference_updated_at = user_parameters[:theme_preference].nil? ? nil : Time.current
       end
 
       # Update changes made to user

@@ -13,6 +13,8 @@ module Entities
     expose :display_peer_progress, unless: :minimal
     expose :opt_in_to_research, unless: :minimal
     expose :has_run_first_time_setup, unless: :minimal
+    expose :theme_preference, unless: :minimal
+    expose :theme_preference_updated_at, unless: :minimal
 
     expose :accepted_tii_eula, unless: :minimal, if: ->(user, options) { TurnItIn.enabled? } do |user, options|
       if TiiActionFetchFeaturesEnabled.eula_required?
