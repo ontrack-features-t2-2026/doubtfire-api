@@ -86,6 +86,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     project = unit.active_projects.first
     task = project.task_for_task_definition(unit.task_definitions.first)
+    task.task_definition.update!(abbreviation: 'Portfolio Reflection')
 
     mail = PortfolioEvidenceMailer.task_pdf_failed(project, [task])
 
@@ -104,6 +105,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     project = unit.active_projects.first
     task = project.task_for_task_definition(unit.task_definitions.first)
+    task.task_definition.update!(abbreviation: 'Portfolio Reflection')
 
     mail = PortfolioEvidenceMailer.task_pdf_ready_message(project, [task])
 
@@ -122,6 +124,7 @@ class UnitMailTest < ActionMailer::TestCase
 
     project = unit.active_projects.first
     task = project.task_for_task_definition(unit.task_definitions.first)
+    task.task_definition.update!(abbreviation: 'Portfolio Reflection')
 
     mail = PortfolioEvidenceMailer.task_feedback_ready(project, [task])
 
