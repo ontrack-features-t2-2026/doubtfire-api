@@ -42,7 +42,6 @@ class AcceptOverseerJob
 
     extract_student_submission_files(task, submission, work_dir, timestamp)
     extract_overseer_resource_files(assessment, work_dir)
-
     success_status = nil
     failure_status = nil
 
@@ -111,12 +110,13 @@ class AcceptOverseerJob
       task.add_text_comment(task.project.tutor_for(task.task_definition), "**Automated comment**: Some tests did not pass for this submission. Please review the Overseer report, verify your output, and resubmit.")
     end
 
-    FileUtils.rm_rf(work_dir)
 
     logger.info "Completed overseer job"
   rescue StandardError => e
     logger.error e
     raise e
+  ensure 
+    FileUtils.rm_rf(work_dir) if work_dir
   end
 
   def ensure_docker_image_present(docker_image_name_tag, overseer_image)
