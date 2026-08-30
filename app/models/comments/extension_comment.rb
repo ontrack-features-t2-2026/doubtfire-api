@@ -72,7 +72,7 @@ class ExtensionComment < TaskComment
           type: 'extension',
           event: 'extension_assessed',
           message: extension_response,
-          link: "/projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}",
+          link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task.task_definition.abbreviation)}",
           # The assessed request itself. An extension comment is a task comment,
           # so reading the task's discussion clears this the same way it clears
           # any other comment notification.
