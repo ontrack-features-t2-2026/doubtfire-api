@@ -20,6 +20,13 @@ on:
   schedule:
     - cron: "45 20 * * 3"
 
+# A push to an open pull request would otherwise start a second analysis while
+# the first is still running. Cancel the superseded run so only the newest head
+# of each ref is analysed.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: CodeQL
