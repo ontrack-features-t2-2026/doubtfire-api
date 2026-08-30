@@ -832,6 +832,95 @@ class TasksApiTest < ActiveSupport::TestCase
     assert_equal TaskStatus.complete, task.task_status
   end
 
+  # discussed:true marks a task as discussed in class; discussed:false must unmark
+  # it by removing the discussed comment, not add a second one (DOM-07).
+  def test_discussed_false_removes_the_discussed_comment
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = TaskDefinition.create!({
+                                  unit_id: unit.id,
+                                  tutorial_stream: unit.tutorial_streams.first,
+                                  name: 'Discussed toggle task',
+                                  description: 'Task used to toggle the discussed mark',
+                                  weighting: 4,
+                                  target_grade: 0,
+                                  start_date: Time.zone.now - 2.weeks,
+                                  target_date: Time.zone.now + 1.week,
+                                  abbreviation: 'DiscussToggleTask',
+                                  restrict_status_updates: false,
+                                  requires_discussion: true,
+                                  upload_requirements: [],
+                                  plagiarism_warn_pct: 0.8,
+                                  is_graded: false,
+                                  max_quality_pts: 0
+                                })
+
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+    tutor = unit.tutors.first
+
+    add_auth_header_for(user: tutor)
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: true }
+    assert_equal 200, last_response.status
+    task.reload
+    assert task.has_discussed_in_class_comment?, 'discussed:true should mark the task as discussed'
+    assert_equal 1, task.comments.where(content_type: 'discussed_in_class').count
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: false }
+    assert_equal 200, last_response.status
+    task.reload
+    assert_not task.has_discussed_in_class_comment?, 'discussed:false should unmark the task, not add another comment'
+    assert_equal 0, task.comments.where(content_type: 'discussed_in_class').count
+
+    unit.destroy
+  end
+
+  # A completed task in a unit that requires discussion cannot have its discussed
+  # mark removed, since that would leave it complete without the evidence the
+  # model requires (DOM-07).
+  def test_discussed_false_rejected_when_the_task_is_complete
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = TaskDefinition.create!({
+                                  unit_id: unit.id,
+                                  tutorial_stream: unit.tutorial_streams.first,
+                                  name: 'Discussed complete guard task',
+                                  description: 'Task used to guard unmarking after complete',
+                                  weighting: 4,
+                                  target_grade: 0,
+                                  start_date: Time.zone.now - 2.weeks,
+                                  target_date: Time.zone.now + 1.week,
+                                  abbreviation: 'DiscussGuardTask',
+                                  restrict_status_updates: false,
+                                  requires_discussion: true,
+                                  upload_requirements: [],
+                                  plagiarism_warn_pct: 0.8,
+                                  is_graded: false,
+                                  max_quality_pts: 0
+                                })
+
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+    tutor = unit.tutors.first
+
+    add_auth_header_for(user: tutor)
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: true }
+    assert_equal 200, last_response.status
+    task.add_text_comment(tutor, 'Manual tutor feedback')
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'complete' }
+    assert_equal 200, last_response.status
+    task.reload
+    assert_equal TaskStatus.complete, task.task_status
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: false }
+    assert_equal 403, last_response.status
+    task.reload
+    assert task.has_discussed_in_class_comment?, 'the discussed comment must survive a refused unmark'
+    assert_equal TaskStatus.complete, task.task_status
+
+    unit.destroy
+  end
+
   # A helper for the refused-transition tests below. An ordinary task definition,
   # nothing about it restricted, so the only reason a transition can be refused is
   # the one the test is asking about.

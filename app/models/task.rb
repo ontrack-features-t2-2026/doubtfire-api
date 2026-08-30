@@ -1232,6 +1232,13 @@ class Task < ApplicationRecord
     discussed
   end
 
+  # Undo a "discussed in class" mark by removing the most recent discussed
+  # comment on this task. Destroying it also clears its read receipts and any
+  # associated files through the TaskComment dependent-destroy chain.
+  def remove_discussed_comment
+    comments.where(content_type: 'discussed_in_class').order(:created_at, :id).last&.destroy
+  end
+
   def add_checked_in_comment(current_user)
     discussed = TaskCheckedInComment.create
     discussed.task = self

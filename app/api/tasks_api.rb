@@ -176,8 +176,26 @@ class TasksApi < Grape::API
 
       task = project.task_for_task_definition(task_definition)
 
+      # A tutor can both mark and unmark a task as discussed in class. Sending
+      # discussed:false used to still add a "Discussed in class" comment, the
+      # opposite of what it asks, and that comment type cannot be removed through
+      # the UI. So false now removes the most recent discussed comment instead.
+      # The mark is added here so a same-request complete trigger below can see it;
+      # a removal is deferred to the end so a later refused trigger or grade does
+      # not leave the comment destroyed and the request still failing.
+      remove_discussed = false
       if !params[:discussed].nil? && authorise?(current_user, project, :assess)
-        task.add_discussed_comment(current_user)
+        if params[:discussed]
+          task.add_discussed_comment(current_user)
+        elsif task.task_definition.requires_discussion &&
+              (task.task_status == TaskStatus.complete || params[:trigger] == 'complete')
+          # Removing the mark would leave a discussion-required task complete
+          # without the evidence the model demands. Refuse before deleting
+          # anything.
+          error!({ error: 'Cannot remove the discussed mark from a task that requires discussion while it is complete. Change its status first.' }, 403)
+        else
+          remove_discussed = true
+        end
       end
 
       # if trigger supplied...
@@ -250,6 +268,10 @@ class TasksApi < Grape::API
         task.include_in_portfolio = params[:include_in_portfolio]
         task.save
       end
+
+      # The status change and grade have been applied without error, so it is now
+      # safe to remove the discussed mark that was requested with discussed:false.
+      task.remove_discussed_comment if remove_discussed
 
       present task, with: Entities::TaskEntity, include_other_projects: true, update_only: true
     else
