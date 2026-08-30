@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+# Keep this test outside test/helpers: test_helper requires every helper file
+# into every test process, which would execute this test in multiple shards.
+
 require 'test_helper'
 require 'zip'
 
