@@ -16,6 +16,7 @@ class TutorNoteMailerTest < ActionMailer::TestCase
 
     project = unit.active_projects.first
     task = project.task_for_task_definition(unit.task_definitions.first)
+    task.task_definition.update!(abbreviation: 'Portfolio Reflection')
 
     tutor_note = TutorNote.create!(
       unit_role: tutor_role,
@@ -28,11 +29,11 @@ class TutorNoteMailerTest < ActionMailer::TestCase
     mail = TutorNoteMailer.notify_tutor_note(tutor_note, convenor)
 
     host = Doubtfire::Application.config.institution[:host]
-    expected = "#{host}/units/#{unit.id}/tasks/inbox/#{project.user.id}/#{task.task_definition.abbreviation}"
+    expected = "#{host}/units/#{unit.id}/tasks/inbox/#{project.user.id}/Portfolio%20Reflection"
 
     assert mail.html_part.body.to_s.include?(expected), "html link should point at the marking inbox"
     assert mail.text_part.body.to_s.include?(expected), "text link should point at the marking inbox"
-    refute mail.html_part.body.to_s.include?('?tutor=true'), "the dead tutor flag should be gone"
+    assert_not mail.html_part.body.to_s.include?('?tutor=true'), "the dead tutor flag should be gone"
 
     unit.destroy!
   end
