@@ -60,13 +60,37 @@ module Doubtfire
     # Minimum time to wait before notifying a student about an unread failed overseer assessment
     config.overseer_student_notification_grace_period = ENV.fetch('OVERSEER_STUDENT_NOTIFICATION_GRACE_PERIOD_MINUTES', 30).to_i.minutes
 
+    # Parse a positive, bounded integer from the environment. Raises at boot on a
+    # value that is not an integer, is below 1, or is above the given maximum, so
+    # a misconfiguration is caught immediately rather than at first use.
+    def self.fetch_positive_integer_env(name, default:, max:)
+      value = Integer(ENV.fetch(name, default), exception: false)
+      unless value && value >= 1 && value <= max
+        raise "#{name} must be an integer between 1 and #{max}, got #{ENV[name].inspect}"
+      end
+      value
+    end
+
+    # Read an environment variable, falling back to a deprecated misspelling with a
+    # warning so existing deployments keep working while the correct name is adopted.
+    def self.fetch_env_with_deprecated_alias(name, deprecated_name, default)
+      return ENV.fetch(name) if ENV.key?(name)
+
+      if ENV.key?(deprecated_name)
+        warn "[DEPRECATION] #{deprecated_name} is a misspelling of #{name} and will be removed in a future release. Please rename it."
+        return ENV.fetch(deprecated_name)
+      end
+
+      default
+    end
+
     # Limit number of pdf generators to run at once
-    config.pdfgen_max_processes = ENV['DF_MAX_PDF_GEN_PROCESSES'] || 2
+    config.pdfgen_max_processes = fetch_positive_integer_env('DF_MAX_PDF_GEN_PROCESSES', default: 2, max: 100)
 
     # Date range for auditors to view
     config.auditor_unit_access_years = ENV.fetch('DF_AUDITOR_UNIT_ACCESS_YEARS', 2).to_f * 1.year
 
-    config.student_import_weeks_before = ENV.fetch('DF_IMPORT_STUDENTS_WEEKS_BEFPRE', 1).to_f * 1.week
+    config.student_import_weeks_before = fetch_env_with_deprecated_alias('DF_IMPORT_STUDENTS_WEEKS_BEFORE', 'DF_IMPORT_STUDENTS_WEEKS_BEFPRE', 1).to_f * 1.week
 
     def self.fetch_boolean_env(name)
       %w'true 1'.include?(ENV.fetch(name, 'false').downcase)
