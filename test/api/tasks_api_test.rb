@@ -85,6 +85,11 @@ class TasksApiTest < ActiveSupport::TestCase
     # Make the request
     get "/api/projects/#{project.id}/task_def_id/#{td.id}/submission_details"
 
+    assert_equal 'not_submitted', last_response_body['processing_state']
+    assert_equal false, last_response_body['pdf_ready']
+    assert_equal false, last_response_body['submission_files_ready']
+    assert_equal false, last_response_body['retryable']
+
     # Check if counts increased
     session_count_after = MarkingSession.count
     activity_count_after = SessionActivity.count

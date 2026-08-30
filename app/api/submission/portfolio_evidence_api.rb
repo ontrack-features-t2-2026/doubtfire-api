@@ -166,15 +166,47 @@ module Submission
       end
 
       task = project.task_for_task_definition(task_definition)
+      error!({ error: 'A submission for this task was not found.' }, 404) unless task
 
-      if task && PortfolioEvidence.recreate_task_pdf(task)
+      begin
+        task.regenerate_submission!(current_user)
         result = 'done'
-      else
-        result = 'false'
+      rescue ArgumentError => e
+        error!({ error: e.message }, 409)
+      rescue StandardError
+        error!({ error: 'The submitted files are not available to regenerate.' }, 422)
       end
 
       present :result, result, with: Grape::Presenters::Presenter
     end # put
+
+    desc 'Retry a failed or timed-out submission conversion'
+    post '/projects/:id/task_def_id/:task_definition_id/submission/retry' do
+      project = Project.find(params[:id])
+      task_definition = project.unit.task_definitions.find(params[:task_definition_id])
+
+      unless authorise? current_user, project, :reprocess_submission
+        error!({ error: "Not authorised to retry task '#{task_definition.name}'" }, 401)
+      end
+
+      task = project.task_for_task_definition(task_definition)
+      error!({ error: 'A submission for this task was not found.' }, 404) unless task
+
+      begin
+        task.retry_submission_processing!(current_user)
+      rescue ArgumentError => e
+        error!({ error: e.message }, 409)
+      rescue StandardError
+        error!({ error: 'The submitted files are not available to retry.' }, 422)
+      end
+
+      present task.submission_processing_snapshot.merge(
+        submission_date: task.submission_date,
+        processing_error_code: task.submission_processing_error_code,
+        processing_attempts: task.submission_processing_attempts,
+        task_status: task.task_status.status_key
+      ), with: Grape::Presenters::Presenter
+    end
 
     desc 'Get the timestamps of the last 10 submissions of a task'
     get '/projects/:id/task_def_id/:task_definition_id/submissions/timestamps' do

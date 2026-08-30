@@ -5,9 +5,13 @@ class AcceptSubmissionJob
   sidekiq_options lock: :until_executed,
                   lock_args_method: ->(args) { [args.first] },
                   on_conflict: :reject,
+                  queue: :submissions,
                   retry: false
 
-  def perform(task_id, user_id, accepted_tii_eula, test_submission)
+  def perform(task_id, user_id, accepted_tii_eula, test_submission, *processing_options)
+    processing_mode = processing_options.first.to_s
+    restore_archive = %w[retry_archive regenerate_only].include?(processing_mode) || processing_options.first == true
+    regeneration_only = processing_mode == 'regenerate_only'
     begin
       # Ensure cwd is valid...
       FileUtils.cd(Rails.root)
@@ -16,7 +20,7 @@ class AcceptSubmissionJob
     end
 
     begin
-      task = Task.find(task_id)
+      task = Task.find(task_id).submission_processing_task
       user = User.find(user_id)
     rescue StandardError => e
       logger.error e
@@ -25,9 +29,14 @@ class AcceptSubmissionJob
 
     begin
       logger.info "Accepting submission for task #{task.id} by user #{user.id}"
+      task.mark_submission_processing!('processing')
+      task.prepare_submission_regeneration! if restore_archive
       # Convert submission to PDF
-      task.convert_submission_to_pdf(log_to_stdout: true)
+      converted = task.convert_submission_to_pdf(log_to_stdout: true)
+      raise 'Submission files could not be prepared for conversion.' unless converted
+      task.mark_submission_processing!('ready')
     rescue StandardError => e
+      task.mark_submission_processing!('failed', error_code: 'conversion_failed')
       logger.error e
 
       # Send email to student if task pdf failed
@@ -59,6 +68,10 @@ class AcceptSubmissionJob
 
       return
     end
+
+    # Rebuilding a previously ready PDF must not create a duplicate Turnitin
+    # submission, moderation decision, or submission-history entry.
+    return if regeneration_only
 
     # Mark this task for moderation
     tutor_user = task.project.tutor_for(task.task_definition)
@@ -93,6 +106,9 @@ class AcceptSubmissionJob
         }
       )
     end
-    task.clear_in_process
+    task&.clear_in_process
+    if task && !task.submission_pdf_ready?
+      task.mark_submission_processing!('failed', error_code: 'processing_failed')
+    end
   end
 end
