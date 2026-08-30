@@ -1423,6 +1423,7 @@ class Task < ApplicationRecord
       raise "Multiple team member submissions received at the same time. Please ensure that only one member submits the task." if group_task? && self != group_submission.submitter_task
 
       zip_file = zip_file_path || zip_file_path_for_done_task
+      temp_zip = nil
       return false if zip_file.nil? || (!Dir.exist? task_dir)
 
       # compress image files - convert to jpg
@@ -1446,14 +1447,17 @@ class Task < ApplicationRecord
 
       logger.info "Creating new zip file for task #{id} in #{zip_file}"
 
-      # We have what looks like a good submission, remove old zip
-      FileUtils.rm_f(zip_file)
-
       # copy all files into zip
       zip_dir = File.dirname(zip_file)
       FileUtils.mkdir_p zip_dir
 
-      Zip::File.open(zip_file, Zip::File::CREATE) do |zip|
+      # Build the new archive alongside the existing done zip and swap it in only
+      # once it has closed cleanly. Writing straight over zip_file, after removing
+      # it first, meant a failed add left the task with no readable submission at
+      # all, having already destroyed the previously accepted one.
+      temp_zip = "#{zip_file}.tmp-#{SecureRandom.hex(8)}"
+
+      Zip::File.open(temp_zip, Zip::File::CREATE) do |zip|
         zip.mkdir id.to_s
         input_files.each do |in_file|
           final_name = in_file
@@ -1466,8 +1470,25 @@ class Task < ApplicationRecord
           zip.add "#{id}/#{final_name}", "#{task_dir}#{in_file}"
         end
       end
+
+      # The archive is complete on disk, so it is now safe to swap it in. File.rename
+      # is an atomic same-directory replace and, unlike FileUtils.mv(force: true),
+      # raises if it fails instead of silently leaving the old zip in place while we
+      # go on to delete the source and report success.
+      File.rename(temp_zip, zip_file)
+      temp_zip = nil
     ensure
-      FileUtils.rm_rf(task_dir) if rm_task_dir
+      if temp_zip
+        # We entered the archive-write phase but did not swap the new zip in, so
+        # the write or the rename failed. Keep the source files in task_dir so the
+        # previously accepted submission can be recovered, and remove only the
+        # half-written temporary archive.
+        FileUtils.rm_f(temp_zip)
+      elsif rm_task_dir
+        # A clean success, an early rejection (missing files), or the group-guard
+        # raise: discard the source files as before.
+        FileUtils.rm_rf(task_dir)
+      end
     end
 
     true
