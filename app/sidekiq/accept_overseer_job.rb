@@ -110,12 +110,11 @@ class AcceptOverseerJob
       task.add_text_comment(task.project.tutor_for(task.task_definition), "**Automated comment**: Some tests did not pass for this submission. Please review the Overseer report, verify your output, and resubmit.")
     end
 
-
     logger.info "Completed overseer job"
   rescue StandardError => e
     logger.error e
     raise e
-  ensure 
+  ensure
     FileUtils.rm_rf(work_dir) if work_dir
   end
 
