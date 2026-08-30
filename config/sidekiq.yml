@@ -23,4 +23,5 @@
 :queues:
   - mailers
   - notifications
+  - submissions
   - default

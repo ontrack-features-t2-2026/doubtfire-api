@@ -872,6 +872,11 @@ class TaskDefinition < ApplicationRecord
   end
 
   # Get the path to the task sheet - using the current abbreviation
+  def task_sheet_filename
+    FileHelper.sanitized_filename("#{unit.code}-#{abbreviation}-TaskSheet.pdf")
+  end
+
+  # Get the path to the task sheet - using the current abbreviation
   def task_sheet(create = true)
     task_sheet_with_abbreviation(abbreviation, create)
   end

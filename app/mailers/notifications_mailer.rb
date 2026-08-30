@@ -36,6 +36,26 @@ class NotificationsMailer < ApplicationMailer
     )
   end
 
+  # Delivers a second, independent message to a verified additional address.
+  # It is intentionally not a CC: neither destination learns the other address,
+  # and a failure here can be isolated from the primary institutional delivery.
+  def additional_notification_copy(notification, address)
+    add_general
+
+    @notification = notification
+    @user = notification.user
+
+    from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
+    subject = "#{@doubtfire_product_name}: New notification"
+
+    mail(
+      to: address,
+      from: from_address,
+      subject: subject,
+      template_name: event_template_name(notification.event)
+    )
+  end
+
   # The event's own template if it exists, otherwise the generic one.
   def event_template_name(event)
     return 'single_notification' if event.blank?

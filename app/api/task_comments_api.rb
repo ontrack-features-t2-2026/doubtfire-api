@@ -14,6 +14,8 @@ class TaskCommentsApi < Grape::API
     optional :comment, type: String, desc: 'The comment text to add to the task'
     optional :attachment, type: File, desc: 'Image, sound, PDF or video comment file'
     optional :reply_to_id, type: Integer, desc: 'The comment to which this comment is replying'
+    optional :client_request_id, type: String, regexp: /\A[0-9a-f-]{1,64}\z/i,
+                                 desc: 'Stable client-generated identifier used to make attachment retries idempotent'
   end
   post '/projects/:project_id/task_def_id/:task_definition_id/comments' do
     project = Project.find(params[:project_id])
@@ -26,6 +28,7 @@ class TaskCommentsApi < Grape::API
     text_comment = params[:comment]
     attached_file = params[:attachment]
     reply_to_id = params[:reply_to_id]
+    client_request_id = params[:client_request_id]
 
     task = project.task_for_task_definition(task_definition)
     if task.active_overflow_task_claim
@@ -35,9 +38,15 @@ class TaskCommentsApi < Grape::API
       end
     end
 
-    if attached_file.present?
-      error!({ error: "Attachment is empty." }) if File.size?(attached_file["tempfile"].path).blank?
-      error!({ error: "Attachment exceeds the maximum attachment size of 30MB." }) unless File.size?(attached_file["tempfile"].path) < 30_000_000
+    existing_result = if client_request_id.present?
+                        task.comments.find_by(user_id: current_user.id, client_request_id: client_request_id)
+                      end
+
+    if attached_file.present? && existing_result.blank?
+      error!({ error: 'Attachment is empty.' }, 422) if File.size?(attached_file['tempfile'].path).blank?
+      unless File.size?(attached_file['tempfile'].path) < 30_000_000
+        error!({ error: 'Attachment exceeds the maximum attachment size of 30MB.' }, 413)
+      end
     end
 
     type_string = content_type.to_s
@@ -50,16 +59,35 @@ class TaskCommentsApi < Grape::API
 
     logger.info("user_id=#{current_user.id} added comment for task #{task.id} (#{task_definition.abbreviation})")
 
-    if attached_file.blank?
+    if existing_result.present?
+      result = existing_result
+    elsif attached_file.blank?
       error!({ error: 'Comment text is empty, unable to add new comment' }, 403) if text_comment.blank?
-      result = task.add_text_comment(current_user, text_comment, reply_to_id)
+      begin
+        result = task.add_text_comment(current_user, text_comment, reply_to_id, client_request_id)
+      rescue ActiveRecord::RecordNotUnique
+        result = task.comments.find_by(user_id: current_user.id, client_request_id: client_request_id)
+        raise if result.blank?
+      end
     else
       file_result = FileHelper.accept_file(attached_file, 'comment attachment - TaskComment', 'comment_attachment')
       unless file_result[:accepted]
-        error!({ error: "File is not an accptable format: #{file_result[:msg]}" }, 403)
+        error!({ error: "File is not an acceptable format: #{file_result[:msg]}" }, 403)
       end
 
-      result = task.add_comment_with_attachment(current_user, attached_file, reply_to_id)
+      begin
+        result = task.add_comment_with_attachment(
+          current_user,
+          attached_file,
+          reply_to_id,
+          text_comment,
+          client_request_id
+        )
+      rescue ActiveRecord::RecordNotUnique
+        result = task.comments.find_by(user_id: current_user.id, client_request_id: client_request_id)
+        raise if result.blank?
+      end
+      error!({ error: 'File is not an acceptable comment attachment format.' }, 403) if result.nil?
     end
 
     if result.nil?
@@ -95,7 +123,7 @@ class TaskCommentsApi < Grape::API
 
       comment = task.comments.find(params[:id])
 
-      error!({ error: 'No attachment for this comment.' }, 404) unless %w(audio image pdf).include? comment.content_type
+      error!({ error: 'No attachment for this comment.' }, 404) unless comment.attachment?
 
       error!({ error: 'File missing' }, 404) unless File.exist? comment.attachment_path
 
@@ -105,8 +133,11 @@ class TaskCommentsApi < Grape::API
       env['api.format'] = :binary
 
       # mark as attachment
-      if params[:as_attachment]
-        header['Content-Disposition'] = "attachment; filename=#{comment.attachment_file_name}"
+      if params[:as_attachment] || comment.content_type == 'document'
+        header['Content-Disposition'] = ActionDispatch::Http::ContentDisposition.format(
+          disposition: 'attachment',
+          filename: comment.attachment_file_name
+        )
       end
 
       SessionTracker.record_assessment_activity(

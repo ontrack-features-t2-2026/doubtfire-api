@@ -417,4 +417,115 @@ class UnitsTest < ActiveSupport::TestCase
     test_put_update_user_custom_token ''
   end
 
+  def test_self_cannot_forge_a_student_id
+    user = FactoryBot.create(:user, student_id: 'original-id')
+    add_auth_header_for(user: user)
+
+    put_json "/api/users/#{user.id}", {
+      user: { student_id: 'forged-id', nickname: 'Still editable' }
+    }
+
+    assert_equal 422, last_response.status
+    assert_equal 'original-id', user.reload.student_id
+  end
+
+  def test_sso_controlled_email_rejects_self_and_admin_forgery
+    with_auth_method(:saml) do
+      user = FactoryBot.create(:user, email: 'institutional@example.edu')
+      add_auth_header_for(user: user)
+
+      put_json "/api/users/#{user.id}", { user: { email: 'forged@example.org' } }
+      assert_equal 422, last_response.status
+      assert_equal 'institutional@example.edu', user.reload.email
+
+      put_json "/api/users/#{user.id}", { user: { email: 'INSTITUTIONAL@example.edu' } }
+      assert_equal 422, last_response.status
+      assert_equal 'institutional@example.edu', user.reload.email
+
+      admin = FactoryBot.create(:user, :admin)
+      add_auth_header_for(user: admin)
+      put_json "/api/users/#{user.id}", { user: { email: 'admin-forged@example.org' } }
+      assert_equal 422, last_response.status
+      assert_equal 'institutional@example.edu', user.reload.email
+    end
+  end
+
+  def test_sso_user_can_still_save_preferred_name_and_preferences
+    with_auth_method(:saml) do
+      user = FactoryBot.create(:user, email: 'institutional@example.edu')
+      add_auth_header_for(user: user)
+
+      put_json "/api/users/#{user.id}", {
+        user: {
+          email: user.email,
+          student_id: user.student_id,
+          nickname: 'Preferred',
+          receive_feedback_notifications: false
+        }
+      }
+
+      assert_equal 200, last_response.status
+      assert_equal 'Preferred', user.reload.nickname
+      assert_not user.receive_feedback_notifications?
+      assert_equal false, last_response_body['email_editable']
+      assert_equal true, last_response_body['institutional_identity_managed']
+    end
+  end
+
+  def test_sso_staff_identity_is_read_only_while_genuine_settings_still_save
+    with_auth_method(:saml) do
+      staff = FactoryBot.create(:user, :convenor, email: 'staff-institutional@example.edu')
+      add_auth_header_for(user: staff)
+
+      put_json "/api/users/#{staff.id}", {
+        user: {
+          email: staff.email,
+          nickname: 'Staff preferred name',
+          receive_feedback_notifications: false
+        }
+      }
+
+      assert_equal 200, last_response.status
+      assert_equal 'Staff preferred name', staff.reload.nickname
+      assert_not staff.receive_feedback_notifications?
+
+      put_json "/api/users/#{staff.id}", {
+        user: { email: 'staff-forged@example.org' }
+      }
+
+      assert_equal 422, last_response.status
+      assert_equal 'staff-institutional@example.edu', staff.reload.email
+    end
+  end
+
+  def test_local_accounts_retain_email_and_admin_student_id_maintenance
+    with_auth_method(:database) do
+      local_user = FactoryBot.create(:user, email: 'local@example.test')
+      add_auth_header_for(user: local_user)
+      put_json "/api/users/#{local_user.id}", { user: { email: 'changed@example.test' } }
+
+      assert_equal 200, last_response.status
+      assert_equal 'changed@example.test', local_user.reload.email
+      assert_equal true, last_response_body['email_editable']
+      assert_equal false, last_response_body['institutional_identity_managed']
+
+      admin = FactoryBot.create(:user, :admin)
+      add_auth_header_for(user: admin)
+      put_json "/api/users/#{local_user.id}", { user: { student_id: 'admin-maintained' } }
+
+      assert_equal 200, last_response.status
+      assert_equal 'admin-maintained', local_user.reload.student_id
+    end
+  end
+
+  private
+
+  def with_auth_method(method)
+    previous = Doubtfire::Application.config.auth_method
+    Doubtfire::Application.config.auth_method = method
+    yield
+  ensure
+    Doubtfire::Application.config.auth_method = previous
+  end
+
 end

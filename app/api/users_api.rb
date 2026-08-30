@@ -84,6 +84,23 @@ class UsersApi < Grape::API
 
       user = User.eager_load(:role).find(params[:id])
 
+      # Identity asserted by SAML/AAF/LDAP is refreshed by the institution's
+      # sign-in/import path. It must not be forgeable through the profile API,
+      # including by an administrator. Student ids are also account data, not
+      # a self-service profile field. Local database-auth administrators retain
+      # the existing ability to maintain another account's identity.
+      if params[:user].key?(:email) &&
+         params[:user][:email].to_s != user.email.to_s &&
+         !AuthenticationHelpers.db_auth?
+        error!({ error: 'Sign-in email is managed by your institution and cannot be changed here.' }, 422)
+      end
+
+      if params[:user].key?(:student_id) &&
+         params[:user][:student_id].to_s != user.student_id.to_s &&
+         (change_self || !AuthenticationHelpers.db_auth?)
+        error!({ error: 'Student ID is managed account information and cannot be changed here.' }, 422)
+      end
+
       user_parameters = ActionController::Parameters.new(params)
                                                     .require(:user)
                                                     .permit(

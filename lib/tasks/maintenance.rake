@@ -10,9 +10,10 @@ namespace :maintenance do
       return true if matcher.call(payload['class'], payload['args'])
     end
 
-    # TODO: We may need to iterate through each queue when we implement parallel sidekiq jobs
-    Sidekiq::Queue.new("default").each do |job|
-      return true if matcher.call(job.klass, job.args)
+    %w[submissions default].each do |queue_name|
+      Sidekiq::Queue.new(queue_name).each do |job|
+        return true if matcher.call(job.klass, job.args)
+      end
     end
 
     false

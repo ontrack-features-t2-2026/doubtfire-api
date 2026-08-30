@@ -296,17 +296,21 @@ class TasksApi < Grape::API
     end
 
     result = if needs_upload_docs && task
-               # return the details as json
-               {
-                 has_pdf: task.has_pdf,
+               task.submission_processing_snapshot.merge(
                  submission_date: task.submission_date,
-                 processing_pdf: task.processing_pdf?,
+                 processing_error_code: task.submission_processing_error_code,
+                 processing_attempts: task.submission_processing_attempts,
                  task_status: task.task_status.status_key
-               }
+               )
              else
                {
                  has_pdf: false,
-                 processing_pdf: false
+                 pdf_ready: false,
+                 submission_files_ready: false,
+                 processing_pdf: false,
+                 processing_state: 'not_submitted',
+                 retryable: false,
+                 poll_after_seconds: nil
                }
              end
 

@@ -58,6 +58,7 @@ class ApiRoot < Grape::API
   mount ActivityTypesAuthenticatedApi
   mount ActivityTypesPublicApi
   mount AuthenticationApi
+  mount AdditionalNotificationEmailVerificationApi
   mount BreaksApi
   mount DiscussionCommentApi
   mount EngagementsApi
@@ -105,12 +106,14 @@ class ApiRoot < Grape::API
   mount D2lIntegrationApi::OauthPublicApi
 
   mount UsersApi
+  mount AdditionalNotificationEmailsApi
   mount WebcalApi
   mount WebcalPublicApi
   mount MarkingSessionsApi
   mount DiscussionPromptsApi
   mount OverseerStepsApi
   mount TaskPrioritizationApi
+  mount DemoScenarioApi
 
   mount Feedback::FeedbackChipApi
 
@@ -158,6 +161,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to TutorialStreamsApi
   AuthenticationHelpers.add_auth_to TutorialEnrolmentsApi
   AuthenticationHelpers.add_auth_to UsersApi
+  AuthenticationHelpers.add_auth_to AdditionalNotificationEmailsApi
   AuthenticationHelpers.add_auth_to UnitRolesApi
   AuthenticationHelpers.add_auth_to UnitsApi
   AuthenticationHelpers.add_auth_to WebcalApi
@@ -170,6 +174,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to DiscussionPromptsApi
   AuthenticationHelpers.add_auth_to OverseerStepsApi
   AuthenticationHelpers.add_auth_to TaskPrioritizationApi
+  AuthenticationHelpers.add_auth_to DemoScenarioApi
   AuthenticationHelpers.add_auth_to TutorNotesApi
 
   # Notifications feature
