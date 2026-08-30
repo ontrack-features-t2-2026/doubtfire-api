@@ -50,7 +50,7 @@ module TestShard
     'test/api/upload_security_test.rb' => 173.0,
     'test/config/deakin_config_test.rb' => 50.0,
     'test/models/notification_group_test.rb' => 30.0,
-    'test/models/task_test.rb' => 160.0,
+    'test/models/task_test.rb' => 210.0,
     'test/models/unit_model_test.rb' => 180.0,
     'test/sidekiq/send_due_soon_reminders_job_test.rb' => 75.0
   }.freeze
