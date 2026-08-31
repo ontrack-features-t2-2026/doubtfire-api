@@ -179,7 +179,7 @@ class TasksApi < Grape::API
       # A tutor can both mark and unmark a task as discussed in class. Sending
       # discussed:false used to still add a "Discussed in class" comment, the
       # opposite of what it asks, and that comment type cannot be removed through
-      # the UI. So false now removes the most recent discussed comment instead.
+      # the UI. So false now removes all discussed markers instead.
       # The mark is added here so a same-request complete trigger below can see it;
       # a removal is deferred to the end so a later refused trigger or grade does
       # not leave the comment destroyed and the request still failing.

@@ -833,8 +833,9 @@ class TasksApiTest < ActiveSupport::TestCase
   end
 
   # discussed:true marks a task as discussed in class; discussed:false must unmark
-  # it by removing the discussed comment, not add a second one (DOM-07).
-  def test_discussed_false_removes_the_discussed_comment
+  # it by removing every marker, including legacy duplicates separated by an
+  # ordinary feedback comment (DOM-07).
+  def test_discussed_false_removes_all_discussed_comments
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = TaskDefinition.create!({
                                   unit_id: unit.id,
@@ -866,11 +867,30 @@ class TasksApiTest < ActiveSupport::TestCase
     assert task.has_discussed_in_class_comment?, 'discussed:true should mark the task as discussed'
     assert_equal 1, task.comments.where(content_type: 'discussed_in_class').count
 
+    task.add_text_comment(tutor, 'Feedback between legacy discussed markers')
+
+    # add_discussed_comment now treats the marker as a boolean and will not
+    # create another one just because feedback was added after it.
+    task.add_discussed_comment(tutor)
+    assert_equal 1, task.comments.where(content_type: 'discussed_in_class').count
+
+    # Reproduce legacy data written before duplicate prevention was added.
+    duplicate = TaskDiscussedComment.create!(
+      task: task,
+      user: tutor,
+      recipient: project.student,
+      comment: 'Discussed in class'
+    )
+    duplicate_receipt_ids = duplicate.comments_read_receipts.ids
+    assert_equal 2, task.comments.where(content_type: 'discussed_in_class').count
+    assert_not_empty duplicate_receipt_ids
+
     put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: false }
     assert_equal 200, last_response.status
     task.reload
     assert_not task.has_discussed_in_class_comment?, 'discussed:false should unmark the task, not add another comment'
     assert_equal 0, task.comments.where(content_type: 'discussed_in_class').count
+    assert_empty CommentsReadReceipts.where(id: duplicate_receipt_ids), 'destroy callbacks must remove marker read receipts'
 
     unit.destroy
   end
@@ -947,7 +967,7 @@ class TasksApiTest < ActiveSupport::TestCase
   # A student asking for a staff status is refused inside trigger_transition, which
   # returns nil and adds no error. That used to reach the 200 at the end of the
   # handler, so the client showed the change as accepted.
-  def test_refused_transition_to_a_staff_status_returns_403
+  def test_refused_transition_to_a_staff_status_returns_forbidden
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = ordinary_task_definition_for(unit)
     project = unit.active_projects.first
@@ -967,7 +987,7 @@ class TasksApiTest < ActiveSupport::TestCase
 
   # An unrecognised trigger string falls through the case statement and is refused
   # the same silent way, whoever sends it.
-  def test_unrecognised_trigger_returns_403
+  def test_unrecognised_trigger_returns_forbidden
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = ordinary_task_definition_for(unit)
     project = unit.active_projects.first
@@ -987,7 +1007,7 @@ class TasksApiTest < ActiveSupport::TestCase
 
   # The regression check. This change makes a permissive endpoint strict, so the
   # failure mode is that ordinary marking stops working.
-  def test_allowed_transitions_still_return_200
+  def test_allowed_transitions_still_return_success
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = ordinary_task_definition_for(unit)
     project = unit.active_projects.first

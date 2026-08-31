@@ -1218,10 +1218,10 @@ class Task < ApplicationRecord
   def add_discussed_comment(current_user)
     comment = 'Discussed in class'
 
-    lc = comments.last
-
-    # don't add if duplicate comment
-    return if lc && lc.user == current_user && lc.content_type == 'discussed_in_class' && lc.comment == comment
+    # This comment represents a boolean task state, so an intervening feedback
+    # comment must not allow a second marker to be created.
+    existing = comments.where(content_type: 'discussed_in_class').last
+    return existing if existing
 
     discussed = TaskDiscussedComment.create
     discussed.task = self
@@ -1232,11 +1232,12 @@ class Task < ApplicationRecord
     discussed
   end
 
-  # Undo a "discussed in class" mark by removing the most recent discussed
-  # comment on this task. Destroying it also clears its read receipts and any
-  # associated files through the TaskComment dependent-destroy chain.
+  # Undo a "discussed in class" mark by removing every marker on this task.
+  # Legacy data can contain duplicates separated by ordinary feedback comments.
+  # destroy_all is intentional so TaskComment callbacks and dependent read
+  # receipt destruction still run for every marker.
   def remove_discussed_comment
-    comments.where(content_type: 'discussed_in_class').order(:created_at, :id).last&.destroy
+    comments.where(content_type: 'discussed_in_class').destroy_all
   end
 
   def add_checked_in_comment(current_user)
