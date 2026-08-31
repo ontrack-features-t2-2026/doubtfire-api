@@ -173,9 +173,6 @@ module UnitSimilarityModule
     moss = MossRuby.new(moss_key)
 
     task_definitions.where(plagiarism_updated: true).find_each do |td|
-      td.plagiarism_updated = false
-      td.save
-
       # Get results
       url = td.plagiarism_report_url
       logger.debug "Processing MOSS results #{url}"
@@ -184,13 +181,18 @@ module UnitSimilarityModule
 
       results = moss.extract_results(url, warn_pct, ->(line) { puts line })
 
+      # Track whether every match linked cleanly. A match that fails is logged and
+      # skipped so the rest still process, but the definition is left flagged for
+      # the next scan instead of being silently marked done.
+      completed = true
+
       # Use results
       results.each do |match|
         task_id1 = %r{.*/(\d+)/$}.match(match[0][:filename])[1]
         task_id2 = %r{.*/(\d+)/$}.match(match[1][:filename])[1]
 
-        t1 = Task.find(task_id1)
-        t2 = Task.find(task_id2)
+        t1 = Task.find_by(id: task_id1)
+        t2 = Task.find_by(id: task_id2)
 
         if t1.nil? || t2.nil?
           logger.error "Could not find tasks #{task_id1} or #{task_id2} for plagiarism stats check!"
@@ -210,6 +212,22 @@ module UnitSimilarityModule
         else # just link the individuals...
           create_moss_plagiarism_link(t1, t2, match, warn_pct)
         end
+      rescue StandardError => e
+        # One bad match must not abort the rest of the import for this definition,
+        # but the definition must be retried, so remember that it did not complete.
+        completed = false
+        logger.error "Failed to process MOSS match for task definition #{td.id}: #{e.message}"
+        next
+      end
+
+      # Clear the flag only after a clean pass, and only while the report we just
+      # processed is still the current one. A concurrent scan that produced a newer
+      # report writes a new url and re-flags, so matching on url leaves that newer
+      # flag intact, and a partial failure is retried rather than dropped.
+      if completed
+        # rubocop:disable Rails/SkipsModelValidations
+        TaskDefinition.where(id: td.id, plagiarism_report_url: url).update_all(plagiarism_updated: false)
+        # rubocop:enable Rails/SkipsModelValidations
       end
     end
 
@@ -374,8 +392,8 @@ module UnitSimilarityModule
             task2_id = entry.name.split('/')[2].to_i
           end
         end
-        first_submission = Task.find(task1_id) if task1_id
-        second_submission = Task.find(task2_id) if task2_id
+        first_submission = Task.find_by(id: task1_id) if task1_id
+        second_submission = Task.find_by(id: task2_id) if task2_id
 
         if first_submission.nil? || second_submission.nil?
           logger.error "Could not find tasks #{comparison[:first_submission]} or #{comparison[:second_submission]} for plagiarism stats check!"
