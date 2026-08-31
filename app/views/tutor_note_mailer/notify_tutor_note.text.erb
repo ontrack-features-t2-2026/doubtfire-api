@@ -20,7 +20,7 @@ Task: <%= @task.task_definition.abbreviation %> <%= @task.task_definition.name %
 Student: <%= @task.project.user.name %>
 
 You can view this task here:
-<%= @doubtfire_host%>/units/<%=@task.project.unit_id%>/tasks/inbox/<%=@task.project.user.id%>/<%= ERB::Util.url_encode(@task.task_definition.abbreviation) %>
+<%= @doubtfire_host%>/units/<%=@task.project.unit_id%>/tasks/definition/<%=@task.project.user.id%>/<%= ERB::Util.url_encode(@task.task_definition.abbreviation) %>
 
 <% end %>
 

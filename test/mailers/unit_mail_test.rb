@@ -91,7 +91,8 @@ class UnitMailTest < ActionMailer::TestCase
 
     mail = PortfolioEvidenceMailer.task_pdf_failed(project, [task])
 
-    link = "projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
+    host = Doubtfire::Application.config.institution[:host]
+    link = "#{host}/projects/#{project.id}/dashboard/Portfolio%20Reflection"
     assert mail.html_part.body.include?(link), mail.html_part.body.to_s
     assert mail.text_part.body.include?("projects/#{project.id}/dashboard/Portfolio%20Reflection"), mail.text_part.body.to_s
     unit.destroy!
@@ -109,7 +110,8 @@ class UnitMailTest < ActionMailer::TestCase
 
     mail = PortfolioEvidenceMailer.task_pdf_ready_message(project, [task])
 
-    link = "projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
+    host = Doubtfire::Application.config.institution[:host]
+    link = "#{host}/projects/#{project.id}/dashboard/Portfolio%20Reflection"
     assert mail.html_part.body.include?(link), mail.html_part.body.to_s
     assert mail.text_part.body.include?("projects/#{project.id}/dashboard/Portfolio%20Reflection"), mail.text_part.body.to_s
     unit.destroy!
@@ -127,7 +129,8 @@ class UnitMailTest < ActionMailer::TestCase
 
     mail = PortfolioEvidenceMailer.task_feedback_ready(project, [task])
 
-    link = "projects/#{project.id}/dashboard/#{task.task_definition.abbreviation}"
+    host = Doubtfire::Application.config.institution[:host]
+    link = "#{host}/projects/#{project.id}/dashboard/Portfolio%20Reflection"
     assert mail.html_part.body.include?(link), mail.html_part.body.to_s
     assert mail.text_part.body.include?("projects/#{project.id}/dashboard/Portfolio%20Reflection"), mail.text_part.body.to_s
     unit.destroy!
