@@ -80,7 +80,7 @@ class AuthenticationApi < Grape::API
       token = user.generate_authentication_token!
 
       # Return user details
-      present :user, user, with: Entities::UserEntity
+      present :user, user, with: Entities::UserEntity, theme_owner_id: user.id
       present :auth_token, token.authentication_token
       present :auth_token_expiry, token.auth_token_expiry
       set_refresh_cookie_in_response(remember)
@@ -381,7 +381,7 @@ class AuthenticationApi < Grape::API
         logger.info "Login #{params[:username]} from #{request.ip}"
 
         # Respond user details with new auth token
-        present :user, user, with: Entities::UserEntity
+        present :user, user, with: Entities::UserEntity, theme_owner_id: user.id
         present :auth_token, token.authentication_token
         present :auth_token_expiry, token.auth_token_expiry
         set_refresh_cookie_in_response(params[:remember])
@@ -508,7 +508,7 @@ class AuthenticationApi < Grape::API
       end
       # Return user details
       token = current_user.generate_authentication_token!(token_type: :general, force_new: false)
-      present :user, current_user, with: Entities::UserEntity
+      present :user, current_user, with: Entities::UserEntity, theme_owner_id: current_user.id
       present :auth_token, token.authentication_token
       present :auth_token_expiry, token.auth_token_expiry
     else

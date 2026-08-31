@@ -25,7 +25,9 @@ class UsersApi < Grape::API
       error!({ error: "Cannot find User with id #{params[:id]}" }, 403)
     end
 
-    present user, with: Entities::UserEntity
+    present user,
+            with: Entities::UserEntity,
+            theme_owner_id: current_user.id
   end
 
   desc 'Get convenors'
@@ -102,6 +104,11 @@ class UsersApi < Grape::API
                                                       :theme_preference
                                                     )
 
+      # Theme preference belongs only to the account itself. Keep authorised
+      # staff profile updates backward-compatible by ignoring this one private
+      # field instead of rejecting the rest of an otherwise valid update.
+      user_parameters.delete(:theme_preference) unless change_self
+
       user.role = Role.student if user.role.nil?
       old_role = user.role
 
@@ -151,7 +158,9 @@ class UsersApi < Grape::API
 
       # Update changes made to user
       user.update!(user_parameters)
-      present user, with: Entities::UserEntity
+      present user,
+              with: Entities::UserEntity,
+              theme_owner_id: current_user.id
     else
       error!({ error: "Cannot modify user with id=#{params[:id]} - not authorised" }, 403)
     end
