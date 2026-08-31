@@ -93,7 +93,10 @@ class TaskCommentsApi < Grape::API
     if project.has_task_for_task_definition? task_definition
       task = project.task_for_task_definition(task_definition)
 
-      comment = task.comments.find(params[:id])
+      # all_comments spans the group's shared submission, so a group member can open
+      # an attachment posted by another member. It stays bounded by this caller's own
+      # project via the :get check above, matching the delete and update endpoints.
+      comment = task.all_comments.find(params[:id])
 
       error!({ error: 'No attachment for this comment.' }, 404) unless %w(audio image pdf).include? comment.content_type
 
