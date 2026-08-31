@@ -1995,4 +1995,65 @@ class TaskTest < ActiveSupport::TestCase
 
     unit.destroy!
   end
+
+  # A failed archive write must not destroy the previously accepted submission.
+  # compress_new_to_done used to delete the done zip before rebuilding it, so a
+  # raise part way through the build left the task with no readable submission at
+  # all. The stub below stands in for any failure while writing the new archive.
+  def test_compress_new_to_done_keeps_the_previous_zip_when_the_write_fails
+    unit = Unit.first
+    td = TaskDefinition.new(
+      unit_id: unit.id,
+      tutorial_stream: unit.tutorial_streams.first,
+      name: 'Atomic done zip',
+      description: 'atomic done zip',
+      weighting: 4,
+      target_grade: 0,
+      start_date: unit.start_date + 1.week,
+      target_date: unit.start_date + 2.weeks,
+      abbreviation: 'TaskAtomicDoneZip',
+      restrict_status_updates: false,
+      upload_requirements: [{ 'key' => 'file0', 'name' => 'A Document', 'type' => 'document' }],
+      plagiarism_warn_pct: 0.8,
+      is_graded: false,
+      max_quality_pts: 0
+    )
+    td.save!
+
+    task = unit.active_projects.first.task_for_task_definition(td)
+    done_zip = task.zip_file_path_for_done_task
+
+    place_one_document = lambda do
+      new_dir = task.student_work_dir(:new, true)
+      FileUtils.cp(test_file_path('submissions/1.2P.pdf'), "#{new_dir}000-document.pdf")
+    end
+
+    # First, a real submission so there is a previously accepted zip on disk.
+    place_one_document.call
+    assert task.compress_new_to_done, 'the first compress should succeed'
+    assert File.exist?(done_zip), 'the done zip should exist after a successful compress'
+    original_bytes = File.binread(done_zip)
+    assert(Zip::File.open(done_zip) { |z| z.entries.any? }, 'the done zip should be a readable archive')
+    assert_empty Dir.glob("#{done_zip}.tmp-*"), 'a successful compress must not leave a temporary archive'
+
+    # Now a second submission whose archive write fails part way through. The stub
+    # creates the temporary archive first, then raises, so it also exercises the
+    # cleanup of the half-written temp file.
+    place_one_document.call
+    partial_write = lambda do |path, *_rest|
+      File.binwrite(path, 'partial archive bytes')
+      raise 'simulated failure while writing the new archive'
+    end
+    Zip::File.stub(:open, partial_write) do
+      assert_raises(RuntimeError) { task.compress_new_to_done }
+    end
+
+    # The previously accepted submission must be untouched, not deleted or corrupted.
+    assert File.exist?(done_zip), 'the previous done zip must survive a failed write'
+    assert_equal original_bytes, File.binread(done_zip), 'the previous done zip must be byte-for-byte unchanged'
+    assert(Zip::File.open(done_zip) { |z| z.entries.any? }, 'the previous done zip must still be readable')
+    assert_empty Dir.glob("#{done_zip}.tmp-*"), 'the failed write must not leak a temporary archive'
+
+    td.destroy
+  end
 end
