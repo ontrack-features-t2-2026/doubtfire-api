@@ -570,6 +570,97 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal 'Attachment is empty.', last_response_body['error']
   end
 
+  # Builds a group task definition for the given group_set.
+  def make_group_task_definition(unit, group_set)
+    td = TaskDefinition.new(unit_id: unit.id,
+                            tutorial_stream: unit.tutorial_streams.first,
+                            name: "pr_file_01_group_task_#{group_set.id}",
+                            description: 'group attachment access',
+                            weighting: 4,
+                            target_grade: 0,
+                            start_date: Time.zone.now - 1.week,
+                            target_date: Time.zone.now - 1.day,
+                            due_date: Time.zone.now + 1.week,
+                            abbreviation: "PRFILE01_#{group_set.id}",
+                            restrict_status_updates: false,
+                            upload_requirements: [ { 'key' => 'file0', 'name' => 'Doc', 'type' => 'document' } ],
+                            plagiarism_warn_pct: 0.8,
+                            is_graded: false,
+                            max_quality_pts: 0,
+                            group_set: group_set)
+    td.save!
+    td
+  end
+
+  # Builds a single group of `members` and returns [unit, group, task_definition].
+  def build_group_task(members: 2)
+    unit = FactoryBot.create :unit
+    group_set = GroupSet.create!(name: 'pr_file_01_group_set', unit: unit)
+    group = Group.create!(group_set: group_set, name: 'pr_file_01_group', tutorial: unit.tutorials.first)
+    members.times { |i| group.add_member(unit.active_projects[i]) }
+    group.save!
+
+    [unit, group, make_group_task_definition(unit, group_set)]
+  end
+
+  # A group member posts an image attachment. Another member of the same group must be
+  # able to open it. The attachment is on the author's task instance, but the whole group
+  # shares one group_submission, so the fetch has to look through all_comments, not the
+  # caller's own task's comments (which was returning ActiveRecord::RecordNotFound -> 404).
+  def test_group_member_can_open_another_members_attachment
+    _unit, group, td = build_group_task
+
+    author = group.projects.first
+    reader = group.projects.second
+
+    add_auth_header_for(user: author.student)
+    post "/api/projects/#{author.id}/task_def_id/#{td.id}/comments",
+         { attachment: upload_file('test_files/submissions/Deakin_Logo.jpeg', 'image/jpeg') }
+    assert_equal 201, last_response.status, last_response.body
+    comment_id = last_response_body['id']
+
+    # The other member opens the attachment through their own project.
+    add_auth_header_for(user: reader.student)
+    get "/api/projects/#{reader.id}/task_def_id/#{td.id}/comments/#{comment_id}"
+    assert_equal 200, last_response.status, last_response.body
+
+    TaskComment.find(comment_id).destroy
+  end
+
+  # The widened lookup must stay bounded to the caller's own group. A member of a
+  # different group in the same group_set, querying their own project (so the :get
+  # check passes), still cannot reach the first group's comment: all_comments is scoped
+  # by that caller's own group_submission, so the id is not found and the API returns 404.
+  def test_attachment_lookup_stays_within_callers_group
+    unit = FactoryBot.create :unit
+    group_set = GroupSet.create!(name: 'pr_file_01_two_groups', unit: unit)
+    group_a = Group.create!(group_set: group_set, name: 'pr_file_01_group_a', tutorial: unit.tutorials.first)
+    group_b = Group.create!(group_set: group_set, name: 'pr_file_01_group_b', tutorial: unit.tutorials.first)
+    group_a.add_member(unit.active_projects[0])
+    group_b.add_member(unit.active_projects[1])
+    td = make_group_task_definition(unit, group_set)
+
+    author = group_a.projects.first
+    outsider = group_b.projects.first
+
+    add_auth_header_for(user: author.student)
+    post "/api/projects/#{author.id}/task_def_id/#{td.id}/comments",
+         { attachment: upload_file('test_files/submissions/Deakin_Logo.jpeg', 'image/jpeg') }
+    assert_equal 201, last_response.status, last_response.body
+    comment_id = last_response_body['id']
+
+    # The other group's member posts on their own group task, so their task and
+    # group_submission exist, then tries to open group A's attachment.
+    add_auth_header_for(user: outsider.student)
+    post_json "/api/projects/#{outsider.id}/task_def_id/#{td.id}/comments", comment: 'group b note'
+    assert_equal 201, last_response.status, last_response.body
+
+    get "/api/projects/#{outsider.id}/task_def_id/#{td.id}/comments/#{comment_id}"
+    assert_equal 404, last_response.status, last_response.body
+
+    TaskComment.find(comment_id).destroy
+  end
+
   def test_read_receipts_for_task_status_comments
     project = Project.first
     user = project.student
