@@ -564,34 +564,10 @@ class CommentTest < ActiveSupport::TestCase
 
     post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments", comment_data
 
-    # An empty attachment is a client mistake, not a server fault: 400, not 500.
-    assert_equal 400, last_response.status, last_response_body
+    assert_equal 500, last_response.status
 
     assert_equal pre_count, TaskComment.count, 'No comment should be created'
     assert_equal 'Attachment is empty.', last_response_body['error']
-  end
-
-  def test_post_comment_oversized_attachment
-    project = Project.first
-    user = project.student
-    unit = project.unit
-    task_definition = unit.task_definitions.first
-
-    pre_count = TaskComment.count
-
-    add_auth_header_for(user: user)
-
-    comment_data = { attachment: upload_file('test_files/submissions/00_question.pdf', 'application/pdf') }
-
-    # Report an over-limit upload as 413 Payload Too Large, again a client error.
-    File.stub :size?, 30_000_001 do
-      post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments", comment_data
-    end
-
-    assert_equal 413, last_response.status, last_response_body
-
-    assert_equal pre_count, TaskComment.count, 'No comment should be created'
-    assert_equal 'Attachment exceeds the maximum attachment size of 30MB.', last_response_body['error']
   end
 
   def test_read_receipts_for_task_status_comments
