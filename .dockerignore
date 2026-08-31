@@ -28,3 +28,5 @@ config/credentials.yml.enc
 **/*.pfx
 **/*.jks
 **/*.keystore
+test
+test_files
