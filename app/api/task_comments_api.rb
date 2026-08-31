@@ -268,7 +268,9 @@ class TaskCommentsApi < Grape::API
 
     task = project.task_for_task_definition(task_definition)
 
-    task_comment = task.comments.find(params[:id])
+    # Group task feedback is shared across every task in the same group
+    # submission, matching the collection returned by the comments endpoint.
+    task_comment = task.all_comments.find(params[:id])
     task_comment.mark_as_unread(current_user)
 
     SessionTracker.record_assessment_activity(
