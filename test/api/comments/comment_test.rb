@@ -564,7 +564,7 @@ class CommentTest < ActiveSupport::TestCase
 
     post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments", comment_data
 
-    assert_equal 500, last_response.status
+    assert_equal 422, last_response.status
 
     assert_equal pre_count, TaskComment.count, 'No comment should be created'
     assert_equal 'Attachment is empty.', last_response_body['error']

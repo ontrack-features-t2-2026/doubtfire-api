@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -18,6 +18,27 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
     t.datetime "updated_at", null: false
     t.index ["abbreviation"], name: "index_activity_types_on_abbreviation", unique: true
     t.index ["name"], name: "index_activity_types_on_name", unique: true
+  end
+
+  create_table "additional_notification_email_audits", charset: "utf8mb4", collation: "utf8mb4_uca1400_ai_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "event", limit: 64, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id", "event", "created_at"], name: "idx_additional_email_audits_user_event_time"
+    t.index ["user_id"], name: "index_additional_notification_email_audits_on_user_id"
+  end
+
+  create_table "additional_notification_emails", charset: "utf8mb4", collation: "utf8mb4_uca1400_ai_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "email", limit: 254, null: false
+    t.integer "verification_version", default: 0, null: false
+    t.datetime "verification_sent_at"
+    t.datetime "verification_expires_at"
+    t.datetime "verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_additional_notification_emails_on_user_id", unique: true
   end
 
   create_table "auth_tokens", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -599,6 +620,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
     t.bigint "reply_to_id"
     t.bigint "commentable_id"
     t.string "commentable_type"
+    t.string "attachment_original_filename"
+    t.string "attachment_content_type"
+    t.bigint "attachment_byte_size"
+    t.string "client_request_id"
     t.index ["assessor_id"], name: "index_task_comments_on_assessor_id"
     t.index ["commentable_type", "commentable_id"], name: "index_task_comments_on_commentable_type_and_commentable_id"
     t.index ["discussion_comment_id"], name: "index_task_comments_on_discussion_comment_id"
@@ -606,6 +631,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
     t.index ["reply_to_id"], name: "index_task_comments_on_reply_to_id"
     t.index ["task_id"], name: "index_task_comments_on_task_id"
     t.index ["task_status_id"], name: "index_task_comments_on_task_status_id"
+    t.index ["user_id", "task_id", "client_request_id"], name: "idx_task_comments_user_task_client_request", unique: true
     t.index ["user_id"], name: "index_task_comments_on_user_id"
   end
 
@@ -761,6 +787,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
     t.datetime "target_start_date"
     t.datetime "target_due_date"
     t.datetime "last_tutor_feedback_at"
+    t.string "submission_processing_state"
+    t.datetime "submission_processing_started_at"
+    t.datetime "submission_processing_finished_at"
+    t.string "submission_processing_error_code"
+    t.integer "submission_processing_attempts", default: 0, null: false
     t.index ["group_submission_id"], name: "index_tasks_on_group_submission_id"
     t.index ["project_id", "task_definition_id"], name: "tasks_uniq_proj_task_def", unique: true
     t.index ["project_id"], name: "index_tasks_on_project_id"
@@ -1046,6 +1077,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
     t.index ["user_id"], name: "index_webcals_on_user_id", unique: true
   end
 
+  add_foreign_key "additional_notification_email_audits", "users"
+  add_foreign_key "additional_notification_emails", "users"
   add_foreign_key "chip_usages", "feedback_chips"
   add_foreign_key "chip_usages", "users", column: "tutor_id"
   add_foreign_key "consumed_lti_tokens", "users"

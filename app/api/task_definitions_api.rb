@@ -654,14 +654,14 @@ class TaskDefinitionsApi < Grape::API
 
     if task_def.has_task_sheet?
       path = task_def.task_sheet
-      filename = "#{task_def.unit.code}-#{task_def.abbreviation}.pdf"
+      filename = task_def.task_sheet_filename
     else
       path = Rails.root.join('public/resources/FileNotFound.pdf')
       filename = 'FileNotFound.pdf'
     end
 
     if params[:as_attachment]
-      header['Content-Disposition'] = "attachment; filename=#{filename}"
+      header['Content-Disposition'] = %(attachment; filename="#{filename}")
     end
 
     content_type 'application/pdf'
