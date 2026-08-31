@@ -161,6 +161,8 @@ module UnitSimilarityModule
       end
     ensure
       FileUtils.chdir(pwd) if FileUtils.pwd != pwd
+      logger.info "Deleting JPlag work directory for unit #{id}: #{root_work_dir}"
+      FileUtils.rm_rf(root_work_dir)
     end
 
     self
@@ -350,14 +352,15 @@ module UnitSimilarityModule
     ].join(" ")
 
     logger.debug "Executing command: #{docker_command}"
-    system(docker_command)
+    system(docker_command) || raise('Failed to run JPlag similarity check')
 
-    # Delete the extracted code files from tmp
-    tmp_dir = Rails.root.join("tmp/jplag")
-    logger.info "Deleting files in: #{tmp_dir}"
-    logger.info "Files to delete: #{Dir.glob("#{tmp_dir}/*")}"
-    FileUtils.rm_rf(Dir.glob("#{tmp_dir}/*"))
     self
+  ensure
+    # Each unit has its own root work directory. Only remove this task
+    # definition's extracted files here: another unit may be running in
+    # parallel under tmp/jplag and its workspace must remain untouched.
+    logger.info "Deleting JPlag task work directory: #{tasks_dir}"
+    FileUtils.rm_rf(tasks_dir)
   end
 
   def process_jplag_plagiarism_report(path, warn_pct, is_group)
