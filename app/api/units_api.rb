@@ -683,6 +683,9 @@ class UnitsApi < Grape::API
     end
 
     job_id = CheckUnitSimilarityJob.perform_async(unit.id, true, params[:task_definition_id])
+    if job_id.nil?
+      error!({ error: 'A similarity scan is already queued or running for this unit.' }, 409)
+    end
     job = setup_job(job_id)
     present job, with: Entities::SidekiqJobEntity
   end
