@@ -264,7 +264,11 @@ namespace :maintenance do
     end
 
     puts "Removing old portfolio PDFs"
-    `find #{FileHelper.root_portfolio_dir} -name "*pdf.old" -exec rm {} \;`
+    Dir.glob(File.join(FileHelper.root_portfolio_dir, '**', '*pdf.old')).each do |old_pdf|
+      FileUtils.rm(old_pdf)
+    rescue StandardError => e
+      puts "Could not remove #{old_pdf}: #{e.message}"
+    end
   end
 end
 # rubocop:enable Metrics/BlockLength

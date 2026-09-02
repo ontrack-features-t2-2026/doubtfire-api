@@ -117,7 +117,8 @@ class ExecuteCommunicationSetJob
         project_id: project.id,
         username: project.user&.username,
         previous_target_grade: previous_target_grade,
-        target_grade: action.target_grade
+        target_grade: action.target_grade,
+        executed_at: Time.current
       }
     end
   end
@@ -167,7 +168,8 @@ class ExecuteCommunicationSetJob
         status: 'sent',
         project_id: project.id,
         username: recipient.username,
-        recipient_email: recipient.email
+        recipient_email: recipient.email,
+        executed_at: Time.current
       }
     end
   end
@@ -209,7 +211,8 @@ class ExecuteCommunicationSetJob
           project_id: project.id,
           username: project.user&.username,
           recipient_email: recipient.email,
-          recipient_username: recipient.username
+          recipient_username: recipient.username,
+          executed_at: Time.current
         }
       end
     end
@@ -277,7 +280,8 @@ class ExecuteCommunicationSetJob
         username: project.user&.username,
         task_definition_id: task_definition.id,
         task_definition_name: task_definition.name,
-        comment_id: comment.id
+        comment_id: comment.id,
+        executed_at: Time.current
       }
     end
   end
@@ -465,7 +469,7 @@ class ExecuteCommunicationSetJob
           # target_grade_name(result[:previous_target_grade]),
           # target_grade_name(result[:target_grade]),
           result[:recipient_email],
-          Time.current.iso8601
+          result[:executed_at]&.iso8601
         ]
       end
     end

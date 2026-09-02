@@ -103,6 +103,10 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
   end
 
   def test_email_uses_the_event_template_without_assessment_content
+    @task_definition.update!(name: 'Confidential Task Sentinel')
+    @unit.update!(name: 'Confidential Unit Sentinel')
+    @tutor.update!(first_name: 'Confidential Tutor', last_name: 'Sentinel')
+
     @task.send(:notify_discussion_request_recipient, notification_target)
     NotificationEmailJob.drain
 
