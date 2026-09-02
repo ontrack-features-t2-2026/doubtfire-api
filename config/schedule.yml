@@ -24,6 +24,14 @@ aggregate_task_completion_stats:
   cron: "every day at 11:55pm"
   class: "AggregateTaskCompletionStatsJob"
 
+# Nightly plagiarism scan. This is the run that used to live only in the
+# container crontab, moved here so it is visible next to the other recurring
+# jobs. The same scan can now be triggered on demand from the unit, which is
+# why it belongs in Sidekiq rather than cron.
+check_unit_similarity:
+  cron: "every day at 5"
+  class: "CheckUnitSimilarityJob"
+
 poll_communication_set_schedules:
   cron: "every 5 minutes"
   class: "PollCommunicationSetSchedulesJob"

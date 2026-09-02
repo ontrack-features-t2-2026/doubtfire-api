@@ -79,6 +79,7 @@ class Unit < ApplicationRecord
       :upload_grades_csv,
       :get_staff_notes,
       :capture_task_completion_snapshot,
+      :run_similarity_scan,
       :mannage_communications,
       :delete_engagement
     ]
@@ -108,6 +109,7 @@ class Unit < ApplicationRecord
       :get_marking_sessions,
       :get_staff_notes,
       :get_tutor_times,
+      :run_similarity_scan,
       :mannage_communications,
     ]
 
