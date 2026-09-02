@@ -32,6 +32,9 @@ class AuthTest < ActiveSupport::TestCase
 
   # Test POST for new authentication token
   def test_auth_post
+    expected_auth = User.first
+    expected_auth.update!(theme_preference: 'dark')
+
     data_to_post = {
       username: 'aadmin',
       password: 'password',
@@ -40,7 +43,6 @@ class AuthTest < ActiveSupport::TestCase
     # Get response back for logging in with username 'aadmin' password 'password'
     post_json '/api/auth.json', data_to_post
     actual_auth = last_response_body
-    expected_auth = User.first
 
     # Check that response contains a user.
     assert actual_auth.key?('user'), 'Expect response to have a user'
@@ -50,10 +52,13 @@ class AuthTest < ActiveSupport::TestCase
 
     # Check that the returned user has the required details.
     # These match the model object... so can compare in loops
-    user_keys = %w[id email first_name last_name username nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup]
+    user_keys = %w[id email first_name last_name username nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup theme_preference]
 
     # Check the returned user matches the expected database value
     assert_json_matches_model(expected_auth, response_user_data, user_keys)
+    assert_in_delta expected_auth.theme_preference_updated_at.to_f,
+                    Time.iso8601(response_user_data['theme_preference_updated_at']).to_f,
+                    0.001
 
     # Check other values returned
     assert_equal expected_auth.role.name, response_user_data['system_role'], 'Roles match'
@@ -242,6 +247,7 @@ class AuthTest < ActiveSupport::TestCase
 
   def test_refresh_token
     user = FactoryBot.create(:user)
+    user.update!(theme_preference: 'dark')
     token = user.generate_authentication_token!(token_type: :refresh_token)
 
     count = user.auth_tokens.count
@@ -252,6 +258,10 @@ class AuthTest < ActiveSupport::TestCase
     post '/api/auth/access-token', { remember: true }
 
     assert_equal 201, last_response.status
+    assert_equal 'dark', last_response_body.dig('user', 'theme_preference')
+    assert_in_delta user.theme_preference_updated_at.to_f,
+                    Time.iso8601(last_response_body.dig('user', 'theme_preference_updated_at')).to_f,
+                    0.001
     assert_equal count + 1, user.auth_tokens.count
 
     new_token = user.auth_tokens.last

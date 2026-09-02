@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -1017,6 +1017,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_27_013000) do
     t.datetime "tii_eula_date"
     t.boolean "tii_eula_version_confirmed", default: false, null: false
     t.boolean "display_peer_progress", default: true, null: false
+    t.string "theme_preference"
+    t.datetime "theme_preference_updated_at"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["login_id"], name: "index_users_on_login_id", unique: true
     t.index ["role_id"], name: "index_users_on_role_id"

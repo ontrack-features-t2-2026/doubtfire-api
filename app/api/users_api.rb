@@ -25,7 +25,9 @@ class UsersApi < Grape::API
       error!({ error: "Cannot find User with id #{params[:id]}" }, 403)
     end
 
-    present user, with: Entities::UserEntity
+    present user,
+            with: Entities::UserEntity,
+            theme_owner_id: current_user.id
   end
 
   desc 'Get convenors'
@@ -62,6 +64,7 @@ class UsersApi < Grape::API
       optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
       optional :has_run_first_time_setup, type: Boolean, desc: 'Whether or not user has run first-time setup'
+      optional :theme_preference, type: String, desc: 'Theme preference for the user [light, dark, system]; null means never chosen'
     end
   end
   put '/users/:id' do
@@ -97,8 +100,14 @@ class UsersApi < Grape::API
                                                       :receive_feedback_notifications,
                                                       :display_peer_progress,
                                                       :opt_in_to_research,
-                                                      :has_run_first_time_setup
+                                                      :has_run_first_time_setup,
+                                                      :theme_preference
                                                     )
+
+      # Theme preference belongs only to the account itself. Keep authorised
+      # staff profile updates backward-compatible by ignoring this one private
+      # field instead of rejecting the rest of an otherwise valid update.
+      user_parameters.delete(:theme_preference) unless change_self
 
       user.role = Role.student if user.role.nil?
       old_role = user.role
@@ -140,9 +149,18 @@ class UsersApi < Grape::API
         user_parameters[:role] = new_role
       end
 
+      # An explicit preference is a synchronization write, even when its value
+      # matches the stored value. Clients use this timestamp to reconcile a
+      # newer offline choice with the account copy.
+      if user_parameters.key?(:theme_preference)
+        user.theme_preference_updated_at = user_parameters[:theme_preference].nil? ? nil : Time.current
+      end
+
       # Update changes made to user
       user.update!(user_parameters)
-      present user, with: Entities::UserEntity
+      present user,
+              with: Entities::UserEntity,
+              theme_owner_id: current_user.id
     else
       error!({ error: "Cannot modify user with id=#{params[:id]} - not authorised" }, 403)
     end

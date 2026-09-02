@@ -14,6 +14,8 @@ class UnitsTest < ActiveSupport::TestCase
       keys = %w[id student_id email first_name last_name username nickname receive_task_notifications
                 receive_portfolio_notifications receive_feedback_notifications display_peer_progress
                 opt_in_to_research has_run_first_time_setup]
+      assert_not response_data.key?('theme_preference')
+      assert_not response_data.key?('theme_preference_updated_at')
     end
 
     assert_json_matches_model(user_model, response_data, keys)
@@ -59,6 +61,8 @@ class UnitsTest < ActiveSupport::TestCase
       user = User.find(data['id'])
       # Match json with object
       assert_json_matches_model(user, data, response_keys)
+      assert_not data.key?('theme_preference')
+      assert_not data.key?('theme_preference_updated_at')
     end
   end
 
@@ -79,6 +83,8 @@ class UnitsTest < ActiveSupport::TestCase
     # Check the returned details match as expected
     response_keys = %w(first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup)
     assert_json_matches_model(expected_user, returned_user, response_keys)
+    assert_not returned_user.key?('theme_preference')
+    assert_not returned_user.key?('theme_preference_updated_at')
   end
 
   def test_get_convenors
@@ -88,6 +94,10 @@ class UnitsTest < ActiveSupport::TestCase
 
     get '/api/users/convenors'
     assert_equal 200, last_response.status
+    last_response_body.each do |user|
+      assert_not user.key?('theme_preference')
+      assert_not user.key?('theme_preference_updated_at')
+    end
   end
 
   def test_get_tutors
@@ -97,6 +107,10 @@ class UnitsTest < ActiveSupport::TestCase
 
     get '/api/users/tutors'
     assert_equal 200, last_response.status
+    last_response_body.each do |user|
+      assert_not user.key?('theme_preference')
+      assert_not user.key?('theme_preference_updated_at')
+    end
   end
 
   def test_get_no_token
@@ -356,6 +370,118 @@ class UnitsTest < ActiveSupport::TestCase
     assert_equal 200, last_response.status
     assert_equal true, last_response_body['display_peer_progress']
     assert user.reload.display_peer_progress?
+  end
+
+  def test_theme_preference_is_nullable_until_the_user_chooses
+    user = User.first
+    user.update!(theme_preference: nil)
+    add_auth_header_for(user: user)
+
+    get "/api/users/#{user.id}"
+
+    assert_equal 200, last_response.status
+    assert last_response_body.key?('theme_preference')
+    assert last_response_body.key?('theme_preference_updated_at')
+    assert_nil last_response_body['theme_preference']
+    assert_nil last_response_body['theme_preference_updated_at']
+  end
+
+  def test_put_update_theme_preference_stamps_and_serializes_its_timestamp
+    user = User.first
+    user.update!(theme_preference: nil)
+    add_auth_header_for(user: user)
+    chosen_at = Time.zone.parse('2026-08-30 10:00:00 UTC')
+
+    travel_to chosen_at do
+      put_json "/api/users/#{user.id}", {
+        user: { theme_preference: 'dark' }
+      }
+    end
+
+    assert_equal 200, last_response.status
+    assert_equal 'dark', last_response_body['theme_preference']
+    assert_equal chosen_at, Time.iso8601(last_response_body['theme_preference_updated_at'])
+    assert_equal chosen_at, user.reload.theme_preference_updated_at
+  end
+
+  def test_put_same_theme_preference_refreshes_the_sync_timestamp
+    user = User.first
+    first_choice_at = Time.zone.parse('2026-08-30 10:00:00 UTC')
+    travel_to first_choice_at do
+      user.update!(theme_preference: 'dark')
+    end
+    add_auth_header_for(user: user)
+
+    synchronization_at = first_choice_at + 2.hours
+    travel_to synchronization_at do
+      put_json "/api/users/#{user.id}", {
+        user: { theme_preference: 'dark' }
+      }
+    end
+
+    assert_equal 200, last_response.status
+    assert_equal 'dark', last_response_body['theme_preference']
+    assert_equal synchronization_at, Time.iso8601(last_response_body['theme_preference_updated_at'])
+    assert_equal synchronization_at, user.reload.theme_preference_updated_at
+  end
+
+  def test_put_clear_theme_preference_restores_the_never_chosen_state
+    user = User.first
+    user.update!(theme_preference: 'dark')
+    add_auth_header_for(user: user)
+
+    put_json "/api/users/#{user.id}", {
+      user: { theme_preference: nil }
+    }
+
+    assert_equal 200, last_response.status
+    assert last_response_body.key?('theme_preference')
+    assert last_response_body.key?('theme_preference_updated_at')
+    assert_nil last_response_body['theme_preference']
+    assert_nil last_response_body['theme_preference_updated_at']
+    assert_nil user.reload.theme_preference
+    assert_nil user.theme_preference_updated_at
+  end
+
+  def test_non_self_update_ignores_theme_preference_and_omits_it_from_response
+    current_user = User.first
+    other_user = User.second
+    original_choice_at = Time.zone.parse('2026-08-30 10:00:00 UTC')
+    travel_to original_choice_at do
+      other_user.update!(theme_preference: 'dark')
+    end
+    add_auth_header_for(user: current_user)
+
+    put_json "/api/users/#{other_user.id}", {
+      user: {
+        nickname: 'Updated by administrator',
+        theme_preference: 'light'
+      }
+    }
+
+    assert_equal 200, last_response.status
+    assert_equal 'Updated by administrator', other_user.reload.nickname
+    assert_equal 'dark', other_user.theme_preference
+    assert_equal original_choice_at, other_user.theme_preference_updated_at
+    assert_not last_response_body.key?('theme_preference')
+    assert_not last_response_body.key?('theme_preference_updated_at')
+  end
+
+  def test_put_invalid_theme_preference_keeps_the_existing_choice_and_timestamp
+    user = User.first
+    chosen_at = Time.zone.parse('2026-08-30 10:00:00 UTC')
+    travel_to chosen_at do
+      user.update!(theme_preference: 'dark')
+    end
+    add_auth_header_for(user: user)
+
+    put_json "/api/users/#{user.id}", {
+      user: { theme_preference: 'sepia' }
+    }
+
+    assert_equal 400, last_response.status
+    assert_equal 'dark', user.reload.theme_preference
+    assert_equal chosen_at, user.theme_preference_updated_at
   end
 
   def test_put_update_user_invalid_email
