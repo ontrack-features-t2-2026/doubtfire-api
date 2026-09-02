@@ -66,7 +66,7 @@ module Doubtfire
     # Date range for auditors to view
     config.auditor_unit_access_years = ENV.fetch('DF_AUDITOR_UNIT_ACCESS_YEARS', 2).to_f * 1.year
 
-    config.student_import_weeks_before = ENV.fetch('DF_IMPORT_STUDENTS_WEEKS_BEFPRE', 1).to_f * 1.week
+    config.student_import_weeks_before = ENV.fetch('DF_IMPORT_STUDENTS_WEEKS_BEFORE') { ENV.fetch('DF_IMPORT_STUDENTS_WEEKS_BEFPRE', 1) }.to_f * 1.week
 
     def self.fetch_boolean_env(name)
       %w'true 1'.include?(ENV.fetch(name, 'false').downcase)
