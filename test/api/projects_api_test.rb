@@ -166,6 +166,96 @@ class ProjectsApiTest < ActiveSupport::TestCase
                  Date.parse(grade_due_dates.first.fetch('start_date'))
   end
 
+  def test_projects_with_task_definitions_exposes_privacy_safe_feedback_state
+    project = FactoryBot.create(:project)
+    unit = project.unit
+    task_definition = unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+    student = project.student
+    tutor = unit.main_convenor_user
+
+    task.update!(task_status: TaskStatus.ready_for_feedback)
+    task.add_status_comment(student, TaskStatus.ready_for_feedback)
+
+    add_auth_header_for(user: student)
+
+    get '/api/projects?include_task_definitions=true'
+    assert_equal 200, last_response.status, last_response_body
+
+    task_data = lambda do
+      last_response_body
+        .find { |data| data['id'] == project.id }
+        .fetch('tasks')
+        .find { |data| data['id'] == task.id }
+    end
+
+    assert_equal false, task_data.call.fetch('has_feedback')
+
+    task.add_text_comment(student, 'Student follow-up')
+    task.add_text_comment(tutor, '**Automated Message:** Automated feedback')
+
+    get '/api/projects?include_task_definitions=true'
+    assert_equal 200, last_response.status, last_response_body
+    assert_equal false, task_data.call.fetch('has_feedback')
+
+    task.add_text_comment(tutor, 'Manual tutor feedback')
+
+    get '/api/projects?include_task_definitions=true'
+    assert_equal 200, last_response.status, last_response_body
+
+    response_task = task_data.call
+    assert_equal true, response_task.fetch('has_feedback')
+
+    %w[
+      feedback feedback_text marker_notes feedback_author
+      last_feedback_at has_unread_feedback
+    ].each do |key|
+      assert_not response_task.key?(key), "Student response exposed #{key}"
+    end
+
+    assert_not_includes last_response.body, 'Manual tutor feedback'
+    assert_not_includes last_response.body, '**Automated Message:** Automated feedback'
+  end
+
+  def test_projects_feedback_state_is_scoped_to_authenticated_student
+    unit = FactoryBot.create(
+      :unit,
+      with_students: false,
+      task_count: 1,
+      tutorials: 1
+    )
+
+    student = FactoryBot.create(:user, :student)
+    other_student = FactoryBot.create(:user, :student)
+
+    project = unit.enrol_student(student, unit.tutorials.first.campus)
+    other_project = unit.enrol_student(other_student, unit.tutorials.first.campus)
+
+    task_definition = unit.task_definitions.first
+    project.task_for_task_definition(task_definition)
+    other_task = other_project.task_for_task_definition(task_definition)
+
+    other_task.update!(task_status: TaskStatus.ready_for_feedback)
+    other_task.add_status_comment(other_student, TaskStatus.ready_for_feedback)
+    other_task.add_text_comment(unit.main_convenor_user, 'Private feedback for other student')
+
+    add_auth_header_for(user: student)
+
+    get '/api/projects?include_task_definitions=true'
+    assert_equal 200, last_response.status, last_response_body
+
+    returned_project_ids = last_response_body.pluck('id')
+
+    assert_includes returned_project_ids, project.id
+    assert_not_includes returned_project_ids, other_project.id
+    assert_not_includes last_response.body, 'Private feedback for other student'
+
+    get "/api/projects/#{other_project.id}"
+
+    assert_equal 403, last_response.status
+    assert_not_includes last_response.body, 'Private feedback for other student'
+  end
+
   def test_projects_with_inactive_task_definitions_avoids_per_record_queries
     student = FactoryBot.create(:user, :student)
     units = 2.times.map do

@@ -329,6 +329,32 @@ class Project < ApplicationRecord
       .preload(:task_definition, project: %i[unit user])
       .index_by(&:id)
 
+    task_ids = task_rows.map(&:id)
+
+    feedback_task_ids = TaskComment
+      .where(task_id: task_ids)
+      .where(content_type: %w[text audio image pdf discussion])
+      .where(user_id: unit.staff.select(:user_id))
+      .where.not("COALESCE(comment, '') LIKE ?", '**Automated Message:%')
+      .where(
+        <<~SQL.squish,
+          task_comments.created_at >= COALESCE(
+            (
+              SELECT MIN(ready_comments.created_at)
+              FROM task_comments ready_comments
+              WHERE ready_comments.task_id = task_comments.task_id
+                AND ready_comments.content_type = 'status'
+                AND ready_comments.task_status_id = ?
+            ),
+            task_comments.created_at
+          )
+        SQL
+        TaskStatus.ready_for_feedback.id
+      )
+      .distinct
+      .pluck(:task_id)
+      .to_set
+
     task_rows.map do |r|
       t = tasks_by_id.fetch(r.id)
       {
@@ -340,6 +366,7 @@ class Project < ApplicationRecord
         grade: r.grade,
         quality_pts: r.quality_pts,
         num_new_comments: r.number_unread,
+        has_feedback: feedback_task_ids.include?(r.id),
         similarity_flag: AuthorisationHelpers.authorise?(user, t, :view_plagiarism) ? r.similar_to_count > 0 : false,
         extensions: t.extensions,
         scorm_extensions: t.scorm_extensions,
