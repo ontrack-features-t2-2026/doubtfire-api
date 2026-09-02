@@ -795,4 +795,115 @@ class CommentTest < ActiveSupport::TestCase
 
     td.destroy!
   end
+
+  # Marking a comment as unread must delete the caller's read receipt and succeed.
+  # remove_comment_read_entry used to call delete_all with a conditions hash, which raises
+  # ArgumentError on Rails 8 and turned every mark-as-unread into a 500.
+  def test_mark_comment_as_unread_removes_the_read_receipt
+    project = FactoryBot.create(:project)
+    unit = project.unit
+    user = project.student
+    convenor = unit.main_convenor_user
+    task_definition = unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+
+    comment = task.add_text_comment(convenor, 'Please look at this')
+    comment.mark_as_read(user)
+    assert comment.read_by?(user), 'Comment should be read before it is marked unread'
+    assert_equal 1, CommentsReadReceipts.where(user: user, task_comment: comment).count
+
+    add_auth_header_for user: user
+    post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments/#{comment.id}"
+
+    assert_equal 201, last_response.status, last_response_body
+    assert_equal 0, CommentsReadReceipts.where(user: user, task_comment: comment).count, 'Read receipt should be gone'
+    assert_not comment.reload.read_by?(user), 'Comment should be unread after the request'
+  end
+
+  def test_group_member_can_mark_shared_comment_unread_without_affecting_other_receipts
+    fixture = grouped_comment_fixture
+    comment = fixture[:comment]
+    author = fixture[:first_project].student
+    caller = fixture[:second_project].student
+
+    comment.mark_as_read(caller)
+    assert comment.read_by?(author), "the comment author's receipt should exist"
+    assert comment.read_by?(caller), "the other group member's receipt should exist"
+
+    add_auth_header_for user: caller
+    post "/api/projects/#{fixture[:second_project].id}/task_def_id/#{fixture[:task_definition].id}/comments/#{comment.id}"
+
+    assert_equal 201, last_response.status, last_response_body
+    assert_not comment.reload.read_by?(caller), "only the caller's receipt should be removed"
+    assert comment.read_by?(author), "another group member's receipt must remain"
+  end
+
+  def test_member_of_another_group_cannot_mark_comment_unread
+    fixture = grouped_comment_fixture
+    comment = fixture[:comment]
+    outsider = fixture[:other_project].student
+
+    # Give the other group its own submission so all_comments is explicitly
+    # scoped to that group submission rather than the individual task.
+    fixture[:other_project]
+      .task_for_task_definition(fixture[:task_definition])
+      .ensured_group_submission
+
+    comment.mark_as_read(outsider)
+    assert comment.read_by?(outsider)
+
+    add_auth_header_for user: outsider
+    post "/api/projects/#{fixture[:other_project].id}/task_def_id/#{fixture[:task_definition].id}/comments/#{comment.id}"
+
+    assert_equal 404, last_response.status, last_response_body
+    assert comment.reload.read_by?(outsider), 'a rejected request must not change receipts'
+  end
+
+  # A user with no submission rights on the project cannot mark its comments unread.
+  def test_mark_comment_as_unread_rejects_an_unauthorised_user
+    project = FactoryBot.create(:project)
+    unit = project.unit
+    convenor = unit.main_convenor_user
+    task_definition = unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+    comment = task.add_text_comment(convenor, 'Private thread')
+
+    outsider = FactoryBot.create(:project).student
+
+    add_auth_header_for user: outsider
+    post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments/#{comment.id}"
+
+    assert_equal 403, last_response.status, last_response_body
+  end
+
+  private
+
+  def grouped_comment_fixture
+    unit = FactoryBot.create(:unit, student_count: 3, task_count: 0)
+    first_project, second_project, other_project = unit.active_projects.first(3)
+    group_set = FactoryBot.create(:group_set, unit: unit)
+    shared_group = FactoryBot.create(:group, group_set: group_set, tutorial: unit.tutorials.first)
+    other_group = FactoryBot.create(:group, group_set: group_set, tutorial: unit.tutorials.first)
+
+    shared_group.add_member(first_project)
+    shared_group.add_member(second_project)
+    other_group.add_member(other_project)
+
+    task_definition = FactoryBot.create(
+      :task_definition,
+      unit: unit,
+      group_set: group_set,
+      outcome_count: 0
+    )
+    task = first_project.task_for_task_definition(task_definition)
+    comment = task.add_text_comment(first_project.student, 'Shared group feedback')
+
+    {
+      first_project: first_project,
+      second_project: second_project,
+      other_project: other_project,
+      task_definition: task_definition,
+      comment: comment
+    }
+  end
 end
