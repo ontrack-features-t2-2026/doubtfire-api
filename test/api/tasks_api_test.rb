@@ -832,6 +832,115 @@ class TasksApiTest < ActiveSupport::TestCase
     assert_equal TaskStatus.complete, task.task_status
   end
 
+  # discussed:true marks a task as discussed in class; discussed:false must unmark
+  # it by removing every marker, including legacy duplicates separated by an
+  # ordinary feedback comment (DOM-07).
+  def test_discussed_false_removes_all_discussed_comments
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = TaskDefinition.create!({
+                                  unit_id: unit.id,
+                                  tutorial_stream: unit.tutorial_streams.first,
+                                  name: 'Discussed toggle task',
+                                  description: 'Task used to toggle the discussed mark',
+                                  weighting: 4,
+                                  target_grade: 0,
+                                  start_date: Time.zone.now - 2.weeks,
+                                  target_date: Time.zone.now + 1.week,
+                                  abbreviation: 'DiscussToggleTask',
+                                  restrict_status_updates: false,
+                                  requires_discussion: true,
+                                  upload_requirements: [],
+                                  plagiarism_warn_pct: 0.8,
+                                  is_graded: false,
+                                  max_quality_pts: 0
+                                })
+
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+    tutor = unit.tutors.first
+
+    add_auth_header_for(user: tutor)
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: true }
+    assert_equal 200, last_response.status
+    task.reload
+    assert task.has_discussed_in_class_comment?, 'discussed:true should mark the task as discussed'
+    assert_equal 1, task.comments.where(content_type: 'discussed_in_class').count
+
+    task.add_text_comment(tutor, 'Feedback between legacy discussed markers')
+
+    # add_discussed_comment now treats the marker as a boolean and will not
+    # create another one just because feedback was added after it.
+    task.add_discussed_comment(tutor)
+    assert_equal 1, task.comments.where(content_type: 'discussed_in_class').count
+
+    # Reproduce legacy data written before duplicate prevention was added.
+    duplicate = TaskDiscussedComment.create!(
+      task: task,
+      user: tutor,
+      recipient: project.student,
+      comment: 'Discussed in class'
+    )
+    duplicate_receipt_ids = duplicate.comments_read_receipts.ids
+    assert_equal 2, task.comments.where(content_type: 'discussed_in_class').count
+    assert_not_empty duplicate_receipt_ids
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: false }
+    assert_equal 200, last_response.status
+    task.reload
+    assert_not task.has_discussed_in_class_comment?, 'discussed:false should unmark the task, not add another comment'
+    assert_equal 0, task.comments.where(content_type: 'discussed_in_class').count
+    assert_empty CommentsReadReceipts.where(id: duplicate_receipt_ids), 'destroy callbacks must remove marker read receipts'
+
+    unit.destroy
+  end
+
+  # A completed task in a unit that requires discussion cannot have its discussed
+  # mark removed, since that would leave it complete without the evidence the
+  # model requires (DOM-07).
+  def test_discussed_false_rejected_when_the_task_is_complete
+    unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
+    td = TaskDefinition.create!({
+                                  unit_id: unit.id,
+                                  tutorial_stream: unit.tutorial_streams.first,
+                                  name: 'Discussed complete guard task',
+                                  description: 'Task used to guard unmarking after complete',
+                                  weighting: 4,
+                                  target_grade: 0,
+                                  start_date: Time.zone.now - 2.weeks,
+                                  target_date: Time.zone.now + 1.week,
+                                  abbreviation: 'DiscussGuardTask',
+                                  restrict_status_updates: false,
+                                  requires_discussion: true,
+                                  upload_requirements: [],
+                                  plagiarism_warn_pct: 0.8,
+                                  is_graded: false,
+                                  max_quality_pts: 0
+                                })
+
+    project = unit.active_projects.first
+    task = project.task_for_task_definition(td)
+    tutor = unit.tutors.first
+
+    add_auth_header_for(user: tutor)
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: true }
+    assert_equal 200, last_response.status
+    task.add_text_comment(tutor, 'Manual tutor feedback')
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { trigger: 'complete' }
+    assert_equal 200, last_response.status
+    task.reload
+    assert_equal TaskStatus.complete, task.task_status
+
+    put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: false }
+    assert_equal 403, last_response.status
+    task.reload
+    assert task.has_discussed_in_class_comment?, 'the discussed comment must survive a refused unmark'
+    assert_equal TaskStatus.complete, task.task_status
+
+    unit.destroy
+  end
+
   # A helper for the refused-transition tests below. An ordinary task definition,
   # nothing about it restricted, so the only reason a transition can be refused is
   # the one the test is asking about.
@@ -858,7 +967,7 @@ class TasksApiTest < ActiveSupport::TestCase
   # A student asking for a staff status is refused inside trigger_transition, which
   # returns nil and adds no error. That used to reach the 200 at the end of the
   # handler, so the client showed the change as accepted.
-  def test_refused_transition_to_a_staff_status_returns_403
+  def test_refused_transition_to_a_staff_status_returns_forbidden
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = ordinary_task_definition_for(unit)
     project = unit.active_projects.first
@@ -878,7 +987,7 @@ class TasksApiTest < ActiveSupport::TestCase
 
   # An unrecognised trigger string falls through the case statement and is refused
   # the same silent way, whoever sends it.
-  def test_unrecognised_trigger_returns_403
+  def test_unrecognised_trigger_returns_forbidden
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = ordinary_task_definition_for(unit)
     project = unit.active_projects.first
@@ -898,7 +1007,7 @@ class TasksApiTest < ActiveSupport::TestCase
 
   # The regression check. This change makes a permissive endpoint strict, so the
   # failure mode is that ordinary marking stops working.
-  def test_allowed_transitions_still_return_200
+  def test_allowed_transitions_still_return_success
     unit = FactoryBot.create(:unit, student_count: 1, task_count: 0)
     td = ordinary_task_definition_for(unit)
     project = unit.active_projects.first
