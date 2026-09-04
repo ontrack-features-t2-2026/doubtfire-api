@@ -564,10 +564,27 @@ class CommentTest < ActiveSupport::TestCase
 
     post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments", comment_data
 
-    assert_equal 500, last_response.status
+    assert_equal 400, last_response.status, last_response_body
 
     assert_equal pre_count, TaskComment.count, 'No comment should be created'
     assert_equal 'Attachment is empty.', last_response_body['error']
+  end
+
+  def test_post_comment_oversized_attachment
+    project = Project.first
+    task_definition = project.unit.task_definitions.first
+    pre_count = TaskComment.count
+
+    add_auth_header_for(user: project.student)
+
+    attachment = upload_file('test_files/submissions/00_question.pdf', 'application/pdf')
+    File.stub :size?, 30_000_001 do
+      post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments", { attachment: attachment }
+    end
+
+    assert_equal 413, last_response.status, last_response_body
+    assert_equal pre_count, TaskComment.count, 'No comment should be created'
+    assert_equal 'Attachment exceeds the maximum attachment size of 30MB.', last_response_body['error']
   end
 
   # Builds a group task definition for the given group_set.
