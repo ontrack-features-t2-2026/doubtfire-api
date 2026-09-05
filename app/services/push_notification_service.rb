@@ -100,6 +100,8 @@ class PushNotificationService
         title: Doubtfire::Application.config.institution[:product_name],
         body: body_for(notification),
         tag: tag_for(notification),
+        icon: '/assets/icons/android-chrome-192x192.png',
+        badge: '/assets/icons/android-chrome-192x192.png',
         # False, so a replacement updates the banner without making a sound or
         # vibrating again.
         #

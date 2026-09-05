@@ -177,6 +177,8 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert payload.key?('notification'), 'ngsw-worker.js will ignore a payload without this key'
 
     body = payload['notification']
+    assert_equal '/assets/icons/android-chrome-192x192.png', body['icon']
+    assert_equal '/assets/icons/android-chrome-192x192.png', body['badge']
 
     assert_equal 'Andrew Cain commented on 1.1P in COS10001.', body['body']
     assert_equal '/projects/2/dashboard/1.1P', body.dig('data', 'link')
