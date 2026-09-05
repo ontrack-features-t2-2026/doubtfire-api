@@ -197,35 +197,73 @@ module Submission
 
     desc 'Get all retained submission histories for a task'
     get '/projects/:id/task_def_id/:task_definition_id/submission_histories' do
-      project = Project.find(params[:id])
-      task_definition = project.unit.task_definitions.find(params[:task_definition_id])
+      project = Project.find_by(id: params[:id])
+      error!({ error: 'Submission history is not available' }, 404) unless project
 
-      unless authorise? current_user, project, :get_submission
-        error!({ error: "Not authorised to get submission history for task '#{task_definition.name}'" }, 401)
-      end
+      task_definition = project.unit.task_definitions.find_by(id: params[:task_definition_id])
+      error!({ error: 'Submission history is not available' }, 404) unless task_definition
 
       task = project.task_for_task_definition(task_definition)
-      unless task
-        error!({ error: 'A submission for this task definition has never been created' }, 404)
-      end
+      error!({ error: 'Submission history is not available' }, 404) unless task
 
-      present task.submission_histories.order(submission_timestamp: :desc),
-              with: Entities::SubmissionHistoryEntity
+      student_request = project.student == current_user
+
+      authorised =
+        if student_request
+          authorise?(current_user, project, :get_submission) &&
+            authorise?(current_user, task, :get_submission)
+        else
+          authorise?(current_user, project, :get_submission)
+        end
+
+      error!({ error: 'Submission history is not available' }, 404) unless authorised
+
+      histories = task.submission_histories.order(submission_timestamp: :desc)
+
+      if student_request
+        student_histories = histories.each_with_index.map do |history, index|
+          {
+            id: history.id,
+            version_order: index + 1,
+            submission_timestamp: history.submission_timestamp,
+            status: history.has_submission_files? ? 'available' : 'unavailable'
+          }
+        end
+
+        status 202 if SubmissionHistory.pending?(task)
+        present student_histories
+      else
+        present histories, with: Entities::SubmissionHistoryEntity
+      end
     end
 
     desc 'Download a retained submission history archive'
     get '/projects/:id/task_def_id/:task_definition_id/submission_histories/:history_id/files' do
-      project = Project.find(params[:id])
-      task_definition = project.unit.task_definitions.find(params[:task_definition_id])
+      project = Project.find_by(id: params[:id])
+      error!({ error: 'Submission history is not available' }, 404) unless project
 
-      unless authorise? current_user, project.unit, :provide_feedback
-        error!({ error: "Not authorised to get submission history for task '#{task_definition.name}'" }, 401)
-      end
+      task_definition = project.unit.task_definitions.find_by(id: params[:task_definition_id])
+      error!({ error: 'Submission history is not available' }, 404) unless task_definition
 
       task = project.task_for_task_definition(task_definition)
-      history = task&.submission_histories&.find_by(id: params[:history_id])
-      error!({ error: 'Submission history was not found' }, 404) unless history
-      error!({ error: 'Submission history files are not available' }, 404) unless history.has_submission_files?
+      error!({ error: 'Submission history is not available' }, 404) unless task
+
+      staff_access = authorise?(current_user, project.unit, :provide_feedback)
+      student_access =
+        project.student == current_user &&
+        authorise?(current_user, project, :get_submission) &&
+        authorise?(current_user, task, :get_submission)
+
+      unless staff_access || student_access
+        error!({ error: 'Submission history is not available' }, 404)
+      end
+
+      history = task.submission_histories.find_by(id: params[:history_id])
+      error!({ error: 'Submission history is not available' }, 404) unless history
+
+      unless history.has_submission_files?
+        error!({ error: 'Submission history files are not available' }, 404)
+      end
 
       filename = "#{project.student.username}-#{task_definition.abbreviation}-#{history.submission_timestamp}.zip"
 
