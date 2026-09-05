@@ -36,8 +36,8 @@ class TaskCommentsApi < Grape::API
     end
 
     if attached_file.present?
-      error!({ error: "Attachment is empty." }) if File.size?(attached_file["tempfile"].path).blank?
-      error!({ error: "Attachment exceeds the maximum attachment size of 30MB." }) unless File.size?(attached_file["tempfile"].path) < 30_000_000
+      error!({ error: "Attachment is empty." }, 400) if File.size?(attached_file["tempfile"].path).blank?
+      error!({ error: "Attachment exceeds the maximum attachment size of 30MB." }, 413) unless File.size?(attached_file["tempfile"].path) < 30_000_000
     end
 
     type_string = content_type.to_s
