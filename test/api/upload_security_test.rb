@@ -205,8 +205,9 @@ class UploadSecurityTest < ActiveSupport::TestCase
 
     get "/api/projects/#{project_a.id}/task_def_id/#{td.id}/submission_histories"
 
-    assert_equal 401, last_response.status,
-                 'Expected the current history API contract to return 401 for cross-project access'
+    assert_equal 404, last_response.status,
+                 'Cross-student history access should fail closed'
+    assert_match(/Submission history is not available/, last_response.body)
   ensure
     unit.destroy
   end
