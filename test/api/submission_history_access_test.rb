@@ -89,6 +89,42 @@ class SubmissionHistoryAccessTest < ActiveSupport::TestCase
     assert_equal 'unavailable', older['status']
   end
 
+  test 'unauthorised history requests do not create tasks on another project' do
+    @owning_task.destroy!
+    add_auth_header_for(user: @other_project.student)
+
+    assert_no_difference('Task.count') do
+      get metadata_endpoint
+      assert_safe_not_found
+      get files_endpoint
+      assert_safe_not_found
+    end
+  end
+
+  test 'own history requests for a missing task are read only' do
+    @owning_task.destroy!
+    add_auth_header_for(user: @owning_project.student)
+
+    assert_no_difference('Task.count') do
+      get metadata_endpoint
+      assert_safe_not_found
+      get files_endpoint
+      assert_safe_not_found
+    end
+  end
+
+  test 'staff history requests for a missing task are read only' do
+    @owning_task.destroy!
+    add_auth_header_for(user: @convenor)
+
+    assert_no_difference('Task.count') do
+      get metadata_endpoint
+      assert_safe_not_found
+      get files_endpoint
+      assert_safe_not_found
+    end
+  end
+
   test 'student can download own retained submission history' do
     add_auth_header_for(user: @owning_project.student)
 

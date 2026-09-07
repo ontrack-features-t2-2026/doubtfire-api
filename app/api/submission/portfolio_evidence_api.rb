@@ -200,23 +200,21 @@ module Submission
       project = Project.find_by(id: params[:id])
       error!({ error: 'Submission history is not available' }, 404) unless project
 
+      unless authorise?(current_user, project, :get_submission)
+        error!({ error: 'Submission history is not available' }, 404)
+      end
+
       task_definition = project.unit.task_definitions.find_by(id: params[:task_definition_id])
       error!({ error: 'Submission history is not available' }, 404) unless task_definition
 
-      task = project.task_for_task_definition(task_definition)
+      task = project.tasks.find_by(task_definition: task_definition)
       error!({ error: 'Submission history is not available' }, 404) unless task
 
       student_request = project.student == current_user
 
-      authorised =
-        if student_request
-          authorise?(current_user, project, :get_submission) &&
-            authorise?(current_user, task, :get_submission)
-        else
-          authorise?(current_user, project, :get_submission)
-        end
-
-      error!({ error: 'Submission history is not available' }, 404) unless authorised
+      if student_request && !authorise?(current_user, task, :get_submission)
+        error!({ error: 'Submission history is not available' }, 404)
+      end
 
       histories = task.submission_histories.order(submission_timestamp: :desc)
 
@@ -242,17 +240,21 @@ module Submission
       project = Project.find_by(id: params[:id])
       error!({ error: 'Submission history is not available' }, 404) unless project
 
+      staff_access = authorise?(current_user, project.unit, :provide_feedback)
+      student_access =
+        project.student == current_user && authorise?(current_user, project, :get_submission)
+
+      unless staff_access || student_access
+        error!({ error: 'Submission history is not available' }, 404)
+      end
+
       task_definition = project.unit.task_definitions.find_by(id: params[:task_definition_id])
       error!({ error: 'Submission history is not available' }, 404) unless task_definition
 
-      task = project.task_for_task_definition(task_definition)
+      task = project.tasks.find_by(task_definition: task_definition)
       error!({ error: 'Submission history is not available' }, 404) unless task
 
-      staff_access = authorise?(current_user, project.unit, :provide_feedback)
-      student_access =
-        project.student == current_user &&
-        authorise?(current_user, project, :get_submission) &&
-        authorise?(current_user, task, :get_submission)
+      student_access &&= authorise?(current_user, task, :get_submission)
 
       unless staff_access || student_access
         error!({ error: 'Submission history is not available' }, 404)

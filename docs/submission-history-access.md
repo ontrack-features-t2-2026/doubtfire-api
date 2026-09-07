@@ -19,6 +19,8 @@ A submission-history identifier does not grant access by itself.
 
 For student requests, both the project and task must authorise `:get_submission`.
 
+History reads authorise the project or staff unit permission before querying the existing task. They never create a task: an authorised request for a task that has not been created returns the same safe `404` response.
+
 The download route additionally preserves the existing staff path using the unit-level `:provide_feedback` permission.
 
 Invalid and unauthorised project, task-definition, task and history identifiers return the same generic response:
