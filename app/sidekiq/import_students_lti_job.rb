@@ -81,7 +81,8 @@ class ImportStudentsLtiJob
         result[:errors] << { row: member, message: "Failed to create user" }
       end
     rescue StandardError => e
-      result[:errors] << { row: member, message: e }
+      logger.error e
+      result[:errors] << { row: member, message: "#{e.class}: #{e.message}" }
     end
 
     store(result: result.to_json)
