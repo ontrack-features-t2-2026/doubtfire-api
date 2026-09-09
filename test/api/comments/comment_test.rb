@@ -522,6 +522,36 @@ class CommentTest < ActiveSupport::TestCase
     new_comment.destroy
   end
 
+  # Regression: an attachment (audio/image/pdf) comment must raise a
+  # task_comment_created notification just like a text comment. The attachment
+  # path used to save the comment and return without notifying, so a tutor's
+  # audio or pdf feedback reached the student's inbox as nothing at all.
+  def test_attachment_comment_notifies_the_recipient
+    project = FactoryBot.create(:project)
+    unit = project.unit
+    convenor = unit.main_convenor_user
+    student = project.student
+    task_definition = unit.task_definitions.first
+
+    add_auth_header_for(user: convenor)
+
+    comment_data = { attachment: upload_file('test_files/submissions/00_question.pdf', 'application/pdf') }
+
+    assert_difference 'Notification.count', 1 do
+      post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments", comment_data
+    end
+
+    assert_equal 201, last_response.status, last_response_body
+
+    notification = Notification.recent_first.first
+
+    assert_equal student, notification.user, 'the student, not the commenter, is notified'
+    assert_equal 'feedback', notification.notification_type
+    assert_equal 'task_comment_created', notification.event
+
+    TaskComment.last.destroy
+  end
+
   def test_comment_attachments_deleted
     project = Project.first
     user = project.student

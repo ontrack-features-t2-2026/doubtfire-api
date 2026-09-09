@@ -1317,6 +1317,13 @@ class Task < ApplicationRecord
     raise "Error attaching uploaded file." unless comment.add_attachment(tempfile)
 
     comment.save!
+
+    # An audio, image or pdf comment is feedback the recipient needs to know
+    # about just as much as a text comment, so raise the notification here too.
+    # add_text_comment already does this; the attachment path was the one comment
+    # route that stayed silent, so a tutor's audio feedback reached nobody.
+    notify_comment_recipient(comment)
+
     comment
   end
 
