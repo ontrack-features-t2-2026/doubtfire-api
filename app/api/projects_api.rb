@@ -17,6 +17,11 @@ class ProjectsApi < Grape::API
     include_inactive = params[:include_inactive] || false
 
     projects = Project.eager_load(:unit, :user).for_user current_user, include_inactive
+
+    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
+    page = params[:page].to_i > 0 ? params[:page].to_i : 1
+    projects = projects.limit(per_page).offset((page - 1) * per_page)
+
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, user: current_user
   end
 

@@ -372,7 +372,15 @@ class GroupSetsApi < Grape::API
       error!({ error: 'Not authorised to get groups for this unit' }, 403)
     end
 
-    present grp.projects, with: Entities::ProjectEntity, only: [:student, :id, :target_grade], user: current_user
+    if params.key?(:per_page) || params.key?(:page)
+      per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
+      page = params[:page].to_i > 0 ? params[:page].to_i : 1
+      result = grp.projects.limit(per_page).offset((page - 1) * per_page)
+    else
+      result = grp.projects
+    end
+
+    present result, with: Entities::ProjectEntity, only: [:student, :id, :target_grade], user: current_user
   end
 
   desc 'Add a group member'

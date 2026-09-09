@@ -15,7 +15,10 @@ class UsersApi < Grape::API
       error!({ error: 'Cannot list users - not authorised' }, 403)
     end
 
-    present User.all.eager_load(:role), with: Entities::UserEntity
+    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
+    page = params[:page].to_i > 0 ? params[:page].to_i : 1
+    users = User.eager_load(:role).limit(per_page).offset((page - 1) * per_page)
+    present users, with: Entities::UserEntity
   end
 
   desc 'Get user'
@@ -34,7 +37,10 @@ class UsersApi < Grape::API
       error!({ error: 'Cannot list convenors - not authorised' }, 403)
     end
 
-    present User.convenors, with: Entities::UserEntity
+    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
+    page = params[:page].to_i > 0 ? params[:page].to_i : 1
+    users = User.convenors.eager_load(:role).limit(per_page).offset((page - 1) * per_page)
+    present users, with: Entities::UserEntity
   end
 
   desc 'Get tutors'
@@ -43,7 +49,10 @@ class UsersApi < Grape::API
       error!({ error: 'Cannot list tutors - not authorised' }, 403)
     end
 
-    present User.tutors.eager_load(:role), with: Entities::UserEntity
+    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
+    page = params[:page].to_i > 0 ? params[:page].to_i : 1
+    users = User.tutors.eager_load(:role).limit(per_page).offset((page - 1) * per_page)
+    present users, with: Entities::UserEntity
   end
 
   desc 'Update a user'

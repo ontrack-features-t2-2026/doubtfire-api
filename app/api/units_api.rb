@@ -37,6 +37,10 @@ class UnitsApi < Grape::API
 
     units = units.where('active = true') unless params[:include_in_active]
 
+    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
+    page = params[:page].to_i > 0 ? params[:page].to_i : 1
+    units = units.limit(per_page).offset((page - 1) * per_page)
+
     present units, with: Entities::UnitEntity, user: current_user, summary_only: true, in_unit: true
   end
 
