@@ -47,7 +47,7 @@ class TaskDueDateChangedNotificationJob
       message: "The due date for #{task_definition.abbreviation} " \
                "in #{task_definition.unit.code} has changed.",
       link: "/projects/#{project.id}/dashboard/" \
-            "#{task_definition.abbreviation}"
+            "#{ERB::Util.url_encode(task_definition.abbreviation)}"
     )
   rescue StandardError => e
     Rails.logger.error(

@@ -140,6 +140,27 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
     )
   end
 
+  # Regression: a task abbreviation with a space must be percent-encoded in the
+  # stored link, so the email href and plain-text URL are valid. Every other
+  # notification event encodes the abbreviation; this job was the one that did
+  # not, so a space landed raw in the href.
+  def test_link_is_url_encoded_for_a_spaced_abbreviation
+    @task_def.update!(abbreviation: 'AB 1.1')
+    project = eligible_projects.first
+
+    run_job
+
+    notification = Notification.find_by!(
+      user: project.student,
+      event: EVENT
+    )
+
+    assert_equal(
+      "/projects/#{project.id}/dashboard/AB%201.1",
+      notification.link
+    )
+  end
+
   private
 
   def run_job
