@@ -79,4 +79,54 @@ class PushSubscriptionTest < ActiveSupport::TestCase
     assert_not subscription.valid?
     assert_includes subscription.errors[:endpoint].join, "can't be blank"
   end
+
+  # DN-30: the keys must be usable web push material, not merely present and
+  # under 255 characters. A malformed key passes the length validation and then
+  # fails deep in web-push encryption, poisoning the fan-out for the user.
+  def test_accepts_padded_keys_from_the_factory
+    assert FactoryBot.build(:push_subscription, user: @user).valid?
+  end
+
+  def test_accepts_unpadded_keys
+    # The same key pair as the factory, with the base64 padding stripped, which
+    # is how a browser's PushSubscription usually presents it.
+    subscription = FactoryBot.build(
+      :push_subscription,
+      user: @user,
+      p256dh: 'BJy8RpjMkwOPDIIXSu-FTe7OosAwY9G86_evhrn0jJbPnoxXjBYpn7aPHEIaRh3GxCzFvwYXjKWvtu3FEMaBQMY',
+      auth: 'CUkmaYqq8eINt1HTnFY65w'
+    )
+
+    assert subscription.valid?, subscription.errors.full_messages.join(', ')
+  end
+
+  def test_rejects_a_non_base64_p256dh
+    subscription = FactoryBot.build(:push_subscription, user: @user, p256dh: 'not valid base64 !!')
+
+    assert_not subscription.valid?
+    assert_not_empty subscription.errors[:p256dh]
+  end
+
+  def test_rejects_a_wrong_length_p256dh
+    # 'AAAA' is valid base64 but decodes to 3 bytes, not the 65 a prime256v1
+    # public key needs.
+    subscription = FactoryBot.build(:push_subscription, user: @user, p256dh: 'AAAA')
+
+    assert_not subscription.valid?
+    assert_not_empty subscription.errors[:p256dh]
+  end
+
+  def test_rejects_a_wrong_length_auth
+    # Decodes to 3 bytes, not the 16 the auth secret must be.
+    subscription = FactoryBot.build(:push_subscription, user: @user, auth: 'AAAA')
+
+    assert_not subscription.valid?
+    assert_not_empty subscription.errors[:auth]
+  end
+
+  def test_valid_web_push_key_predicate_rejects_blank_and_garbage
+    assert_not PushSubscription.valid_web_push_key?(nil, PushSubscription::AUTH_BYTES)
+    assert_not PushSubscription.valid_web_push_key?('', PushSubscription::AUTH_BYTES)
+    assert_not PushSubscription.valid_web_push_key?('%%%not-base64%%%', PushSubscription::AUTH_BYTES)
+  end
 end

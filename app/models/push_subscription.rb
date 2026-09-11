@@ -49,7 +49,34 @@ class PushSubscription < ApplicationRecord
   validates :p256dh, presence: true, length: { maximum: 255 }
   validates :auth, presence: true, length: { maximum: 255 }
 
+  # A p256dh is a 65-byte uncompressed prime256v1 public key and an auth is a
+  # 16-byte secret, both base64url from the browser's PushSubscription. The
+  # length validations above only bound the string; a key of the wrong charset
+  # or decoded length still passes them and then fails deep inside web-push's
+  # encryption with an error that is neither ExpiredSubscription nor
+  # InvalidSubscription. Nothing retires such a row, so every push to that user
+  # fails the fan-out and Sidekiq retries, re-hitting the healthy devices too.
+  # Check the decoded shape on the way in.
+  P256DH_BYTES = 65
+  AUTH_BYTES = 16
+
   validate :endpoint_is_a_known_push_service
+  validate :encryption_keys_are_usable
+
+  # True when value is base64url (padded or not) that decodes to expected_bytes.
+  #
+  # Also called at delivery time, because rows written before this validation
+  # existed were never checked. Keep it a class method for that reason, the same
+  # as push_service_endpoint?.
+  def self.valid_web_push_key?(value, expected_bytes)
+    return false unless value.is_a?(String) && value.present?
+
+    normalized = value.tr('-_', '+/')
+    normalized = normalized.ljust((normalized.length + 3) & ~3, '=')
+    Base64.strict_decode64(normalized).bytesize == expected_bytes
+  rescue ArgumentError
+    false
+  end
 
   # True when this endpoint is one we are willing to send to.
   #
@@ -87,5 +114,17 @@ class PushSubscription < ApplicationRecord
     return if self.class.push_service_endpoint?(endpoint)
 
     errors.add(:endpoint, 'must be an https URL belonging to a recognised push service')
+  end
+
+  def encryption_keys_are_usable
+    # Blank is left to the presence validations so a missing key is not reported
+    # twice.
+    if p256dh.present? && !self.class.valid_web_push_key?(p256dh, P256DH_BYTES)
+      errors.add(:p256dh, 'must be a base64url prime256v1 public key')
+    end
+
+    if auth.present? && !self.class.valid_web_push_key?(auth, AUTH_BYTES)
+      errors.add(:auth, 'must be a 16-byte base64url secret')
+    end
   end
 end
