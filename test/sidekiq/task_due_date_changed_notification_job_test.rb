@@ -161,6 +161,59 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
     )
   end
 
+  # Regression: re-running the sweep for the same change must not notify a
+  # student twice. retry: 3 plus a duplicate enqueue can run perform again, so
+  # the notify carries a dedupe_key; the second run finds the existing row
+  # instead of sending a second email.
+  def test_re_running_the_same_change_does_not_notify_twice
+    expected = eligible_projects.count
+    assert_operator expected, :>=, 2
+
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+
+    assert_no_difference 'Notification.count' do
+      assert_no_difference(-> { ActionMailer::Base.deliveries.count }) do
+        run_job
+      end
+    end
+  end
+
+  # Regression: a genuine second change to a different date must notify again.
+  # The dedupe_key includes the new due date, so a new date is a new key.
+  def test_a_later_change_to_a_different_date_notifies_again
+    expected = eligible_projects.count
+
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+
+    later = (@task_def.due_date + 2.weeks).to_date
+    @task_def.update!(due_date: later)
+    @new_due_date = later.iso8601
+
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+  end
+
+  # Regression: a transient failure for one recipient must re-raise so Sidekiq
+  # retries the sweep, not be logged and swallowed. This event fires once off a
+  # convenor's edit and is never swept for again, so a swallowed failure loses
+  # that student's notification for good. Matches NewTaskAvailableNotificationJob.
+  def test_re_raises_so_sidekiq_retries_when_a_recipient_fails
+    NotificationService.stub(:notify, ->(*_args, **_kwargs) { raise 'transient insert failure' }) do
+      assert_raises(RuntimeError) do
+        TaskDueDateChangedNotificationJob.new.perform(
+          @task_def.id,
+          @previous_due_date,
+          @new_due_date
+        )
+      end
+    end
+  end
+
   private
 
   def run_job
