@@ -54,11 +54,15 @@ class PushSubscriptionsApiTest < ActiveSupport::TestCase
     add_auth_header_for(user: @user)
     post '/api/push_subscriptions', params
 
+    # A valid replacement key: 65 base64url bytes, so it differs from the first
+    # registration and still passes the encryption-key validation.
+    rotated_key = 'BEJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI='
+
     assert_no_difference 'PushSubscription.count' do
-      post '/api/push_subscriptions', params.merge(p256dh: 'BRotatedPublicKey')
+      post '/api/push_subscriptions', params.merge(p256dh: rotated_key)
     end
 
-    assert_equal 'BRotatedPublicKey', PushSubscription.last.p256dh
+    assert_equal rotated_key, PushSubscription.last.p256dh
   end
 
   # Shared machine. The endpoint belongs to the browser, so the registration has

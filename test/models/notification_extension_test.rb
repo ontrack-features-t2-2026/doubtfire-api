@@ -58,7 +58,10 @@ class NotificationExtensionTest < ActiveSupport::TestCase
     assert_equal 'extension_assessed', notification.event
     push = assert_valid_push_payload(
       notification,
-      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}"
+      expected_link: "/projects/#{@project.id}/dashboard/#{@task_definition.abbreviation}",
+      # The lock-screen body is the reviewed override, not the raw message: the
+      # raw message names the outcome and a date, both banned on a lock screen.
+      expected_body: 'An extension request was assessed.'
     )
     assert_not_includes notification.message, EXTENSION_REQUEST_TEXT
     assert_not_includes push['body'], EXTENSION_REQUEST_TEXT
