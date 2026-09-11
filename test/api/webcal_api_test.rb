@@ -94,6 +94,55 @@ class WebcalApiTest < ActiveSupport::TestCase
     assert_not last_response.body.start_with?('"')
   end
 
+  test 'Unknown guid returns 404' do
+    # No webcal has ever been created with this guid.
+    get "/api/webcal/#{SecureRandom.uuid}"
+
+    assert_equal 404, last_response.status
+  end
+
+  test 'Guid returns 404 after should_change_guid rotates it, new guid returns 200' do
+    add_auth_header_for user: @student
+    # Enable webcal, get GUID
+    put_json '/api/webcal', { webcal: { enabled: true } }
+    old_guid = last_response_body['guid']
+
+    # Rotate the GUID
+    add_auth_header_for user: @student
+    put_json '/api/webcal', { webcal: { should_change_guid: true } }
+    new_guid = last_response_body['guid']
+
+    # Old guid must no longer resolve...
+    get "/api/webcal/#{old_guid}"
+    assert_equal 404, last_response.status
+
+    # ...only the new one does.
+    get "/api/webcal/#{new_guid}"
+    assert_equal 200, last_response.status
+  end
+
+  test 'Guid of a disabled webcal returns 404' do
+    add_auth_header_for user: @student
+    # Enable webcal, get GUID
+    put_json '/api/webcal', { webcal: { enabled: true } }
+    guid = last_response_body['guid']
+
+    # Disable webcal
+    add_auth_header_for user: @student
+    put_json '/api/webcal', { webcal: { enabled: false } }
+
+    get "/api/webcal/#{guid}"
+    assert_equal 404, last_response.status
+  end
+
+  test '404 response body is not a VCALENDAR' do
+    get "/api/webcal/#{SecureRandom.uuid}"
+
+    assert_equal 404, last_response.status
+    assert_equal 'text/error', last_response['Content-Type']
+    assert_not last_response.body.start_with?('BEGIN:VCALENDAR')
+  end
+
   test 'Reminder must be specified with both time & unit' do
     add_auth_header_for user: @student
 
