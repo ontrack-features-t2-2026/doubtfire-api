@@ -552,6 +552,32 @@ class CommentTest < ActiveSupport::TestCase
     TaskComment.last.destroy
   end
 
+  # Regression: a feedback review request must notify its recipient just like a
+  # text or attachment comment. The request path saved the comment and returned
+  # without notifying, so a student's request for a review reached the tutor as
+  # no email, push or in-app notification at all.
+  def test_feedback_review_request_notifies_the_recipient
+    project = FactoryBot.create(:project)
+    task_definition = project.unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+    student = project.student
+    tutor = project.tutor_for(task_definition)
+
+    assert_not_nil tutor, 'the project needs a tutor for the request to have a recipient'
+
+    assert_difference 'Notification.count', 1 do
+      task.add_feedback_review_request_comment(student)
+    end
+
+    notification = Notification.recent_first.first
+
+    assert_equal tutor, notification.user, 'the tutor, not the requesting student, is notified'
+    assert_equal 'feedback', notification.notification_type
+    assert_equal 'task_comment_created', notification.event
+
+    TaskComment.last.destroy
+  end
+
   def test_comment_attachments_deleted
     project = Project.first
     user = project.student
