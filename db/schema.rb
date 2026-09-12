@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_101829) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -1019,6 +1019,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
     t.boolean "display_peer_progress", default: true, null: false
     t.string "theme_preference"
     t.datetime "theme_preference_updated_at"
+    t.string "notification_email"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["login_id"], name: "index_users_on_login_id", unique: true
     t.index ["role_id"], name: "index_users_on_role_id"

@@ -57,6 +57,7 @@ class UsersApi < Grape::API
       optional :email, type: String, desc: 'New email address for user'
       optional :student_id, type: String, desc: 'New student_id for user'
       optional :nickname, type: String, desc: 'New nickname for user'
+      optional :notification_email, type: String, desc: 'Optional address for email notifications; blank falls back to the primary email'
       optional :system_role, type: String, desc: 'New role for user [Admin, Auditor, Convenor, Tutor, Student]'
       optional :receive_task_notifications, type: Boolean, desc: 'Allow user to be sent task notifications'
       optional :receive_portfolio_notifications, type: Boolean, desc: 'Allow user to be sent portfolio notifications'
@@ -95,6 +96,7 @@ class UsersApi < Grape::API
                                                       :email,
                                                       :student_id,
                                                       :nickname,
+                                                      :notification_email,
                                                       :receive_task_notifications,
                                                       :receive_portfolio_notifications,
                                                       :receive_feedback_notifications,

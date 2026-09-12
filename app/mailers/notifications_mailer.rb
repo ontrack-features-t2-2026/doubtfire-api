@@ -18,7 +18,7 @@ class NotificationsMailer < ApplicationMailer
     # fallback for older installations that have not configured one yet.
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
 
-    email_with_name = %("#{@user.name}" <#{@user.email}>)
+    email_with_name = %("#{@user.name}" <#{@user.notification_recipient_email}>)
     subject = "#{@doubtfire_product_name}: New notification"
 
     # An event may ship its own pair of templates named after it, for example
@@ -76,7 +76,7 @@ class NotificationsMailer < ApplicationMailer
     @convenor = @unit.main_convenor_user
     @summary_stats = summary_stats
 
-    email_with_name = %("#{@staff.name}" <#{@staff.email}>)
+    email_with_name = %("#{@staff.name}" <#{@staff.notification_recipient_email}>)
     convenor_email = %("#{@convenor.name}" <#{@convenor.email}>)
     subject = "#{@unit.name}: Weekly Summary"
 
@@ -116,7 +116,7 @@ class NotificationsMailer < ApplicationMailer
     @soon_top = @top_tasks.select { |tt| tt[:reason] == :soon }
     @ahead_top = @top_tasks.select { |tt| tt[:reason] == :ahead }
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
+    email_with_name = %("#{@student.name}" <#{@student.notification_recipient_email}>)
     tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
     subject = "#{project.unit.name}: Weekly Summary"
 

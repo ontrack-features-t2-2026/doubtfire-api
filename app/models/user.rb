@@ -176,6 +176,9 @@ class User < ApplicationRecord
   validates :role_id,     presence: true
   validates :username,    presence: true, uniqueness: { case_sensitive: false }
   validates :email,       presence: true, uniqueness: { case_sensitive: false }, format: { with: /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i }
+  # Optional student-owned address for email notifications. Same format as :email,
+  # but not required and not unique (a student may point it at a shared inbox).
+  validates :notification_email, format: { with: /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i }, allow_blank: true
   validates :student_id,  uniqueness: true, allow_nil: true
   validates :theme_preference, inclusion: { in: %w[light dark system] }, allow_nil: true
   validate :can_change_to_role?, if: :will_save_change_to_role_id?
@@ -436,6 +439,12 @@ class User < ApplicationRecord
   # Get all of the currently valid auth tokens
   def valid_auth_tokens
     auth_tokens.where("auth_token_expiry > :now", now: Time.zone.now)
+  end
+
+  # Address that email notifications should be delivered to: the student-owned
+  # notification_email when set, otherwise the university-managed email.
+  def notification_recipient_email
+    notification_email.presence || email
   end
 
   def name
