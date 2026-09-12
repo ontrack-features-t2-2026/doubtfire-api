@@ -148,7 +148,7 @@ class Webcal < ApplicationRecord
     end
 
     # Specify refresh interval.
-    refresh_interval = Icalendar::Values::Duration.new('1D')
+    refresh_interval = Icalendar::Values::Duration.new('PT4H')
     # https://docs.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxcical/1fc7b244-ecd1-4d28-ac0c-2bb4df855a1f
     ical.append_custom_property('X-PUBLISHED-TTL', refresh_interval)
     # https://tools.ietf.org/html/rfc7986#section-5.7
