@@ -456,7 +456,7 @@ class UnitsApi < Grape::API
 
     # Actually withdraw...
     response = unit.unenrol_users_from_csv(File.new(path))
-    Rails.logger.info "bulk withdraw by #{current_user.username} (user #{current_user.id}) on unit #{unit.id}: #{response[:success].count} withdrawn, #{response[:ignored].count} ignored, #{response[:errors].count} errors"
+    Rails.logger.info "bulk withdraw by user #{current_user.id} on unit #{unit.id}: #{response[:success].count} withdrawn, #{response[:ignored].count} ignored, #{response[:errors].count} errors"
     present response, with: Grape::Presenters::Presenter
   end
 
@@ -467,7 +467,7 @@ class UnitsApi < Grape::API
       error!({ error: "Not authorised to download CSV of students enrolled in #{unit.code}" }, 403)
     end
 
-    Rails.logger.info "class CSV export by #{current_user.username} (user #{current_user.id}) on unit #{unit.id}"
+    Rails.logger.info "class CSV export by user #{current_user.id} on unit #{unit.id}"
 
     content_type 'application/octet-stream'
     header['Content-Disposition'] = "attachment; filename=#{unit.code}-Students.csv"

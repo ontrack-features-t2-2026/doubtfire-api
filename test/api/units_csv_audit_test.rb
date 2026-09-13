@@ -52,7 +52,9 @@ class UnitsCsvAuditTest < ActiveSupport::TestCase
     end
 
     refute_equal 403, last_response.status, last_response.body
-    assert_match(/bulk withdraw by #{convenor.username} .* on unit #{unit.id}: 1 withdrawn/, log)
+    audit_line = log.lines.grep(/bulk withdraw by/).first
+    assert_match(/bulk withdraw by user #{convenor.id} on unit #{unit.id}: 1 withdrawn/, audit_line)
+    assert_not_includes audit_line, convenor.username
   ensure
     csv&.close!
   end
@@ -68,6 +70,8 @@ class UnitsCsvAuditTest < ActiveSupport::TestCase
     end
 
     assert_equal 200, last_response.status, last_response.body
-    assert_match(/class CSV export by #{convenor.username} .* on unit #{unit.id}/, log)
+    audit_line = log.lines.grep(/class CSV export by/).first
+    assert_match(/class CSV export by user #{convenor.id} on unit #{unit.id}/, audit_line)
+    assert_not_includes audit_line, convenor.username
   end
 end
