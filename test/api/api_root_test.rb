@@ -13,6 +13,11 @@ class ApiRootTest < ActiveSupport::TestCase
   # here is a deliberate, reviewable decision.
   PUBLIC_ALLOWLIST = [
     'ActivityTypesPublicApi',              # read-only list of activity types
+    # Completes an emailed verification link. The link is often opened on a
+    # device with no OnTrack session, and the web client posts the token with
+    # or without one, so a session cannot be required. The signed, expiring,
+    # single-use token in the body is the authorisation.
+    'AdditionalNotificationEmailVerificationApi',
     'AuthenticationApi',                   # sign in, cannot require a session
     'CampusesPublicApi',                   # read-only list of campuses
     'D2lIntegrationApi::OauthPublicApi',   # OAuth callback from D2L
