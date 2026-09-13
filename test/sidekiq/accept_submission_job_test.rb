@@ -47,6 +47,28 @@ class AcceptSubmissionJobTest < ActiveSupport::TestCase
     assert_empty touched
   end
 
+  def test_the_archive_is_restored_while_the_submission_lock_is_held
+    task = FactoryBot.create(:task)
+    user = task.project.student
+    task.update!(submission_processing_state: 'queued', submission_processing_attempts: 1)
+    outer_transactions = Task.connection.open_transactions
+    restored_under_lock = nil
+
+    # Uploads take the same lock, so none can land between the check and here.
+    task.stub(:prepare_submission_regeneration!, -> { restored_under_lock = Task.connection.open_transactions > outer_transactions }) do
+      task.stub(:convert_submission_to_pdf, ->(**_options) { true }) do
+        Task.stub(:find, task) do
+          User.stub(:find, user) do
+            AcceptSubmissionJob.new.perform(task.id, user.id, false, false, 'regenerate_only', 1)
+          end
+        end
+      end
+    end
+
+    assert restored_under_lock
+    assert_equal 'ready', task.reload.submission_processing_state
+  end
+
   def test_the_attempt_check_reads_the_stored_row_not_the_loaded_object
     task = FactoryBot.create(:task)
     user = task.project.student

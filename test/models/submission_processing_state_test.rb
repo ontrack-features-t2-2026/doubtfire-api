@@ -395,6 +395,101 @@ class SubmissionProcessingStateTest < ActiveSupport::TestCase
     end
   end
 
+  def test_a_failed_regeneration_is_retried_as_a_regeneration
+    user = @task.project.student
+    @task.mark_submission_processing!('queued', processing_mode: 'regenerate_only')
+    @task.mark_submission_processing!('failed', error_code: 'conversion_failed')
+    replayed_mode = nil
+
+    @task.stub(:submission_processing_retryable?, true) do
+      @task.stub(:folder_exists_in_new?, false) do
+        @task.stub(:folder_exists_in_process?, false) do
+          @task.stub(:submission_files_ready?, true) do
+            AcceptSubmissionJob.stub(:perform_async, lambda { |_task_id, _user_id, _tii, _test, processing_mode, _attempt|
+              replayed_mode = processing_mode
+              'job-id'
+            }) do
+              @task.retry_submission_processing!(user)
+            end
+          end
+        end
+      end
+    end
+
+    # Not retry_archive, which would run Turnitin, moderation and history again.
+    assert_equal 'regenerate_only', replayed_mode
+  end
+
+  def test_a_pdf_written_after_a_failure_makes_the_submission_ready_again
+    Dir.mktmpdir do |directory|
+      pdf_path = File.join(directory, 'submission.pdf')
+      File.write(pdf_path, 'replacement')
+      @task.update!(
+        submission_processing_state: 'failed',
+        submission_processing_started_at: 20.minutes.ago,
+        submission_processing_finished_at: 10.minutes.ago
+      )
+
+      @task.stub(:final_pdf_path, pdf_path) do
+        @task.stub(:processing_pdf?, false) do
+          snapshot = @task.submission_processing_snapshot
+          assert_equal 'ready', snapshot[:processing_state]
+          assert snapshot[:has_pdf]
+
+          # A PDF from before the failure does not count.
+          File.utime(15.minutes.ago.to_time, 15.minutes.ago.to_time, pdf_path)
+          assert_equal 'failed', @task.effective_submission_processing_state
+        end
+      end
+    end
+  end
+
+  def test_an_unsubmitted_group_task_reports_its_state
+    unit = FactoryBot.create(
+      :unit,
+      group_sets: 1,
+      groups: [{ gs: 0, students: 2 }],
+      student_count: 2,
+      unenrolled_student_count: 0,
+      part_enrolled_student_count: 0,
+      inactive_student_count: 0,
+      task_count: 0
+    )
+    task_definition = FactoryBot.create(:task_definition, unit: unit, group_set: unit.group_sets.first)
+    task = unit.groups.first.projects.first.task_for_task_definition(task_definition)
+    task.save! if task.new_record?
+
+    # No group submission yet, so there is no done folder to resolve.
+    assert task.group_task?
+    assert_nil task.group_submission
+    snapshot = task.submission_processing_snapshot
+
+    assert_equal 'not_submitted', snapshot[:processing_state]
+    assert_not snapshot[:submission_files_ready]
+  end
+
+  def test_an_uncompressed_done_folder_can_still_be_regenerated
+    Dir.mktmpdir do |directory|
+      new_path = File.join(directory, 'new', @task.id.to_s)
+      in_process_path = File.join(directory, 'in_process', @task.id.to_s)
+      done_path = File.join(directory, 'done', @task.id.to_s)
+      FileUtils.mkdir_p(done_path)
+      File.write(File.join(done_path, '000-document.pdf'), 'kept')
+      work_dir = lambda do |type, _create = true|
+        { new: "#{new_path}/", in_process: "#{in_process_path}/", done: "#{done_path}/" }.fetch(type)
+      end
+
+      @task.stub(:zip_file_path_for_done_task, File.join(directory, 'missing.zip')) do
+        @task.stub(:student_work_dir, work_dir) do
+          assert @task.submission_files_ready?
+          assert @task.prepare_submission_regeneration!
+        end
+      end
+
+      assert_equal 'kept', File.read(File.join(new_path, '000-document.pdf'))
+    end
+  end
+
   private
 
   def group_submission_fixture

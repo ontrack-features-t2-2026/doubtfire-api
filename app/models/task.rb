@@ -315,7 +315,27 @@ class Task < ApplicationRecord
   end
 
   def submission_files_ready?
-    has_done_file?
+    has_done_file? || uncompressed_done_files?
+  end
+
+  # Older submissions can keep their done files as a folder instead of a zip.
+  def uncompressed_done_files?
+    # A group task has no done folder until its group has submitted, and the
+    # path cannot be resolved without a group submission.
+    return false if group_task? && group_submission.nil?
+
+    done_dir = student_work_dir(:done, false)
+    done_dir.present? && Dir.exist?(done_dir) && Dir.children(done_dir).any?
+  rescue SystemCallError
+    false
+  end
+
+  def submission_pdf_replaced_after_failure?
+    finished_at = submission_processing_finished_at
+    path = final_pdf_path
+    finished_at.present? && path.present? && File.file?(path) && File.mtime(path) > finished_at
+  rescue SystemCallError
+    false
   end
 
   def effective_submission_processing_state(now: Time.current)
@@ -329,6 +349,10 @@ class Task < ApplicationRecord
     state = 'ready' if state.blank? && submission_pdf_ready? && !processing_pdf?
     state = 'failed' if state.blank? && submission_date.present? && submission_files_ready?
     state ||= 'not_submitted'
+
+    # A PDF written after the failure was recorded, for example by the batch
+    # feedback import, means the submission has a usable PDF again.
+    state = 'ready' if state == 'failed' && !processing_pdf? && submission_pdf_replaced_after_failure?
 
     # During a rolling deploy an old worker can successfully create the new PDF
     # without updating the durable state. Only accept it when the artifact is
@@ -421,7 +445,11 @@ class Task < ApplicationRecord
         raise ArgumentError, 'This submission is not ready to retry.'
       end
 
-      processing_mode = if !processing_task.folder_exists_in_new? || processing_task.folder_exists_in_process?
+      processing_mode = if processing_task.submission_processing_mode == 'regenerate_only'
+                          # A failed regeneration is retried as a regeneration.
+                          # Its upload's side effects already ran.
+                          'regenerate_only'
+                        elsif !processing_task.folder_exists_in_new? || processing_task.folder_exists_in_process?
                           'retry_archive'
                         else
                           'process'
@@ -519,7 +547,8 @@ class Task < ApplicationRecord
     return processing_task.prepare_submission_regeneration! unless processing_task == self
 
     zip_path = zip_file_path_for_done_task
-    raise 'The submitted files are no longer available.' if zip_path.blank? || !File.file?(zip_path)
+    has_zip = zip_path.present? && File.file?(zip_path)
+    raise 'The submitted files are no longer available.' unless has_zip || uncompressed_done_files?
 
     new_path = student_work_dir(:new, false).delete_suffix(File::SEPARATOR)
     in_process_path = student_work_dir(:in_process, false).delete_suffix(File::SEPARATOR)
@@ -528,7 +557,12 @@ class Task < ApplicationRecord
     new_backup = "#{new_path}.#{suffix}.backup"
     in_process_backup = "#{in_process_path}.#{suffix}.backup"
 
-    extract_preserved_submission!(zip_path, staging_path)
+    if has_zip
+      extract_preserved_submission!(zip_path, staging_path)
+    else
+      # 11.0.x regenerated these through move_done_to_new, so keep them working.
+      copy_preserved_submission!(student_work_dir(:done, false), staging_path)
+    end
 
     new_was_present = File.exist?(new_path) || File.symlink?(new_path)
     in_process_was_present = File.exist?(in_process_path) || File.symlink?(in_process_path)
@@ -600,6 +634,24 @@ class Task < ApplicationRecord
     raise
   end
   private :extract_preserved_submission!
+
+  # The uncompressed done folder holds the same files a done zip holds under
+  # its task id. Links are skipped so nothing outside the folder is copied.
+  def copy_preserved_submission!(done_dir, staging_path)
+    FileUtils.mkdir_p(staging_path)
+    Dir.children(done_dir).each do |name|
+      source = File.join(done_dir, name)
+      next if File.symlink?(source)
+
+      FileUtils.cp_r(source, staging_path)
+    end
+
+    raise 'The preserved submission folder is empty.' if Dir.empty?(staging_path)
+  rescue StandardError
+    FileUtils.rm_rf(staging_path)
+    raise
+  end
+  private :copy_preserved_submission!
 
   # The time zone this task's deadlines are read in.
   #

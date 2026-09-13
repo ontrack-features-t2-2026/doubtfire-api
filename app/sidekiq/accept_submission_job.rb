@@ -28,27 +28,31 @@ class AcceptSubmissionJob
       return
     end
 
-    # Retries and regenerations carry the attempt they were queued for. Once a
-    # newer upload has been accepted (possible after the attempt timed out)
-    # this job is stale and must not restore the old archive over it. Compare
-    # under the lock the enqueuing request held, so a fast worker waits for
-    # that request to commit instead of reading the previous attempt.
-    if queued_attempt.present?
-      current_attempt = task.submission_processing_lock_target.with_lock do
-        task.reload.submission_processing_attempts
-      end
-
-      if current_attempt != queued_attempt.to_i
-        logger.info "Skipping stale submission processing for task #{task.id}: " \
-                    "queued for attempt #{queued_attempt}, now at #{current_attempt}"
-        return
-      end
-    end
-
     begin
       logger.info "Accepting submission for task #{task.id} by user #{user.id}"
-      task.mark_submission_processing!('processing')
-      task.prepare_submission_regeneration! if restore_archive
+      # Retries and regenerations carry the attempt they were queued for. Once a
+      # newer upload has been accepted (possible after the attempt timed out)
+      # this job is stale and must not restore the old archive over it. The
+      # check, the state change and the restore all happen under the lock the
+      # enqueuing request held: a fast worker waits for that request to commit,
+      # and no upload can be accepted between the check and the restore.
+      stale_attempt = nil
+      task.submission_processing_lock_target.with_lock do
+        task.reload
+        if queued_attempt.present? && task.submission_processing_attempts != queued_attempt.to_i
+          stale_attempt = task.submission_processing_attempts
+        else
+          task.mark_submission_processing!('processing')
+          task.prepare_submission_regeneration! if restore_archive
+        end
+      end
+
+      unless stale_attempt.nil?
+        logger.info "Skipping stale submission processing for task #{task.id}: " \
+                    "queued for attempt #{queued_attempt}, now at #{stale_attempt}"
+        return
+      end
+
       # Convert submission to PDF
       converted = task.convert_submission_to_pdf(log_to_stdout: true)
       raise 'Submission files could not be prepared for conversion.' unless converted
