@@ -37,6 +37,8 @@ class AdditionalNotificationEmailDeliveryJob
       "Additional notification copy failed for user_id=#{user_id || 'unknown'} " \
       "notification_id=#{notification_id}: #{e.class}"
     )
-    raise
+    # Retry as before, but without the original message, which for an SMTP
+    # rejection usually quotes the additional address.
+    AdditionalNotificationEmailService.raise_sanitized_delivery_failure!(e)
   end
 end

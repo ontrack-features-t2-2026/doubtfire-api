@@ -28,11 +28,13 @@ class NotificationEmailJob
     # substitute for the primary channel.
     NotificationsMailer.single_notification(notification).deliver_now
 
-    additional = notification.user.additional_notification_email
-    return unless additional&.verified?
-    return if additional.email.casecmp?(notification.user.email)
-
     begin
+      # Everything from here is optional, including the lookup itself: a
+      # database error on it must not make Sidekiq retry the primary message.
+      additional = notification.user.additional_notification_email
+      return unless additional&.verified?
+      return if additional.email.casecmp?(notification.user.email)
+
       AdditionalNotificationEmailDeliveryJob.perform_async(
         notification.id,
         additional.id,
@@ -41,8 +43,9 @@ class NotificationEmailJob
     rescue StandardError => e
       # The primary message has already been accepted. An optional destination
       # cannot make that delivery retry (and potentially duplicate). The copy
-      # normally has its own retrying job; this branch is only a queue hand-off
-      # failure. Log only class/user/record identifiers: never address/content.
+      # normally has its own retrying job; this branch is only a lookup or queue
+      # hand-off failure. Log only class/user/record identifiers: never
+      # address/content.
       AdditionalNotificationEmailService.audit_delivery_event(
         notification.user,
         'notification_copy_failed'

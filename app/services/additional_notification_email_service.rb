@@ -4,6 +4,10 @@ class AdditionalNotificationEmailService
   class InvalidToken < StandardError; end
   class AlreadyVerified < StandardError; end
   class RateLimited < StandardError; end
+  # Raised in place of a mail delivery error. SMTP rejections often quote the
+  # recipient, and Sidekiq logs the message and keeps it with the retry in
+  # Redis, so only the original class name is carried forward.
+  class DeliveryFailed < RuntimeError; end
 
   VERIFICATION_LIFETIME = 24.hours
   RATE_LIMIT_WINDOW = 1.hour
@@ -56,17 +60,22 @@ class AdditionalNotificationEmailService
     record = AdditionalNotificationEmail.record_for_token(token)
     raise InvalidToken if record.nil?
 
-    record.with_lock do
-      # with_lock reloads the row. Validate the signed version again so a
-      # concurrent replacement/resend cannot make an earlier token verify the
-      # newly written address between the first lookup and this lock.
+    # Lock the user first, as request, resend and remove do. Locking the
+    # address row first and then inserting the audit row (whose foreign key
+    # takes a shared lock on the user) could deadlock against them. Holding
+    # the user lock also serialises this with every change to the address.
+    record.user.with_lock do
+      # Validate the signed version again under the lock so a concurrent
+      # replacement/resend cannot make an earlier token verify the newly
+      # written address between the first lookup and this lock.
       current_record = AdditionalNotificationEmail.record_for_token(token)
       raise InvalidToken unless current_record&.id == record.id
-      raise AlreadyVerified if record.verified?
-      raise InvalidToken if record.verification_expired?
+      raise AlreadyVerified if current_record.verified?
+      raise InvalidToken if current_record.verification_expired?
 
-      record.update!(verified_at: Time.current)
-      audit!(record.user, 'verified')
+      current_record.update!(verified_at: Time.current)
+      audit!(current_record.user, 'verified')
+      record = current_record
     end
 
     record
@@ -99,6 +108,10 @@ class AdditionalNotificationEmailService
       "event=#{event}: #{e.class}"
     )
     nil
+  end
+
+  def self.raise_sanitized_delivery_failure!(error)
+    raise DeliveryFailed, "Mail delivery failed (#{error.class})", cause: nil
   end
 
   def self.prepare_pending_record(record, email)

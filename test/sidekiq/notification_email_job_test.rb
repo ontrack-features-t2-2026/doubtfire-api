@@ -287,6 +287,48 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     end
   end
 
+  def test_an_optional_address_lookup_failure_does_not_retry_the_primary_message
+    user = FactoryBot.create(:user)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+    failing_lookup = -> { raise ActiveRecord::ConnectionNotEstablished, 'database unavailable' }
+
+    user.stub(:additional_notification_email, failing_lookup) do
+      notification.stub(:user, user) do
+        Notification.stub(:find, notification) do
+          assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
+            NotificationEmailJob.new.perform(notification.id)
+          end
+        end
+      end
+    end
+
+    assert_empty AdditionalNotificationEmailDeliveryJob.jobs
+    assert_equal 1, user.additional_notification_email_audits.where(event: 'notification_copy_failed').count
+  end
+
+  def test_a_rejected_copy_is_retried_without_the_address_in_the_error
+    user = FactoryBot.create(:user)
+    additional = AdditionalNotificationEmailService.request(user: user, email: 'secondary@example.org')
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+    NotificationEmailJob.new.perform(notification.id)
+    copy_job = AdditionalNotificationEmailDeliveryJob.jobs.last
+    smtp_rejection = Class.new do
+      def deliver_now
+        raise '550 5.1.1 <secondary@example.org>: Recipient address rejected'
+      end
+    end.new
+
+    error = NotificationsMailer.stub(:additional_notification_copy, ->(_notification, _address) { smtp_rejection }) do
+      assert_raises(AdditionalNotificationEmailService::DeliveryFailed) do
+        AdditionalNotificationEmailDeliveryJob.new.perform(*copy_job['args'])
+      end
+    end
+
+    assert_not_includes error.message, 'secondary@example.org'
+    assert_nil error.cause
+  end
+
   def test_runtime_duplicate_suppression_prevents_two_messages
     user = FactoryBot.create(:user, email: 'same@example.edu')
     additional = AdditionalNotificationEmailService.request(

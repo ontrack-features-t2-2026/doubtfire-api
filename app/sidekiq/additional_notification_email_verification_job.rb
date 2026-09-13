@@ -14,7 +14,14 @@ class AdditionalNotificationEmailVerificationJob
     return if record.verification_expired?
     return unless record.verification_version == verification_version
 
-    AdditionalNotificationEmailMailer.verification(record).deliver_now
+    begin
+      AdditionalNotificationEmailMailer.verification(record).deliver_now
+    rescue StandardError => e
+      Rails.logger.error(
+        "Additional notification email verification delivery failed for user_id=#{record.user_id}: #{e.class}"
+      )
+      AdditionalNotificationEmailService.raise_sanitized_delivery_failure!(e)
+    end
     AdditionalNotificationEmailService.audit_delivery_event(
       record.user,
       'verification_email_delivered'

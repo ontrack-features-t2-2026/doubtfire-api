@@ -65,6 +65,26 @@ class AdditionalNotificationEmailVerificationJobTest < ActiveSupport::TestCase
     end
   end
 
+  def test_a_rejected_verification_email_is_retried_without_the_address_in_the_error
+    rejection = Class.new do
+      def deliver_now
+        raise '550 5.1.1 <secondary@example.org>: Recipient address rejected'
+      end
+    end.new
+
+    error = AdditionalNotificationEmailMailer.stub(:verification, ->(_record) { rejection }) do
+      assert_raises(AdditionalNotificationEmailService::DeliveryFailed) do
+        AdditionalNotificationEmailVerificationJob.new.perform(
+          @record.id,
+          @record.verification_version
+        )
+      end
+    end
+
+    assert_not_includes error.message, @record.email
+    assert_nil error.cause
+  end
+
   def test_audit_store_failure_does_not_retry_an_accepted_verification_email
     AdditionalNotificationEmailService.stub(:audit!, ->(*) { raise 'audit unavailable' }) do
       assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do

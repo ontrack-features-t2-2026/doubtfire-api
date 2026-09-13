@@ -96,6 +96,33 @@ class AdditionalNotificationEmailTest < ActiveSupport::TestCase
                  @user.additional_notification_email_audits.where(event: 'verification_requested').count
   end
 
+  def test_verification_locks_the_user_before_touching_the_address
+    record = AdditionalNotificationEmailService.request(
+      user: @user,
+      email: 'secondary@example.org'
+    )
+    token = record.verification_token
+    locks = []
+    user = record.user
+    user.define_singleton_method(:with_lock) do |*args, &block|
+      locks << :user
+      super(*args, &block)
+    end
+    record.define_singleton_method(:with_lock) do |*args, &block|
+      locks << :address
+      super(*args, &block)
+    end
+
+    AdditionalNotificationEmail.stub(:record_for_token, ->(_token) { locks.include?(:user) ? record.reload : record }) do
+      AdditionalNotificationEmailService.verify(token: token)
+    end
+
+    # request, resend and remove lock the user first. The same order here
+    # cannot deadlock against them.
+    assert_equal [:user], locks
+    assert record.reload.verified?
+  end
+
   def test_removal_stops_future_use_and_keeps_a_token_free_audit
     record = AdditionalNotificationEmailService.request(
       user: @user,
