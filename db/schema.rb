@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_31_000002) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -761,6 +761,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
     t.datetime "target_start_date"
     t.datetime "target_due_date"
     t.datetime "last_tutor_feedback_at"
+    t.string "submission_processing_state"
+    t.datetime "submission_processing_started_at"
+    t.datetime "submission_processing_finished_at"
+    t.string "submission_processing_error_code"
+    t.integer "submission_processing_attempts", default: 0, null: false
     t.index ["group_submission_id"], name: "index_tasks_on_group_submission_id"
     t.index ["project_id", "task_definition_id"], name: "tasks_uniq_proj_task_def", unique: true
     t.index ["project_id"], name: "index_tasks_on_project_id"
