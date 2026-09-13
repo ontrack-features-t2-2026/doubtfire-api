@@ -50,6 +50,16 @@ class NotificationsApiTest < ActiveSupport::TestCase
     assert_equal [newer.id, older.id], ids, 'recent_first order'
   end
 
+  def test_list_includes_the_event_the_client_routes_on
+    FactoryBot.create(:notification, user: @user, event: 'task_comment_created')
+
+    add_auth_header_for(user: @user)
+    get '/api/notifications'
+
+    assert_equal 200, last_response.status
+    assert_equal 'task_comment_created', JSON.parse(last_response.body).first['event']
+  end
+
   def test_list_unread_only_filters_out_read_notifications
     unread = FactoryBot.create(:notification, user: @user)
     FactoryBot.create(:notification, :read, user: @user)
