@@ -137,20 +137,21 @@ module Feedback
       nil
     end
 
-    desc 'Track usage of a feedback template chip by a tutor'
+    desc 'Track usage of a feedback template chip by the current user'
     params do
       requires :id, type: Integer, desc: 'The ID of the feedback template chip'
-      requires :tutor_id, type: Integer, desc: 'The ID of the tutor'
     end
     post '/feedback_template_chip/:id/track_usage' do
       chip = FeedbackTemplateChip.find(params[:id])
-      tutor = User.find(params[:tutor_id])
 
       unless authorise? current_user, chip, :track_chip_usage
         error!({ error: 'You are not authorised to track feedback chip usage.' }, 403)
       end
 
-      chip.track_usage_by(tutor)
+      # Always record usage against the caller. Accepting a tutor id from the
+      # request would let any tutor log usage for any user, and looking that
+      # user up would reveal which user ids exist.
+      chip.track_usage_by(current_user)
       nil
     end
 
