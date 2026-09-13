@@ -9,6 +9,27 @@ class TaskCommentsApi < Grape::API
     authenticated?
   end
 
+  helpers do
+    # A retry that overlaps its original request can miss the lookup at the
+    # start of the create endpoint and then lose the race at the unique index,
+    # at the uniqueness validation, or at add_text_comment's duplicate guard.
+    # In each case the comment already stored for this id is the answer.
+    def comment_for_client_request(task, client_request_id)
+      return nil if client_request_id.blank?
+
+      # Skip the request's query cache. It still holds the first lookup's
+      # miss, and the comment was stored since by the request this one raced.
+      TaskComment.uncached do
+        task.comments.find_by(user_id: current_user.id, client_request_id: client_request_id)
+      end
+    end
+
+    def lost_client_request_race?(error)
+      error.is_a?(ActiveRecord::RecordNotUnique) ||
+        (error.is_a?(ActiveRecord::RecordInvalid) && error.record.errors.of_kind?(:client_request_id, :taken))
+    end
+  end
+
   desc 'Add a new comment to a task'
   params do
     optional :comment, type: String, desc: 'The comment text to add to the task'
@@ -65,10 +86,13 @@ class TaskCommentsApi < Grape::API
       error!({ error: 'Comment text is empty, unable to add new comment' }, 403) if text_comment.blank?
       begin
         result = task.add_text_comment(current_user, text_comment, reply_to_id, client_request_id)
-      rescue ActiveRecord::RecordNotUnique
-        result = task.comments.find_by(user_id: current_user.id, client_request_id: client_request_id)
+      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+        raise unless lost_client_request_race?(e)
+
+        result = comment_for_client_request(task, client_request_id)
         raise if result.blank?
       end
+      result ||= comment_for_client_request(task, client_request_id)
     else
       file_result = FileHelper.accept_file(attached_file, 'comment attachment - TaskComment', 'comment_attachment')
       unless file_result[:accepted]
@@ -83,8 +107,10 @@ class TaskCommentsApi < Grape::API
           text_comment,
           client_request_id
         )
-      rescue ActiveRecord::RecordNotUnique
-        result = task.comments.find_by(user_id: current_user.id, client_request_id: client_request_id)
+      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+        raise unless lost_client_request_race?(e)
+
+        result = comment_for_client_request(task, client_request_id)
         raise if result.blank?
       end
       error!({ error: 'File is not an acceptable comment attachment format.' }, 403) if result.nil?

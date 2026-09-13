@@ -214,6 +214,107 @@ class Batch03DocxAttachmentTest < ActiveSupport::TestCase
     assert_equal initial_count, @task.comments.count
   end
 
+  test 'a failure after the DOCX is stored removes the file before the rollback' do
+    initial_count = @task.comments.count
+    comment_dir = FileHelper.student_work_dir(:comment, @task)
+    files_before = Dir.children(comment_dir).sort
+    outer_transactions = TaskComment.connection.open_transactions
+    removals = []
+    original_rm_f = FileUtils.method(:rm_f)
+    recording_rm_f = lambda do |path, **options|
+      removals << [path.to_s, TaskComment.connection.open_transactions] if path.to_s.start_with?(comment_dir)
+      original_rm_f.call(path, **options)
+    end
+    # safe_upload_filename runs after the file has been moved into place.
+    failure_after_storage = lambda do |*_args, **_options|
+      raise IOError, 'simulated failure after storage'
+    end
+
+    FileUtils.stub(:rm_f, recording_rm_f) do
+      FileHelper.stub(:safe_upload_filename, failure_after_storage) do
+        post @comments_endpoint,
+             attachment: docx_upload,
+             client_request_id: SecureRandom.uuid
+      end
+    end
+
+    assert_includes 500..599, last_response.status, last_response.body
+    assert_equal initial_count, @task.comments.count
+    assert_equal files_before, Dir.children(comment_dir).sort
+
+    # Outside tests the rollback is a real one and resets the new row's id,
+    # which the storage path is built from, so the file must be removed while
+    # the transaction is still open. A test savepoint keeps the id, so the
+    # order is asserted directly.
+    removal = removals.find { |path, _open_transactions| path.end_with?('.docx') }
+    assert removal, 'the stored DOCX should be removed'
+    assert_operator removal.last, :>, outer_transactions
+  end
+
+  test 'an overlapping attachment retry that loses the race returns the stored comment' do
+    client_request_id = SecureRandom.uuid
+    original_accept_file = FileHelper.method(:accept_file)
+    winner = nil
+    # The endpoint's format check runs after its client_request_id lookup, so
+    # storing the original request here reproduces a retry that missed it.
+    racing_accept_file = lambda do |*args|
+      winner ||= @task.add_text_comment(@student, 'Original request', nil, client_request_id)
+      original_accept_file.call(*args)
+    end
+
+    FileHelper.stub(:accept_file, racing_accept_file) do
+      post @comments_endpoint,
+           attachment: docx_upload,
+           client_request_id: client_request_id
+    end
+
+    assert_equal 201, last_response.status, last_response.body
+    assert_equal winner.id, last_response_body['id']
+    assert_equal 1, @task.comments.where(user_id: @student.id, client_request_id: client_request_id).count
+  ensure
+    TaskComment.where(task: @task, user: @student, client_request_id: client_request_id).destroy_all if client_request_id
+  end
+
+  test 'an overlapping text retry that loses the race returns the stored comment' do
+    client_request_id = SecureRandom.uuid
+    text = 'Typed once, sent twice'
+    parent = @task.add_text_comment(@student, 'Earlier message')
+    # The original request's comment, under a placeholder id so the retry's
+    # first lookup misses it.
+    winner = @task.add_text_comment(@student, text, nil, SecureRandom.uuid)
+    original_find = TaskComment.method(:find)
+    raced = false
+    # Replying makes the endpoint load the parent after its first lookup, and
+    # the original request "commits" here. The raw update stands in for that
+    # request's own connection: like a commit elsewhere, it does not clear this
+    # request's query cache, which still holds the first lookup's miss.
+    racing_find = lambda do |*args|
+      unless raced
+        raced = true
+        TaskComment.connection.raw_connection.query(
+          "UPDATE task_comments SET client_request_id = '#{client_request_id}' WHERE id = #{winner.id}"
+        )
+      end
+      original_find.call(*args)
+    end
+
+    ActiveRecord::Base.cache do
+      TaskComment.stub(:find, racing_find) do
+        post_json @comments_endpoint,
+                  comment: text,
+                  reply_to_id: parent.id,
+                  client_request_id: client_request_id
+      end
+    end
+
+    assert_equal 201, last_response.status, last_response.body
+    assert_equal winner.id, last_response_body['id']
+    assert_equal 1, @task.comments.where(user_id: @student.id, client_request_id: client_request_id).count
+  ensure
+    TaskComment.where(task: @task, user: @student, client_request_id: client_request_id).destroy_all if client_request_id
+    parent&.destroy
+  end
+
   test 'unsupported attachment returns a controlled 4xx without creating a comment' do
     initial_count = @task.comments.count
     invalid_upload = Rack::Test::UploadedFile.new(

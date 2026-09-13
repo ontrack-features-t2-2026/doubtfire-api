@@ -1331,15 +1331,18 @@ class Task < ApplicationRecord
       # path is id-based. Any conversion/storage failure rolls the row and its
       # read receipt back together.
       comment.save!
-      raise 'Error attaching uploaded file.' unless comment.add_attachment(tempfile)
+      begin
+        raise 'Error attaching uploaded file.' unless comment.add_attachment(tempfile)
+      rescue StandardError
+        # Filesystem operations are not transactional, and the rollback resets
+        # the new row's id that the storage path is built from. Remove any
+        # moved or converted file now, while that path is still known.
+        FileUtils.rm_f(comment.attachment_path) if comment.attachment_extension.present?
+        raise
+      end
     end
 
     comment
-  rescue StandardError
-    # Filesystem operations are not transactional. Remove any partially moved
-    # or converted file before propagating the failure to the endpoint.
-    FileUtils.rm_f(comment.attachment_path) if comment&.attachment_extension.present?
-    raise
   end
 
   def add_feedback_review_request_comment(current_user)
