@@ -152,6 +152,7 @@ class ExecuteCommunicationSetJobTest < ActiveSupport::TestCase
       "Failed to send email to #{failed.first[:recipient_email]}: mailbox unavailable",
       failed_csv_row['details']
     )
+    assert failed_csv_row['executed_at'].present?, 'a failed delivery was still attempted, so it carries a time'
   end
 
   # The check on an over-eager rescue. Nothing about a clean run changes.

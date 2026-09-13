@@ -180,7 +180,8 @@ class ExecuteCommunicationSetJob
           project_id: project.id,
           username: recipient.username,
           recipient_email: recipient.email,
-          reason: e.message
+          reason: e.message,
+          executed_at: Time.current
         }
       end
 
