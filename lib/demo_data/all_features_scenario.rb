@@ -317,6 +317,21 @@ module DemoData
         viewer_project: project,
         viewer_task: viewer_task
       )
+      # build returns nil once the viewer's project or task has changed since
+      # aggregation. Report that the way PeerProgressApi does instead of
+      # failing the whole contract.
+      if peer_progress.nil?
+        return {
+          state: 'unavailable',
+          unavailable_reason: 'aggregation_incomplete',
+          task_abbreviation: definition.abbreviation,
+          task_definition_id: definition.id,
+          submitted_percentage: nil,
+          completed_percentage: nil,
+          status_distribution: nil
+        }
+      end
+
       metrics = PeerProgressViewerPolicy.public_metrics(peer_progress)
       distribution = metrics.fetch(:status_distribution)
       if distribution.blank?
@@ -334,19 +349,23 @@ module DemoData
       }
     end
 
+    # Percentages are derived from the persisted tasks, so verify! can compare
+    # them with the canonical fixture and the contract never pairs live counts
+    # with fixed percentages.
     def task_lifecycle_contract(project)
       grouped = project.tasks.group(:task_status_id).count
       total = project.tasks.count
-      statuses = MobileFeedbackScenario::EXPECTED_TASK_STATUS_PERCENTAGES.map do |status, percentage|
+      statuses = MobileFeedbackScenario::EXPECTED_TASK_STATUS_PERCENTAGES.keys.map do |status|
         task_status = TaskStatus.public_send(status)
+        count = grouped.fetch(task_status.id, 0)
         tasks = project.tasks
                        .joins(:task_definition)
                        .where(task_status: task_status)
                        .order('task_definitions.abbreviation')
         {
           status: status.to_s,
-          count: grouped.fetch(task_status.id, 0),
-          percentage: percentage,
+          count: count,
+          percentage: lifecycle_percentage(count, total),
           task_abbreviations: tasks.pluck('task_definitions.abbreviation')
         }
       end
@@ -354,10 +373,22 @@ module DemoData
       {
         unit_key: project.unit.code,
         total_tasks: total,
-        submitted_percentage: 60.0,
-        completed_percentage: 10.0,
+        submitted_percentage: lifecycle_percentage(
+          project.tasks.where.not(file_uploaded_at: nil).count,
+          total
+        ),
+        completed_percentage: lifecycle_percentage(
+          grouped.fetch(TaskStatus.complete.id, 0),
+          total
+        ),
         statuses: statuses
       }
+    end
+
+    def lifecycle_percentage(count, total)
+      return 0.0 if total.zero?
+
+      (count * 100.0 / total).round(1)
     end
 
     def notification_contract(user)

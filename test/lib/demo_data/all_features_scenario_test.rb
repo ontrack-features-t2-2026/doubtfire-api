@@ -97,6 +97,8 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert_equal DemoData::AllFeaturesScenario::NOTIFICATION_COUNT,
                  demo_student.notifications.count
 
+    assert_contract_follows_changed_demo_data
+
     with_demo_safety { @scenario.cleanup! }
 
     assert_empty Unit.where(code: DemoData::AllFeaturesScenario::UNIT_CODES)
@@ -429,6 +431,42 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
         users: { username: DemoData::AllFeaturesScenario::USERNAMES }
       ).count
     }
+  end
+
+  # Runs after the idempotency checks because it changes seeded rows.
+  def assert_contract_follows_changed_demo_data
+    projects = demo_student.projects.includes(:unit).index_by { |project| project.unit.code }
+
+    # A demo project changed after aggregation leaves its snapshot behind.
+    stale_project = projects.fetch('DEMO20007')
+    definition = stale_project.unit.task_definitions.find_by!(
+      abbreviation: DemoData::AllFeaturesScenario::PPI_TASK_ABBREVIATION
+    )
+    snapshot = stale_project.unit.peer_progress_snapshots.find_by!(
+      task_definition: definition,
+      target_grade: stale_project.target_grade
+    )
+    stale_project.touch(time: snapshot.calculated_at + 1.minute)
+
+    # Move the failed task to complete without the status side effects.
+    failed_task = projects.fetch('DEMO10001').tasks.joins(:task_definition)
+                          .find_by!(task_definitions: { abbreviation: 'FAILED' })
+    failed_task.update_columns(task_status_id: TaskStatus.complete.id) # rubocop:disable Rails/SkipsModelValidations
+
+    contract = with_demo_safety { @scenario.contract_for(user: demo_student) }
+
+    stale = contract.fetch(:units).find { |item| item.fetch(:code) == 'DEMO20007' }.fetch(:ppi)
+    assert_equal 'unavailable', stale.fetch(:state)
+    assert_equal 'aggregation_incomplete', stale.fetch(:unavailable_reason)
+    assert_nil stale.fetch(:status_distribution)
+
+    lifecycle = contract.fetch(:task_lifecycle)
+    percentages = lifecycle.fetch(:statuses).to_h do |entry|
+      [entry.fetch(:status), entry.fetch(:percentage)]
+    end
+    assert_equal 20.0, percentages.fetch('complete')
+    assert_equal 0.0, percentages.fetch('fail')
+    assert_equal 20.0, lifecycle.fetch(:completed_percentage)
   end
 
   def demo_student
