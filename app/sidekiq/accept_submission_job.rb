@@ -10,6 +10,7 @@ class AcceptSubmissionJob
 
   def perform(task_id, user_id, accepted_tii_eula, test_submission, *processing_options)
     processing_mode = processing_options.first.to_s
+    queued_attempt = processing_options[1]
     restore_archive = %w[retry_archive regenerate_only].include?(processing_mode) || processing_options.first == true
     regeneration_only = processing_mode == 'regenerate_only'
     begin
@@ -25,6 +26,23 @@ class AcceptSubmissionJob
     rescue StandardError => e
       logger.error e
       return
+    end
+
+    # Retries and regenerations carry the attempt they were queued for. Once a
+    # newer upload has been accepted (possible after the attempt timed out)
+    # this job is stale and must not restore the old archive over it. Compare
+    # under the lock the enqueuing request held, so a fast worker waits for
+    # that request to commit instead of reading the previous attempt.
+    if queued_attempt.present?
+      current_attempt = task.submission_processing_lock_target.with_lock do
+        task.reload.submission_processing_attempts
+      end
+
+      if current_attempt != queued_attempt.to_i
+        logger.info "Skipping stale submission processing for task #{task.id}: " \
+                    "queued for attempt #{queued_attempt}, now at #{current_attempt}"
+        return
+      end
     end
 
     begin

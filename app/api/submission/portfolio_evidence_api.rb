@@ -200,6 +200,8 @@ module Submission
         error!({ error: 'The submitted files are not available to retry.' }, 422)
       end
 
+      # For a group task the new state was written through other instances.
+      task.reload
       present task.submission_processing_snapshot.merge(
         submission_date: task.submission_date,
         processing_error_code: task.submission_processing_error_code,
