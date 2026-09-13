@@ -111,9 +111,11 @@ class NotificationsApiTest < ActiveSupport::TestCase
 
   def test_deleting_all_uses_the_confirmed_boundary_and_current_user_scope
     first = FactoryBot.create(:notification, user: @user)
+    # Created inside the boundary, so only the current_user scope can save it.
+    other_users = FactoryBot.create(:notification, user: @other)
     through = FactoryBot.create(:notification, user: @user)
     unseen_newer = FactoryBot.create(:notification, user: @user)
-    other_users = FactoryBot.create(:notification, user: @other)
+    assert_operator other_users.id, :<, through.id
 
     add_auth_header_for(user: @user)
     delete '/api/notifications', through_id: through.id
@@ -124,6 +126,21 @@ class NotificationsApiTest < ActiveSupport::TestCase
     assert_not Notification.exists?(through.id)
     assert Notification.exists?(unseen_newer.id), 'a notification after confirmation is retained'
     assert Notification.exists?(other_users.id), 'another user is untouched'
+  end
+
+  def test_deleting_all_rejects_a_missing_negative_or_malformed_boundary
+    notification = FactoryBot.create(:notification, user: @user)
+
+    add_auth_header_for(user: @user)
+
+    [{}, { through_id: -1 }, { through_id: 'all' }].each do |params|
+      assert_no_difference 'Notification.count' do
+        delete '/api/notifications', params
+      end
+
+      assert_equal 400, last_response.status, "expected 400 for #{params.inspect}"
+    end
+    assert Notification.exists?(notification.id)
   end
 
   def test_deleting_all_requires_a_positive_confirmation_boundary
