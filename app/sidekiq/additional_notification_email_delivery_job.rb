@@ -8,8 +8,12 @@ class AdditionalNotificationEmailDeliveryJob
   sidekiq_options queue: :mailers, retry: 3
 
   def perform(notification_id, additional_notification_email_id, verification_version)
-    notification = Notification.find(notification_id)
-    additional = AdditionalNotificationEmail.find(additional_notification_email_id)
+    # Either row can be deleted after queueing (the notification by delete-all,
+    # the address by removal). Neither is a delivery failure, so do not retry
+    # or record one.
+    notification = Notification.find_by(id: notification_id)
+    additional = AdditionalNotificationEmail.find_by(id: additional_notification_email_id)
+    return if notification.nil? || additional.nil?
 
     return unless additional.user_id == notification.user_id
     return unless additional.verified?

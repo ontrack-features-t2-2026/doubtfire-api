@@ -329,6 +329,22 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     assert_nil error.cause
   end
 
+  def test_a_copy_for_a_removed_address_is_dropped_without_a_failure_audit
+    user = FactoryBot.create(:user)
+    additional = AdditionalNotificationEmailService.request(user: user, email: 'secondary@example.org')
+    AdditionalNotificationEmailService.verify(token: additional.verification_token)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
+    NotificationEmailJob.new.perform(notification.id)
+    copy_job = AdditionalNotificationEmailDeliveryJob.jobs.last
+
+    AdditionalNotificationEmailService.remove(user: user)
+
+    assert_no_difference -> { ActionMailer::Base.deliveries.count } do
+      AdditionalNotificationEmailDeliveryJob.new.perform(*copy_job['args'])
+    end
+    assert_equal 0, user.additional_notification_email_audits.where(event: 'notification_copy_failed').count
+  end
+
   def test_runtime_duplicate_suppression_prevents_two_messages
     user = FactoryBot.create(:user, email: 'same@example.edu')
     additional = AdditionalNotificationEmailService.request(

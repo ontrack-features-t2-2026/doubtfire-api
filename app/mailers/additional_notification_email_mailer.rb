@@ -13,8 +13,8 @@ class AdditionalNotificationEmailMailer < ApplicationMailer
 
     mail(
       to: record.email,
-      from: sender,
-      subject: "Verify your additional #{@product_name} notification email"
+      subject: "Verify your additional #{@product_name} notification email",
+      **outbound_sender_headers(development_from: sender)
     )
   end
 end

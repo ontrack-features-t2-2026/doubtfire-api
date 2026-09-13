@@ -50,9 +50,9 @@ class NotificationsMailer < ApplicationMailer
 
     mail(
       to: address,
-      from: from_address,
       subject: subject,
-      template_name: event_template_name(notification.event)
+      template_name: event_template_name(notification.event),
+      **outbound_sender_headers(development_from: from_address)
     )
   end
 

@@ -54,6 +54,17 @@ class AdditionalNotificationEmailVerificationJobTest < ActiveSupport::TestCase
     end
   end
 
+  def test_a_removed_address_is_dropped_without_retrying
+    AdditionalNotificationEmailService.remove(user: @user)
+
+    assert_no_difference -> { ActionMailer::Base.deliveries.count } do
+      AdditionalNotificationEmailVerificationJob.new.perform(
+        @record.id,
+        @record.verification_version
+      )
+    end
+  end
+
   def test_expired_record_does_not_send
     @record.update!(verification_expires_at: 1.minute.ago)
 

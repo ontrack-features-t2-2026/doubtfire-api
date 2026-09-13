@@ -9,7 +9,9 @@ class AdditionalNotificationEmailVerificationJob
   sidekiq_options queue: :mailers, retry: 3
 
   def perform(additional_notification_email_id, verification_version)
-    record = AdditionalNotificationEmail.find(additional_notification_email_id)
+    # A removed address leaves nothing to verify, so do not retry.
+    record = AdditionalNotificationEmail.find_by(id: additional_notification_email_id)
+    return if record.nil?
     return unless record.pending?
     return if record.verification_expired?
     return unless record.verification_version == verification_version

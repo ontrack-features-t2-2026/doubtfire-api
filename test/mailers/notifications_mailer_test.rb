@@ -119,4 +119,25 @@ class NotificationsMailerTest < ActionMailer::TestCase
     assert mail.html_part.body.to_s.present?
     assert mail.text_part.body.to_s.present?
   end
+
+  # The same production sender rule as every other mailer on 11.0.x.
+  def test_additional_mail_refuses_an_unconfigured_sender_in_production
+    institution = Doubtfire::Application.config.institution
+    previous_sender = institution[:email_sender]
+    institution[:email_sender] = nil
+    user = FactoryBot.create(:user, email: 'primary@example.edu')
+    notification = FactoryBot.create(:notification, :feedback, user: user, event: 'task_comment_created')
+    record = AdditionalNotificationEmailService.request(user: user, email: 'secondary@example.org')
+
+    Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new('production')) do
+      assert_raises(ArgumentError) do
+        NotificationsMailer.additional_notification_copy(notification, 'secondary@example.org').message
+      end
+      assert_raises(ArgumentError) do
+        AdditionalNotificationEmailMailer.verification(record).message
+      end
+    end
+  ensure
+    institution[:email_sender] = previous_sender
+  end
 end
