@@ -114,8 +114,14 @@ class TaskComment < ApplicationRecord
     FileHelper.comment_attachment_path(self, attachment_extension)
   end
 
+  # The supplied name, with the stored extension when processing changed the
+  # format (audio is stored as WAV, most images as JPEG).
   def attachment_file_name
-    attachment_original_filename.presence || "comment-#{id}#{attachment_extension}"
+    original = attachment_original_filename.presence
+    return "comment-#{id}#{attachment_extension}" if original.nil?
+    return original if attachment_extension.blank? || File.extname(original).casecmp?(attachment_extension)
+
+    "#{File.basename(original, File.extname(original))}#{attachment_extension}"
   end
 
   def add_attachment(file_upload)

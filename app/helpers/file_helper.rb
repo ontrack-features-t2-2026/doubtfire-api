@@ -15,6 +15,8 @@ module FileHelper
   extend MimeCheckHelpers
 
   DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  DOCX_MAIN_DOCUMENT_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'
+  OOXML_CONTENT_TYPES_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/content-types'
 
   ZIP_NESTED_ARCHIVE_EXTENSIONS = %w[
     .7z .bz2 .ear .gz .jar .rar .tar .tar.bz2 .tar.gz .tar.xz .tbz .tbz2 .tgz .txz .war .xz .zip
@@ -647,8 +649,7 @@ module FileHelper
       return { valid: false, msg: "Word document package is missing #{missing_entries.join(', ')}." }
     end
 
-    main_document_content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'
-    unless content_types&.include?(main_document_content_type)
+    unless docx_main_document_declared?(content_types)
       return { valid: false, msg: 'Word document package has an invalid main document content type.' }
     end
 
@@ -662,6 +663,22 @@ module FileHelper
     { valid: false, msg: 'Word document is corrupted or is not a valid OOXML package.' }
   rescue StandardError => e
     { valid: false, msg: e.message }
+  end
+
+  # The main part must be declared by the Override for /word/document.xml.
+  # Matching the type as a substring would also accept it inside a comment or
+  # on some other part.
+  def docx_main_document_declared?(content_types)
+    return false if content_types.blank?
+
+    document = Nokogiri::XML(content_types) { |config| config.strict.nonet }
+    override = document.at_xpath(
+      "/ct:Types/ct:Override[@PartName='/word/document.xml']",
+      'ct' => OOXML_CONTENT_TYPES_NAMESPACE
+    )
+    override.present? && override['ContentType'] == DOCX_MAIN_DOCUMENT_CONTENT_TYPE
+  rescue Nokogiri::XML::SyntaxError
+    false
   end
 
   def zip_tree_add_path(tree, path)
@@ -1165,6 +1182,7 @@ module FileHelper
   module_function :validate_tar_file
   module_function :validate_zip_upload
   module_function :validate_docx
+  module_function :docx_main_document_declared?
   module_function :zip_tree_add_path
   module_function :zip_tree_walk
   module_function :zip_file_tree

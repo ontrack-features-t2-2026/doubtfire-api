@@ -162,4 +162,19 @@ class Batch03DocxFileHelperTest < ActiveSupport::TestCase
     assert_includes safe_name, '<evidence>'
     assert_includes safe_name, '📱'
   end
+
+  test 'rejects a DOCX whose main part has the wrong type even when the right type appears elsewhere' do
+    entries = minimal_docx_entries(content_type: 'application/xml')
+    entries['[Content_Types].xml'] = entries['[Content_Types].xml'].sub(
+      '</Types>',
+      "<!-- #{DOCX_MAIN_CONTENT_TYPE} --></Types>"
+    )
+
+    with_docx(entries) do |path|
+      result = FileHelper.validate_docx(path)
+
+      assert_not result[:valid]
+      assert_match(/invalid main document content type/i, result[:msg])
+    end
+  end
 end

@@ -1146,7 +1146,12 @@ class Task < ApplicationRecord
   end
 
   def add_text_comment(user, text, reply_to_id = nil, client_request_id = nil)
-    return nil if user.nil? || text.blank?
+    return nil if user.nil? || text.nil?
+
+    # Strip before the emptiness check, as 11.0.x did: strip also removes NUL,
+    # which blank? does not count as whitespace.
+    text = text.strip
+    return nil if text.blank?
 
     lc = comments.last
 

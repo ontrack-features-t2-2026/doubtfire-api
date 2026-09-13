@@ -315,6 +315,45 @@ class Batch03DocxAttachmentTest < ActiveSupport::TestCase
     parent&.destroy
   end
 
+  test 'a converted image downloads with the extension of the stored format' do
+    post @comments_endpoint,
+         attachment: Rack::Test::UploadedFile.new(
+           Rails.root.join('test_files/submissions/Deakin_Logo.jpeg'),
+           'image/png',
+           true,
+           original_filename: 'Screenshot 1.png'
+         ),
+         client_request_id: SecureRandom.uuid
+
+    assert_equal 201, last_response.status, last_response.body
+    comment = TaskComment.find(last_response_body.fetch('id'))
+    # Images other than GIF are stored as JPEG, so the download name follows.
+    assert_equal '.jpg', comment.attachment_extension
+    assert_equal 'Screenshot 1.jpg', comment.attachment_file_name
+    assert_equal 'Screenshot 1.jpg', last_response_body['attachment_file_name']
+  ensure
+    comment&.destroy
+  end
+
+  test 'a comment that is only a NUL character is not stored' do
+    initial_count = @task.comments.count
+
+    post_json @comments_endpoint, comment: "\u0000"
+
+    assert_equal 403, last_response.status, last_response.body
+    assert_equal initial_count, @task.comments.count
+  end
+
+  test 'a text comment that only differs by surrounding whitespace is still a duplicate' do
+    post_json @comments_endpoint, comment: 'Please check the second figure'
+    assert_equal 201, last_response.status, last_response.body
+
+    post_json @comments_endpoint, comment: "  Please check the second figure \n"
+
+    assert_equal 403, last_response.status, last_response.body
+    assert_equal 1, @task.comments.where(user_id: @student.id, comment: 'Please check the second figure').count
+  end
+
   test 'unsupported attachment returns a controlled 4xx without creating a comment' do
     initial_count = @task.comments.count
     invalid_upload = Rack::Test::UploadedFile.new(
