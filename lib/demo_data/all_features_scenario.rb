@@ -355,7 +355,11 @@ module DemoData
     def task_lifecycle_contract(project)
       grouped = project.tasks.group(:task_status_id).count
       total = project.tasks.count
-      statuses = MobileFeedbackScenario::EXPECTED_TASK_STATUS_PERCENTAGES.keys.map do |status|
+      # Every fixture status, then any other status a demo task has moved to,
+      # so the counts always add up to total_tasks.
+      expected_keys = MobileFeedbackScenario::EXPECTED_TASK_STATUS_PERCENTAGES.keys
+      other_keys = TaskStatus.where(id: grouped.keys).map(&:status_key) - expected_keys
+      statuses = (expected_keys + other_keys).map do |status|
         task_status = TaskStatus.public_send(status)
         count = grouped.fetch(task_status.id, 0)
         tasks = project.tasks
@@ -391,10 +395,15 @@ module DemoData
       (count * 100.0 / total).round(1)
     end
 
+    # Resolve each hook through the dedupe key it was seeded with. Other
+    # notifications can share an event, for example a tutor comment made
+    # while walking through the demo.
     def notification_contract(user)
-      records = user.notifications.index_by(&:event)
+      records = user.notifications
+                    .where(dedupe_key: MobileFeedbackScenario::NOTIFICATIONS.map { |fixture| notification_dedupe_key(fixture) })
+                    .index_by(&:dedupe_key)
       MobileFeedbackScenario::NOTIFICATIONS.map do |fixture|
-        notification = records.fetch(fixture.fetch(:event))
+        notification = records.fetch(notification_dedupe_key(fixture))
         {
           key: fixture.fetch(:key),
           id: notification.id,
@@ -405,6 +414,10 @@ module DemoData
           link: notification.link
         }
       end
+    end
+
+    def notification_dedupe_key(fixture)
+      "all_features_demo:#{fixture.fetch(:key)}"
     end
 
     def group_contract(projects)
@@ -736,7 +749,7 @@ module DemoData
           event: blueprint.fetch(:event),
           message: blueprint.fetch(:message),
           link: link,
-          dedupe_key: "all_features_demo:#{blueprint.fetch(:key)}"
+          dedupe_key: notification_dedupe_key(blueprint)
         )
         notification.update!(
           created_at: created_at,

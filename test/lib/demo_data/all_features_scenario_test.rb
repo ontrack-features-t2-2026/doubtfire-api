@@ -467,6 +467,32 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert_equal 20.0, percentages.fetch('complete')
     assert_equal 0.0, percentages.fetch('fail')
     assert_equal 20.0, lifecycle.fetch(:completed_percentage)
+
+    assert_contract_ignores_unseeded_data(projects)
+  end
+
+  def assert_contract_ignores_unseeded_data(projects)
+    seeded_feedback = demo_student.notifications.find_by!(dedupe_key: 'all_features_demo:feedback')
+    # Tutor comments during the walkthrough raise more notifications with the
+    # same event. Their keys sort either side of the seeded one, so a lookup by
+    # event picks the wrong row whichever order the rows come back in.
+    %w[aa-walkthrough-comment zz-walkthrough-comment].each do |dedupe_key|
+      FactoryBot.create(:notification, :feedback, user: demo_student, event: 'task_comment_created', dedupe_key: dedupe_key)
+    end
+    # A status outside the fixture set.
+    work_task = projects.fetch('DEMO10001').tasks.joins(:task_definition)
+                        .find_by!(task_definitions: { abbreviation: 'WORK' })
+    work_task.update_columns(task_status_id: TaskStatus.need_help.id) # rubocop:disable Rails/SkipsModelValidations
+
+    contract = with_demo_safety { @scenario.contract_for(user: demo_student) }
+
+    feedback_hook = contract.fetch(:notification_hooks).find { |hook| hook.fetch(:key) == 'feedback' }
+    assert_equal seeded_feedback.id, feedback_hook.fetch(:id)
+
+    lifecycle = contract.fetch(:task_lifecycle)
+    assert_equal lifecycle.fetch(:total_tasks), lifecycle.fetch(:statuses).sum { |entry| entry.fetch(:count) }
+    need_help = lifecycle.fetch(:statuses).find { |entry| entry.fetch(:status) == 'need_help' }
+    assert_equal ['WORK'], need_help.fetch(:task_abbreviations)
   end
 
   def demo_student
