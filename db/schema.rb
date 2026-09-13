@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -18,6 +18,27 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
     t.datetime "updated_at", null: false
     t.index ["abbreviation"], name: "index_activity_types_on_abbreviation", unique: true
     t.index ["name"], name: "index_activity_types_on_name", unique: true
+  end
+
+  create_table "additional_notification_email_audits", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "event", limit: 64, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id", "event", "created_at"], name: "idx_additional_email_audits_user_event_time"
+    t.index ["user_id"], name: "index_additional_notification_email_audits_on_user_id"
+  end
+
+  create_table "additional_notification_emails", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "email", limit: 254, null: false
+    t.integer "verification_version", default: 0, null: false
+    t.datetime "verification_sent_at"
+    t.datetime "verification_expires_at"
+    t.datetime "verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_additional_notification_emails_on_user_id", unique: true
   end
 
   create_table "auth_tokens", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -1048,6 +1069,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
     t.index ["user_id"], name: "index_webcals_on_user_id", unique: true
   end
 
+  add_foreign_key "additional_notification_email_audits", "users"
+  add_foreign_key "additional_notification_emails", "users"
   add_foreign_key "chip_usages", "feedback_chips"
   add_foreign_key "chip_usages", "users", column: "tutor_id"
   add_foreign_key "consumed_lti_tokens", "users"
