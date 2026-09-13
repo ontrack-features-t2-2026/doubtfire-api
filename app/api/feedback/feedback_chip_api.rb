@@ -144,9 +144,13 @@ module Feedback
     end
     post '/feedback_template_chip/:id/track_usage' do
       chip = FeedbackTemplateChip.find(params[:id])
-      tutor = Tutor.find(params[:tutor_id])
+      tutor = User.find(params[:tutor_id])
 
-      chip.track_usage_by_tutor(tutor)
+      unless authorise? current_user, chip, :track_chip_usage
+        error!({ error: 'You are not authorised to track feedback chip usage.' }, 403)
+      end
+
+      chip.track_usage_by(tutor)
       nil
     end
 

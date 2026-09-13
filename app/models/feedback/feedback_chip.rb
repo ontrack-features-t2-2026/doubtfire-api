@@ -33,12 +33,18 @@ module Feedback
     def self.permissions
       convenor_role_permissions = [
         :update_chip,
-        :delete_feedback_chips
+        :delete_feedback_chips,
+        :track_chip_usage
       ]
 
       admin_role_permissions = [
         :update_chip,
-        :delete_feedback_chips
+        :delete_feedback_chips,
+        :track_chip_usage
+      ]
+
+      tutor_role_permissions = [
+        :track_chip_usage
       ]
 
       nil_role_permissions = []
@@ -46,7 +52,7 @@ module Feedback
       {
         convenor: convenor_role_permissions,
         admin: admin_role_permissions,
-        tutor: nil_role_permissions,
+        tutor: tutor_role_permissions,
         student: nil_role_permissions,
         auditor: nil_role_permissions,
         nil: nil_role_permissions
@@ -56,7 +62,7 @@ module Feedback
     delegate :role_for, to: :learning_outcome
 
     def track_usage_by(tutor)
-      analytics = chip_usage_analytics.find_or_initialize_by(tutor: tutor)
+      analytics = chip_usages.find_or_initialize_by(tutor: tutor)
       analytics.usage_count += 1
       analytics.save
     end
