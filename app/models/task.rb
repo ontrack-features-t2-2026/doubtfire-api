@@ -6,6 +6,9 @@ class Task < ApplicationRecord
   include ApplicationHelper
   include GradeHelper
 
+  SUBMISSION_PROCESSING_STATES = %w[queued processing ready failed].freeze
+  SUBMISSION_PROCESSING_TIMEOUT = 10.minutes
+
   #
   # Permissions around task data
   #
@@ -327,6 +330,364 @@ class Task < ApplicationRecord
   def processing_pdf?
     folder_exists_in_new? || folder_exists_in_process?
   end
+
+  def submission_pdf_ready?
+    path = final_pdf_path
+    return false if path.blank? || !File.file?(path)
+
+    # A previous attempt's PDF can remain in place while a replacement is
+    # queued. Do not advertise that stale artifact as the current submission.
+    # The timestamp comparison also lets a worker from the previous release
+    # prove that it completed even though it does not know about the state
+    # columns introduced by this release. Conversion clears the working
+    # folders before ready is recorded, so staged files alongside ready belong
+    # to a newer attempt that a previous-release process accepted.
+    return !processing_pdf? if submission_processing_state == 'ready'
+
+    started_at = submission_processing_started_at
+    started_at.blank? || File.mtime(path) >= started_at
+  rescue SystemCallError
+    false
+  end
+
+  def submission_files_ready?
+    has_done_file? || uncompressed_done_files?
+  end
+
+  # Older submissions can keep their done files as a folder instead of a zip.
+  def uncompressed_done_files?
+    # A group task has no done folder until its group has submitted, and the
+    # path cannot be resolved without a group submission.
+    return false if group_task? && group_submission.nil?
+
+    done_dir = student_work_dir(:done, false)
+    done_dir.present? && Dir.exist?(done_dir) && Dir.children(done_dir).any?
+  rescue SystemCallError
+    false
+  end
+
+  def submission_pdf_replaced_after_failure?
+    finished_at = submission_processing_finished_at
+    path = final_pdf_path
+    finished_at.present? && path.present? && File.file?(path) && File.mtime(path) > finished_at
+  rescue SystemCallError
+    false
+  end
+
+  def effective_submission_processing_state(now: Time.current)
+    state = submission_processing_state.presence
+    started_at = submission_processing_started_at
+
+    # Rolling-deploy fallback for accepted work created before the state columns
+    # were populated. The filesystem remains authoritative for actual artefacts.
+    state = 'processing' if state.blank? && folder_exists_in_process?
+    state = 'queued' if state.blank? && folder_exists_in_new?
+    state = 'ready' if state.blank? && submission_pdf_ready? && !processing_pdf?
+    state = 'failed' if state.blank? && submission_date.present? && submission_files_ready?
+    state ||= 'not_submitted'
+
+    # A PDF written after the failure was recorded, for example by the batch
+    # feedback import, means the submission has a usable PDF again.
+    state = 'ready' if state == 'failed' && !processing_pdf? && submission_pdf_replaced_after_failure?
+
+    # During a rolling deploy an old worker can successfully create the new PDF
+    # without updating the durable state. Only accept it when the artifact is
+    # from this attempt and the working directory has been cleared.
+    if %w[queued processing].include?(state) && submission_pdf_ready? && !processing_pdf?
+      state = 'ready'
+    elsif state == 'ready' && processing_pdf?
+      # Likewise a previous-release API can stage a newer upload without
+      # touching the state columns. Report that attempt, timed from its files
+      # rather than from the attempt that reached ready.
+      state = folder_exists_in_process? ? 'processing' : 'queued'
+      started_at = submission_processing_file_timestamp
+    elsif state == 'ready' && !submission_pdf_ready?
+      state = 'failed'
+    end
+
+    if %w[queued processing].include?(state) && submission_processing_timed_out?(now: now, started_at: started_at)
+      'timed_out'
+    else
+      state
+    end
+  end
+
+  def submission_processing_timed_out?(now: Time.current, started_at: submission_processing_started_at)
+    started_at ||= submission_processing_file_timestamp
+    started_at.present? && started_at < now - submission_processing_timeout
+  end
+
+  # A retry or regeneration that restores the done archive is waiting or
+  # running. It stages nothing until its job starts, and any upload accepted
+  # meanwhile would be replaced by that archive.
+  def submission_archive_restore_pending?(now: Time.current)
+    %w[retry_archive regenerate_only].include?(submission_processing_mode) &&
+      %w[queued processing].include?(effective_submission_processing_state(now: now))
+  end
+
+  def submission_processing_retryable?(now: Time.current)
+    %w[failed timed_out].include?(effective_submission_processing_state(now: now)) && submission_retry_source_available?
+  end
+
+  def submission_processing_snapshot(now: Time.current)
+    state = effective_submission_processing_state(now: now)
+    {
+      has_pdf: state == 'ready' && submission_pdf_ready?,
+      pdf_ready: submission_pdf_ready?,
+      submission_files_ready: submission_files_ready?,
+      processing_pdf: %w[queued processing].include?(state),
+      processing_state: state,
+      processing_started_at: submission_processing_started_at,
+      processing_finished_at: submission_processing_finished_at,
+      retryable: submission_processing_retryable?(now: now),
+      poll_after_seconds: %w[queued processing].include?(state) ? 3 : nil
+    }
+  end
+
+  # processing_mode is recorded whenever an attempt is queued. The uploader,
+  # test_submission and accepted_tii_eula are recorded when a new upload is
+  # queued, and left as they are when a retry or regeneration is queued.
+  def mark_submission_processing!(state, error_code: nil, now: Time.current, processing_mode: nil, user_id: nil, test_submission: nil, accepted_tii_eula: nil)
+    raise ArgumentError, "Unknown submission processing state: #{state}" unless SUBMISSION_PROCESSING_STATES.include?(state.to_s)
+
+    processing_task = submission_processing_task
+
+    attributes = {
+      submission_processing_state: state,
+      submission_processing_error_code: error_code,
+      submission_processing_finished_at: %w[ready failed].include?(state.to_s) ? now : nil
+    }
+    if state.to_s == 'queued'
+      attributes[:submission_processing_started_at] = now
+      attributes[:submission_processing_attempts] = processing_task.submission_processing_attempts.to_i + 1
+      attributes[:submission_processing_mode] = processing_mode unless processing_mode.nil?
+      attributes[:submission_processing_user_id] = user_id unless user_id.nil?
+      attributes[:submission_processing_test_submission] = test_submission unless test_submission.nil?
+      attributes[:submission_processing_accepted_tii_eula] = accepted_tii_eula unless accepted_tii_eula.nil?
+    end
+
+    Task.transaction do
+      processing_task.submission_processing_targets.sort_by(&:id).each do |target|
+        target.update!(attributes)
+      end
+    end
+  end
+
+  def retry_submission_processing!(user)
+    processing_task = submission_processing_task
+    submission_processing_lock_target.with_lock do
+      processing_task.reload
+      unless processing_task.submission_processing_retryable?
+        raise ArgumentError, 'This submission is not ready to retry.'
+      end
+
+      processing_mode = if processing_task.submission_processing_mode == 'regenerate_only'
+                          # A failed regeneration is retried as a regeneration.
+                          # Its upload's side effects already ran.
+                          'regenerate_only'
+                        elsif !processing_task.folder_exists_in_new? || processing_task.folder_exists_in_process?
+                          'retry_archive'
+                        else
+                          'process'
+                        end
+      processing_task.enqueue_submission_processing!(user, processing_mode: processing_mode)
+    end
+  end
+
+  def regenerate_submission!(user)
+    processing_task = submission_processing_task
+    submission_processing_lock_target.with_lock do
+      processing_task.reload
+      if %w[queued processing].include?(processing_task.effective_submission_processing_state)
+        raise ArgumentError, 'A submission is already being processed.'
+      end
+
+      processing_task.enqueue_submission_processing!(user, processing_mode: 'regenerate_only')
+    end
+  end
+
+  def submission_processing_timeout
+    configured_seconds = ENV.fetch('DF_SUBMISSION_PROCESSING_TIMEOUT_SECONDS', SUBMISSION_PROCESSING_TIMEOUT.to_i).to_i
+    configured_seconds = SUBMISSION_PROCESSING_TIMEOUT.to_i unless configured_seconds.positive?
+    configured_seconds.seconds
+  end
+
+  def submission_processing_file_timestamp
+    processing_task = submission_processing_task
+    paths = [processing_task.student_work_dir(:new, false), processing_task.student_work_dir(:in_process, false)].select { |path| Dir.exist?(path) }
+    paths.filter_map do |path|
+      File.mtime(path)
+    rescue SystemCallError
+      nil
+    end.min
+  end
+
+  def submission_processing_task
+    return self unless group_submission
+
+    group_submission.submitter_task || self
+  end
+
+  def submission_processing_lock_target
+    group_submission&.group || (group if group_task?) || submission_processing_task
+  end
+
+  def submission_processing_targets
+    processing_task = submission_processing_task
+    return [processing_task] unless processing_task.group_submission
+
+    processing_task.group_submission.tasks.to_a.presence || [processing_task]
+  end
+
+  def submission_retry_source_available?
+    submission_files_ready? || (folder_exists_in_new? && !folder_exists_in_process?)
+  end
+
+  def enqueue_submission_processing!(user, processing_mode:)
+    if %w[retry_archive regenerate_only].include?(processing_mode) && !submission_files_ready?
+      raise 'The submitted files are no longer available.'
+    end
+
+    mark_submission_processing!('queued', processing_mode: processing_mode)
+    # For a group the new attempt was written through other instances.
+    reload
+
+    # Replay the upload this attempt belongs to: the same uploader and the same
+    # options, so a test submission stays a test submission. Turnitin consent
+    # only travels with the uploader who gave it. If that account is gone the
+    # caller is used without it. The attempt number lets the job stand down if
+    # a newer upload is accepted first.
+    uploader = User.find_by(id: submission_processing_user_id)
+    job_id = AcceptSubmissionJob.perform_async(
+      id,
+      (uploader || user).id,
+      uploader.present? && submission_processing_accepted_tii_eula,
+      submission_processing_test_submission,
+      processing_mode,
+      submission_processing_attempts
+    )
+    raise ArgumentError, 'Submission processing is already queued or running. Check again shortly.' if job_id.blank?
+
+    job_id
+  end
+  protected :enqueue_submission_processing!
+
+  # Restore the immutable done archive to a fresh staging directory, then swap
+  # it into `new` only after the complete archive has been extracted. Existing
+  # `new` and `in_process` work is retained until that point and restored if the
+  # swap itself fails.
+  def prepare_submission_regeneration!
+    processing_task = submission_processing_task
+    # Compare records, not objects: GroupSubmission#submitter_task loads a new
+    # instance each time, so object identity never matches and this recursed.
+    return processing_task.prepare_submission_regeneration! unless processing_task == self
+
+    zip_path = zip_file_path_for_done_task
+    has_zip = zip_path.present? && File.file?(zip_path)
+    raise 'The submitted files are no longer available.' unless has_zip || uncompressed_done_files?
+
+    new_path = student_work_dir(:new, false).delete_suffix(File::SEPARATOR)
+    in_process_path = student_work_dir(:in_process, false).delete_suffix(File::SEPARATOR)
+    suffix = "submission-retry-#{SecureRandom.hex(8)}"
+    staging_path = "#{new_path}.#{suffix}"
+    new_backup = "#{new_path}.#{suffix}.backup"
+    in_process_backup = "#{in_process_path}.#{suffix}.backup"
+
+    if has_zip
+      extract_preserved_submission!(zip_path, staging_path)
+    else
+      # 11.0.x regenerated these through move_done_to_new, so keep them working.
+      copy_preserved_submission!(student_work_dir(:done, false), staging_path)
+    end
+
+    new_was_present = File.exist?(new_path) || File.symlink?(new_path)
+    in_process_was_present = File.exist?(in_process_path) || File.symlink?(in_process_path)
+    new_backed_up = false
+    in_process_backed_up = false
+    swapped = false
+    begin
+      if new_was_present
+        FileUtils.mv(new_path, new_backup)
+        new_backed_up = true
+      end
+      if in_process_was_present
+        FileUtils.mv(in_process_path, in_process_backup)
+        in_process_backed_up = true
+      end
+      FileUtils.mv(staging_path, new_path)
+      swapped = true
+    rescue StandardError
+      # Only clear new_path when the original was moved aside (or never
+      # existed). If the first backup move failed, new_path still holds the
+      # original files and must be left alone.
+      if (new_backed_up || !new_was_present) && (File.exist?(new_path) || File.symlink?(new_path))
+        FileUtils.rm_rf(new_path)
+      end
+      FileUtils.mv(new_backup, new_path) if new_backed_up
+      FileUtils.mv(in_process_backup, in_process_path) if in_process_backed_up
+      raise
+    ensure
+      FileUtils.rm_rf(staging_path)
+      if swapped
+        FileUtils.rm_rf(new_backup)
+        FileUtils.rm_rf(in_process_backup)
+      end
+    end
+
+    true
+  end
+
+  def extract_preserved_submission!(zip_path, staging_path)
+    expected_prefix = "#{id}/"
+    extracted_files = 0
+    staging_root = File.expand_path(staging_path)
+
+    Zip::File.open(zip_path) do |zip|
+      zip.each do |entry|
+        next unless entry.name.start_with?(expected_prefix)
+
+        relative_name = entry.name.delete_prefix(expected_prefix)
+        next if relative_name.blank?
+
+        destination = File.expand_path(relative_name, staging_root)
+        unless destination.start_with?("#{staging_root}#{File::SEPARATOR}")
+          raise 'The preserved submission archive contains an unsafe path.'
+        end
+
+        if entry.directory?
+          FileUtils.mkdir_p(destination)
+        else
+          FileUtils.mkdir_p(File.dirname(destination))
+          entry.extract(destination) { true }
+          extracted_files += 1
+        end
+      end
+    end
+
+    raise 'The preserved submission archive is empty or invalid.' if extracted_files.zero?
+  rescue StandardError
+    FileUtils.rm_rf(staging_path)
+    raise
+  end
+  private :extract_preserved_submission!
+
+  # The uncompressed done folder holds the same files a done zip holds under
+  # its task id. Links are skipped so nothing outside the folder is copied.
+  def copy_preserved_submission!(done_dir, staging_path)
+    FileUtils.mkdir_p(staging_path)
+    Dir.children(done_dir).each do |name|
+      source = File.join(done_dir, name)
+      next if File.symlink?(source)
+
+      FileUtils.cp_r(source, staging_path)
+    end
+
+    raise 'The preserved submission folder is empty.' if Dir.empty?(staging_path)
+  rescue StandardError
+    FileUtils.rm_rf(staging_path)
+    raise
+  end
+  private :copy_preserved_submission!
 
   # The time zone this task's deadlines are read in.
   #
@@ -1971,8 +2332,11 @@ class Task < ApplicationRecord
   #
   def accept_submission(current_user, files, ui, contributions, trigger, alignments, accepted_tii_eula: false, test_submission: false)
     submission_lock_target.with_lock do
-    # Ensure there is not a submission already in process
-    if processing_pdf?
+    # Ensure there is not a submission already in process. A retry or
+    # regeneration that restores the done archive stages no files until its
+    # job starts, so the folder check cannot see it, and that job would then
+    # replace this upload with the previous archive.
+    if processing_pdf? || submission_processing_task.submission_archive_restore_pending?
       ui.error!({ 'error' => 'A submission is already being processed. Please wait for the current submission process to complete.' }, 403)
     end
 
@@ -2078,7 +2442,16 @@ class Task < ApplicationRecord
     logger.info "Submission accepted! Status for task #{id} is now #{trigger}"
 
     # Trigger processing of new submission - async
-    AcceptSubmissionJob.perform_async(id, current_user.id, accepted_tii_eula, test_submission)
+    processing_task = submission_processing_task
+    processing_task.mark_submission_processing!(
+      'queued',
+      processing_mode: 'process',
+      user_id: current_user.id,
+      test_submission: test_submission.present?,
+      accepted_tii_eula: accepted_tii_eula.present?
+    )
+    job_id = AcceptSubmissionJob.perform_async(processing_task.id, current_user.id, accepted_tii_eula, test_submission, false)
+    processing_task.mark_submission_processing!('failed', error_code: 'queue_conflict') if job_id.blank?
     end
   end
 
