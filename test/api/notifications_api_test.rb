@@ -144,6 +144,39 @@ class NotificationsApiTest < ActiveSupport::TestCase
     assert_equal 404, last_response.status
   end
 
+  # NB-02: the bell clears itself ---------------------------------------------
+
+  # The production path, end to end and through HTTP. Nothing here touches the
+  # bell: the student loads the task's comments the way the web app does, and
+  # the unread count drops on its own. This is the before-and-after the card
+  # asks for, in a form a reviewer can rerun.
+  def test_loading_a_tasks_comments_drops_the_students_unread_count
+    project = FactoryBot.create(:project)
+    task_definition = project.unit.task_definitions.first
+    task = project.task_for_task_definition(task_definition)
+    student = project.student
+    tutor = project.tutor_for(task_definition)
+
+    task.add_text_comment(tutor, 'Have a look at question three.')
+
+    add_auth_header_for(user: student)
+    get '/api/notifications/unread_count'
+
+    assert_equal 200, last_response.status
+    assert_equal 1, JSON.parse(last_response.body)['count'], 'before the comments load'
+
+    add_auth_header_for(user: student)
+    get "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments"
+
+    assert_equal 200, last_response.status
+
+    add_auth_header_for(user: student)
+    get '/api/notifications/unread_count'
+
+    assert_equal 200, last_response.status
+    assert_equal 0, JSON.parse(last_response.body)['count'], 'after the comments load'
+  end
+
   # Authentication ------------------------------------------------------------
 
   def test_an_unauthenticated_request_is_rejected
