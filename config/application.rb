@@ -276,6 +276,7 @@ module Doubtfire
       password_confirmation
       refresh_token
       SAMLResponse
+      token
     )
     # Grape Serialization
 
