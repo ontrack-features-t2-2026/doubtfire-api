@@ -30,6 +30,17 @@ class FeedbackChipAuthorizationTest < ActiveSupport::TestCase
     assert_equal 0, chip.chip_usages.count
   end
 
+  def test_auditor_cannot_track_feedback_chip_usage
+    chip = global_chip
+    auditor = FactoryBot.create(:user, :auditor)
+
+    add_auth_header_for user: auditor
+    track_usage chip
+
+    assert_equal 403, last_response.status
+    assert_equal 0, chip.chip_usages.count
+  end
+
   # tutor_id is no longer read, so a caller who is refused gets the same answer
   # whether it names a real user or not, and cannot use it to find user ids.
   def test_refused_caller_cannot_tell_which_user_ids_exist
