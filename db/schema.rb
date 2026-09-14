@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_31_000001) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -602,6 +602,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
     t.bigint "reply_to_id"
     t.bigint "commentable_id"
     t.string "commentable_type"
+    t.string "attachment_original_filename"
+    t.string "attachment_content_type"
+    t.bigint "attachment_byte_size"
+    t.string "client_request_id"
     t.index ["assessor_id"], name: "index_task_comments_on_assessor_id"
     t.index ["commentable_type", "commentable_id"], name: "index_task_comments_on_commentable_type_and_commentable_id"
     t.index ["discussion_comment_id"], name: "index_task_comments_on_discussion_comment_id"
@@ -609,6 +613,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_30_063140) do
     t.index ["reply_to_id"], name: "index_task_comments_on_reply_to_id"
     t.index ["task_id"], name: "index_task_comments_on_task_id"
     t.index ["task_status_id"], name: "index_task_comments_on_task_status_id"
+    t.index ["user_id", "task_id", "client_request_id"], name: "idx_task_comments_user_task_client_request", unique: true
     t.index ["user_id"], name: "index_task_comments_on_user_id"
   end
 

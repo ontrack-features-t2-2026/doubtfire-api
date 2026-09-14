@@ -212,6 +212,19 @@ class TaskDefinitionsTest < ActiveSupport::TestCase
     assert test_task_definition.task_sheet
 
     assert_equal File.size(data_to_post[:file]), File.size(TaskDefinition.first.task_sheet)
+
+    expected_filename = test_task_definition.task_sheet_filename
+    represented = Entities::TaskDefinitionEntity.represent(test_task_definition).as_json
+    assert_equal expected_filename, represented[:task_sheet_filename]
+
+    get "/api/units/#{test_unit.id}/task_definitions/#{test_task_definition.id}/task_pdf"
+    assert_equal 200, last_response.status
+    inline_bytes = last_response.body
+
+    get "/api/units/#{test_unit.id}/task_definitions/#{test_task_definition.id}/task_pdf", as_attachment: true
+    assert_equal 200, last_response.status
+    assert_equal inline_bytes, last_response.body
+    assert_equal %(attachment; filename="#{expected_filename}"), last_response.headers['Content-Disposition']
   end
 
   def test_post_task_resources
