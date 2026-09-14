@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_14_000001) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -949,6 +949,46 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
     t.index ["unit_role_id"], name: "index_tutorials_on_unit_role_id"
   end
 
+  create_table "unit_announcements", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "unit_id", null: false
+    t.bigint "author_id"
+    t.string "title", limit: 200, null: false
+    t.text "body", null: false
+    t.string "source_url", limit: 2048
+    t.boolean "pinned", default: false, null: false
+    t.datetime "published_at"
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["author_id"], name: "index_unit_announcements_on_author_id"
+    t.index ["unit_id", "published_at"], name: "index_unit_announcements_on_unit_id_and_published_at"
+    t.index ["unit_id"], name: "index_unit_announcements_on_unit_id"
+  end
+
+  create_table "unit_learning_sessions", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "unit_id", null: false
+    t.bigint "author_id"
+    t.string "title", limit: 200, null: false
+    t.text "description"
+    t.string "kind", default: "helphub", null: false
+    t.datetime "start_at", null: false
+    t.datetime "end_at", null: false
+    t.string "timezone", default: "Australia/Melbourne", null: false
+    t.string "location", limit: 300
+    t.string "join_url", limit: 2048
+    t.string "source_url", limit: 2048
+    t.boolean "published", default: false, null: false
+    t.boolean "cancelled", default: false, null: false
+    t.string "recurrence", default: "none", null: false
+    t.date "recurrence_until"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.index ["author_id"], name: "index_unit_learning_sessions_on_author_id"
+    t.index ["unit_id", "published", "start_at"], name: "index_unit_sessions_for_feed"
+    t.index ["unit_id"], name: "index_unit_learning_sessions_on_unit_id"
+  end
+
   create_table "unit_roles", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "user_id"
     t.bigint "tutorial_id"
@@ -1082,6 +1122,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
     t.string "reminder_unit"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "include_learning_sessions", default: false, null: false
     t.index ["guid"], name: "index_webcals_on_guid", unique: true
     t.index ["user_id"], name: "index_webcals_on_user_id", unique: true
   end
@@ -1097,6 +1138,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "target_id"
   add_foreign_key "notifications", "users"
   add_foreign_key "push_subscriptions", "users"
+  add_foreign_key "unit_announcements", "units"
+  add_foreign_key "unit_announcements", "users", column: "author_id", on_delete: :nullify
+  add_foreign_key "unit_learning_sessions", "units"
+  add_foreign_key "unit_learning_sessions", "users", column: "author_id", on_delete: :nullify
   add_foreign_key "user_oauth_states", "users"
   add_foreign_key "user_oauth_tokens", "users"
 end

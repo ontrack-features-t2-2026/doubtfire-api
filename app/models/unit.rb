@@ -172,6 +172,8 @@ class Unit < ApplicationRecord
   has_many :task_definitions, dependent: :destroy, inverse_of: :unit
   has_many :tutorials, dependent: :destroy, inverse_of: :unit # tutorials need groups and tasks deleted before it...
   has_many :tutorial_streams, dependent: :destroy, inverse_of: :unit
+  has_many :unit_announcements, dependent: :destroy, inverse_of: :unit
+  has_many :unit_learning_sessions, dependent: :destroy, inverse_of: :unit
   has_many :unit_roles, dependent: :destroy, inverse_of: :unit
   has_many :learning_outcomes, as: :context, dependent: :destroy # inverse_of: :unit
   has_many :marking_sessions, dependent: :destroy

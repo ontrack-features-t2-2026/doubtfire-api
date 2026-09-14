@@ -119,6 +119,7 @@ class ApiRoot < Grape::API
   mount Feedback::FeedbackChipApi
 
   # Notifications feature
+  mount UnitHubApi
   mount NotificationsApi
   mount PushSubscriptionsApi
 
@@ -179,6 +180,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to TutorNotesApi
 
   # Notifications feature
+  AuthenticationHelpers.add_auth_to UnitHubApi
   AuthenticationHelpers.add_auth_to NotificationsApi
   AuthenticationHelpers.add_auth_to PushSubscriptionsApi
 
