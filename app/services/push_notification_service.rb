@@ -29,7 +29,12 @@ class PushNotificationService
     'tutorial_changed' => 'Your tutorial details changed.',
     'group_membership_changed' => 'Your group membership changed.',
     'task_submitted' => 'A task is ready for marking.',
-    'portfolio_received' => 'Your portfolio submission was received.'
+    'portfolio_received' => 'Your portfolio submission was received.',
+    # The raw message names the outcome and a precise date ("Extension rejected
+    # for 1.1P, was due Mon Sep 14"), a result and a date both banned on a lock
+    # screen by the MN-S04 rule. This event predates that review, so it had no
+    # override and went out raw. Reveal only that an assessment happened.
+    'extension_assessed' => 'An extension request was assessed.'
   }.freeze
 
   # MN-C03 BEGIN: safe click route constants
@@ -172,6 +177,18 @@ class PushNotificationService
     # request. Refusing here is what stops a stored bad endpoint being used.
     unless PushSubscription.push_service_endpoint?(subscription.endpoint)
       Rails.logger.error "Refusing to push to subscription #{subscription.id}: endpoint is not a recognised push service"
+      return
+    end
+
+    # Checked here for the same reason as the endpoint: a row written before the
+    # key validation existed can still hold a malformed key. web-push would fail
+    # to encrypt against it with an error that is neither ExpiredSubscription nor
+    # InvalidSubscription, so the fan-out below would treat it as a transient
+    # failure and Sidekiq would retry, re-sending to this user's healthy devices
+    # every time. Skip the bad row instead. New rows are rejected on write.
+    unless PushSubscription.valid_web_push_key?(subscription.p256dh, PushSubscription::P256DH_BYTES) &&
+           PushSubscription.valid_web_push_key?(subscription.auth, PushSubscription::AUTH_BYTES)
+      Rails.logger.error "Refusing to push to subscription #{subscription.id}: keys are not valid web push material"
       return
     end
 
