@@ -1347,6 +1347,8 @@ class Task < ApplicationRecord
       end
     end
 
+    # Notify once after the attachment transaction succeeds.
+    notify_comment_recipient(comment)
     comment
   end
 
@@ -1364,6 +1366,13 @@ class Task < ApplicationRecord
     request.comment = comment
     request.recipient = current_user == project.student ? project.tutor_for(task_definition) : project.student
     request.save!
+
+    # A feedback review request is a comment the recipient needs to act on just
+    # like a text or attachment comment, and both of those notify. This path
+    # stayed silent, so a student's request for a review reached the tutor as no
+    # email, push or in-app notification at all. Notify here too.
+    notify_comment_recipient(request)
+
     request
   end
 
