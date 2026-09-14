@@ -29,6 +29,8 @@ class PushNotificationService
     'tutorial_changed' => 'Your tutorial details changed.',
     'group_membership_changed' => 'Your group membership changed.',
     'task_submitted' => 'A task is ready for marking.',
+    # Same shape as task_submitted: the raw message names the student and task.
+    'task_help_requested' => 'A student asked for help with a task.',
     'portfolio_received' => 'Your portfolio submission was received.',
     # The raw message names the outcome and a precise date ("Extension rejected
     # for 1.1P, was due Mon Sep 14"), a result and a date both banned on a lock

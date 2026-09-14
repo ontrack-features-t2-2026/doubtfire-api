@@ -1220,8 +1220,9 @@ class Task < ApplicationRecord
       end
     end
 
-    # EN-V06: tell the responsible tutor when a student submits for marking.
-    notify_tutor_of_task_submission(by_user, role, status_id_before_transition, group_transition)
+    # Tell the responsible tutor when a student submits for marking (EN-V06)
+    # or asks for help.
+    notify_tutor_of_student_request(by_user, role, status_id_before_transition, group_transition)
 
     # EN-E02: tell the student when a staff member changed their task's status.
     notify_student_of_status_change(by_user, role, status_id_before_transition)
@@ -1229,36 +1230,48 @@ class Task < ApplicationRecord
     true
   end
 
-  # Tell the responsible tutor when a student's task genuinely moves into the
-  # ready-for-feedback state. EN-E02 shares this transition seam, but its
-  # tutor-only role guard is deliberately disjoint from this student-only one,
-  # so one transition cannot raise both events.
+  # Tell the responsible tutor when a student's task genuinely moves into a
+  # state that asks the tutor to act: ready for feedback (task_submitted) or
+  # need help (task_help_requested). A student's other statuses need nothing
+  # from the tutor, so they stay silent. EN-E02 shares this transition seam,
+  # but its tutor-only role guard is deliberately disjoint from this
+  # student-only one, so one transition cannot raise both events.
   #
   # A group submission fans the same transition out to every member task. Only
   # the original action notifies; internal group transitions are suppressed so
   # one logical submission cannot amplify into duplicate tutor emails.
-  def notify_tutor_of_task_submission(by_user, role, previous_status_id, group_transition)
+  def notify_tutor_of_student_request(by_user, role, previous_status_id, group_transition)
     return unless [:student, :group_member].include?(role)
     return if group_transition
-    return unless task_status == TaskStatus.ready_for_feedback
     return if task_status_id == previous_status_id
+
+    product_name = Doubtfire::Application.config.institution[:product_name]
+
+    case task_status
+    when TaskStatus.ready_for_feedback
+      event = 'task_submitted'
+      action = "submitted #{task_definition.name} for marking"
+    when TaskStatus.need_help
+      event = 'task_help_requested'
+      action = "asked for help with #{task_definition.name}"
+    else
+      return
+    end
 
     recipient = project&.tutor_for(task_definition)
     student = project&.student
     return if recipient.blank? || student.blank? || recipient == by_user
 
-    product_name = Doubtfire::Application.config.institution[:product_name]
-
     NotificationService.notify(
       user: recipient,
       type: 'task',
-      event: 'task_submitted',
-      message: "#{student.name} submitted #{task_definition.name} for marking in #{product_name}.",
+      event: event,
+      message: "#{student.name} #{action} in #{product_name}.",
       link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
       notifiable: self
     )
   rescue StandardError => e
-    logger.error "Failed to raise task_submitted notification for task #{id}: #{e.message}"
+    logger.error "Failed to raise #{event || 'tutor'} notification for task #{id}: #{e.message}"
   end
 
   # Tell the student that a staff member changed the status of their task.

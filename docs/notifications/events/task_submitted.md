@@ -9,7 +9,7 @@
 | Preference that gates it | The recipient tutor's `receive_task_notifications` preference. |
 | Email subject | `#{product name}: New notification`, built by `NotificationsMailer#single_notification`. The generic subject deliberately does not identify the student or task. |
 | Email body summary | Names the student and task so the assigned tutor knows what is waiting. The submission and all assessment content are deliberately omitted. Templates are `app/views/notifications_mailer/task_submitted.text.erb` and `.html.erb`. |
-| Where it is raised | `app/models/task.rb`, in `Task#notify_tutor_of_task_submission`, called at the end of `Task#trigger_transition` after a successful status change. |
+| Where it is raised | `app/models/task.rb`, in `Task#notify_tutor_of_student_request`, called at the end of `Task#trigger_transition` after a successful status change. The same method raises `task_help_requested`. |
 
 ## Transition and duplicate guards
 
