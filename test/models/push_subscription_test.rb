@@ -129,4 +129,12 @@ class PushSubscriptionTest < ActiveSupport::TestCase
     assert_not PushSubscription.valid_web_push_key?('', PushSubscription::AUTH_BYTES)
     assert_not PushSubscription.valid_web_push_key?('%%%not-base64%%%', PushSubscription::AUTH_BYTES)
   end
+
+  def test_rejects_a_correct_length_key_that_is_not_a_curve_point
+    invalid_point = Base64.urlsafe_encode64("\x04" + ("\x42" * 64))
+    subscription = FactoryBot.build(:push_subscription, user: @user, p256dh: invalid_point)
+
+    assert_not subscription.valid?
+    assert_not_empty subscription.errors[:p256dh]
+  end
 end

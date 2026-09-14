@@ -529,6 +529,21 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     assert_requested good
   end
 
+  def test_a_stored_invalid_curve_point_does_not_stop_the_other_browsers
+    bad = FactoryBot.build(:push_subscription, user: @user, endpoint: 'https://fcm.googleapis.com/fcm/send/bad-point')
+    bad.p256dh = Base64.urlsafe_encode64("\x04" + ("\x42" * 64))
+    bad.save!(validate: false)
+    create_subscription
+    good = stub_request(:post, ENDPOINT).to_return(status: 201)
+
+    assert_nothing_raised do
+      with_keys { PushNotificationService.deliver(@notification) }
+    end
+
+    assert_requested good
+    assert_not_requested :post, bad.endpoint
+  end
+
   # Timeouts are Net::HTTP settings rather than anything visible on the wire, so
   # WebMock cannot see them. This one test stubs the gem instead of the HTTP
   # call, which is the opposite of what the rest of this file does on purpose.

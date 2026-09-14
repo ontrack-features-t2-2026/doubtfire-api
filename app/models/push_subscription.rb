@@ -63,7 +63,9 @@ class PushSubscription < ApplicationRecord
   validate :endpoint_is_a_known_push_service
   validate :encryption_keys_are_usable
 
-  # True when value is base64url (padded or not) that decodes to expected_bytes.
+  # Accept base64url material of the expected size, and validate the actual
+  # curve point for a public key. A correctly sized byte string alone can
+  # still fail encryption and prevent delivery to the user's other devices.
   #
   # Also called at delivery time, because rows written before this validation
   # existed were never checked. Keep it a class method for that reason, the same
@@ -73,8 +75,15 @@ class PushSubscription < ApplicationRecord
 
     normalized = value.tr('-_', '+/')
     normalized = normalized.ljust((normalized.length + 3) & ~3, '=')
-    Base64.strict_decode64(normalized).bytesize == expected_bytes
-  rescue ArgumentError
+    decoded = Base64.strict_decode64(normalized)
+    return false unless decoded.bytesize == expected_bytes
+    return true unless expected_bytes == P256DH_BYTES
+    return false unless decoded.getbyte(0) == 4
+
+    group = OpenSSL::PKey::EC::Group.new('prime256v1')
+    point = OpenSSL::PKey::EC::Point.new(group, OpenSSL::BN.new(decoded, 2))
+    point.on_curve? && !point.infinity?
+  rescue ArgumentError, OpenSSL::OpenSSLError
     false
   end
 
