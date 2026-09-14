@@ -17,6 +17,11 @@ class TaskComment < ApplicationRecord
 
   has_many :comments_read_receipts, class_name: 'CommentsReadReceipts', dependent: :destroy, inverse_of: :task_comment
 
+  # Notifications that point at this comment. A deleted comment can never turn
+  # up in the set handed to Task#mark_comments_as_read, so a notification left
+  # behind here could never be cleared by reading. It goes with the comment.
+  has_many :notifications, as: :notifiable, dependent: :destroy, inverse_of: :notifiable
+
   # Can optionally be a reply to a comment
   belongs_to :task_comment, optional: true
 

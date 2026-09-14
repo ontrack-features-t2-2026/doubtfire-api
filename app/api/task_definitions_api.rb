@@ -279,7 +279,8 @@ class TaskDefinitionsApi < Grape::API
         TaskDueDateChangedNotificationJob.perform_async(
           task_def.id,
           previous_due_date,
-          new_due_date
+          new_due_date,
+          SecureRandom.uuid
         )
       rescue StandardError => e
         Rails.logger.error(

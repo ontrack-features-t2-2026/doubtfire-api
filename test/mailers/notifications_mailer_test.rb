@@ -99,4 +99,26 @@ class NotificationsMailerTest < ActionMailer::TestCase
   ensure
     institution[:email_sender] = previous_sender
   end
+
+  # Security: the recipient address used to be built as %("#{user.name}"
+  # <#{user.email}>). User#name comes from the user-editable first_name, so a
+  # name containing a quote and a comma could break out of the display name and
+  # add a second recipient. The address is now built through Mail, which escapes
+  # the display name, so it can never inject another address.
+  def test_a_malicious_display_name_cannot_inject_a_second_recipient
+    user = FactoryBot.create(:user, :student, first_name: 'a",x@evil.com', last_name: 'Test')
+    notification = FactoryBot.create(
+      :notification,
+      user: user,
+      notification_type: 'feedback',
+      event: 'task_comment_created',
+      message: 'A comment arrived.'
+    )
+
+    mail = NotificationsMailer.single_notification(notification)
+
+    assert_equal 1, mail.to.length, "expected exactly one recipient, got #{mail.to.inspect}"
+    assert_includes mail.to.map(&:downcase), user.email.downcase
+    assert_not_includes mail.to.join(','), 'evil.com'
+  end
 end

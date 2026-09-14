@@ -29,15 +29,30 @@ class PushNotificationService
     'tutorial_changed' => 'Your tutorial details changed.',
     'group_membership_changed' => 'Your group membership changed.',
     'task_submitted' => 'A task is ready for marking.',
-    'portfolio_received' => 'Your portfolio submission was received.'
+    'portfolio_received' => 'Your portfolio submission was received.',
+    # The raw message names the outcome and a precise date ("Extension rejected
+    # for 1.1P, was due Mon Sep 14"), a result and a date both banned on a lock
+    # screen by the MN-S04 rule. This event predates that review, so it had no
+    # override and went out raw. Reveal only that an assessment happened.
+    'extension_assessed' => 'An extension request was assessed.'
   }.freeze
 
   # MN-C03 BEGIN: safe click route constants
   SAFE_CLICK_FALLBACK = '/notifications'.freeze
   MAX_CLICK_LINK_LENGTH = 256
-  FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#%]/
+  # The percent sign is no longer forbidden outright, because the task segment
+  # now carries %20 for an abbreviation with a space in it. Everything else a
+  # percent sign can introduce is still refused by the task route below, which
+  # admits %20 and no other escape.
+  FORBIDDEN_CLICK_LINK_TEXT = /[\u0000-\u001f\u007f\s\\?#]/
   SAFE_PROJECT_ROOT_LINK = %r{\A/projects/[1-9]\d*/(?:dashboard|groups)\z}
-  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9][A-Za-z0-9._-]{0,31}(?:/feedback)?\z}x
+  # %20 only, deliberately not "a percent and any two hex digits". %2F is an
+  # encoded slash and %5C an encoded backslash, and either walks a path
+  # separator straight past an anchored pattern written on the assumption there
+  # is none. The cap is 128 rather than 32 because abbreviations already in
+  # these repos run past 40 characters; it is not raised further because
+  # MAX_CLICK_LINK_LENGTH is checked first and would decide anyway.
+  SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9](?:[A-Za-z0-9._-]|%20){0,127}(?:/feedback)?\z}x
   # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
   # service that accepts a connection and then never answers holds a Sidekiq
@@ -172,6 +187,18 @@ class PushNotificationService
     # request. Refusing here is what stops a stored bad endpoint being used.
     unless PushSubscription.push_service_endpoint?(subscription.endpoint)
       Rails.logger.error "Refusing to push to subscription #{subscription.id}: endpoint is not a recognised push service"
+      return
+    end
+
+    # Checked here for the same reason as the endpoint: a row written before the
+    # key validation existed can still hold a malformed key. web-push would fail
+    # to encrypt against it with an error that is neither ExpiredSubscription nor
+    # InvalidSubscription, so the fan-out below would treat it as a transient
+    # failure and Sidekiq would retry, re-sending to this user's healthy devices
+    # every time. Skip the bad row instead. New rows are rejected on write.
+    unless PushSubscription.valid_web_push_key?(subscription.p256dh, PushSubscription::P256DH_BYTES) &&
+           PushSubscription.valid_web_push_key?(subscription.auth, PushSubscription::AUTH_BYTES)
+      Rails.logger.error "Refusing to push to subscription #{subscription.id}: keys are not valid web push material"
       return
     end
 

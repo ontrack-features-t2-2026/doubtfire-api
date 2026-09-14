@@ -1109,8 +1109,9 @@ class TaskDefinitionsTest < ActiveSupport::TestCase
         previous_due_date,
         new_due_date.iso8601
       ],
-      TaskDueDateChangedNotificationJob.jobs.last['args']
+      TaskDueDateChangedNotificationJob.jobs.last['args'].first(3)
     )
+    assert_match(/\A[0-9a-f-]{36}\z/, TaskDueDateChangedNotificationJob.jobs.last['args'][3])
   end
 
   def test_unrelated_update_does_not_enqueue_due_date_notification_job

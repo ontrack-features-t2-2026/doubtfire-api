@@ -43,7 +43,10 @@ module AuthorisationHelpers
 
     role_obj = object.role_for(user)
 
-    return false if role_obj.nil?
+    if role_obj.nil?
+      Rails.logger.warn "authorisation denied: #{action} on #{obj_class} for user #{user&.id}"
+      return false
+    end
 
     # Observer status cannot change an allowlisted permission, so avoid a unit
     # role lookup for those hot-path reads (including plagiarism visibility).
@@ -55,7 +58,10 @@ module AuthorisationHelpers
         unit_role = object.unit.unit_role_for(user)
       end
 
-      return false if !unit_role.nil? && unit_role.observer_only
+      if !unit_role.nil? && unit_role.observer_only
+        Rails.logger.warn "authorisation denied: #{action} on #{obj_class} for user #{user&.id}"
+        return false
+      end
     end
 
     role = role_obj.to_sym
@@ -64,7 +70,9 @@ module AuthorisationHelpers
 
     # No permissions, default to false authorise, else check if the action
     # is in the permissions hash
-    perms.nil? ? false : perms.include?(action)
+    granted = perms.nil? ? false : perms.include?(action)
+    Rails.logger.warn "authorisation denied: #{action} on #{obj_class} for user #{user&.id}" unless granted
+    granted
   end
 
   module_function :get_permission_hash
