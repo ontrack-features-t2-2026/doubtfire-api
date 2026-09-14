@@ -2,11 +2,12 @@ require 'test_helper'
 
 # EN-T02: the notifications API endpoints in app/api/notifications_api.rb.
 #
-# Five routes:
+# Six routes:
 #   GET    /api/notifications                (list, optional unread_only)
 #   GET    /api/notifications/unread_count
 #   PUT    /api/notifications/:id/read
 #   PUT    /api/notifications/read_all
+#   DELETE /api/notifications                (through_id confirmation boundary)
 #   DELETE /api/notifications/:id
 #
 # Every route scopes through current_user.notifications, so one user can never
@@ -49,6 +50,16 @@ class NotificationsApiTest < ActiveSupport::TestCase
     assert_equal [newer.id, older.id], ids, 'recent_first order'
   end
 
+  def test_list_includes_the_event_the_client_routes_on
+    FactoryBot.create(:notification, user: @user, event: 'task_comment_created')
+
+    add_auth_header_for(user: @user)
+    get '/api/notifications'
+
+    assert_equal 200, last_response.status
+    assert_equal 'task_comment_created', JSON.parse(last_response.body).first['event']
+  end
+
   def test_list_unread_only_filters_out_read_notifications
     unread = FactoryBot.create(:notification, user: @user)
     FactoryBot.create(:notification, :read, user: @user)
@@ -67,9 +78,9 @@ class NotificationsApiTest < ActiveSupport::TestCase
   # GET /api/notifications/unread_count ---------------------------------------
 
   def test_unread_count_counts_only_the_users_unread
-    FactoryBot.create_list(:notification, 2, user: @user)          # unread
-    FactoryBot.create(:notification, :read, user: @user)          # read, excluded
-    FactoryBot.create(:notification, user: @other)               # other user, excluded
+    FactoryBot.create_list(:notification, 2, user: @user) # unread
+    FactoryBot.create(:notification, :read, user: @user) # read, excluded
+    FactoryBot.create(:notification, user: @other) # other user, excluded
 
     add_auth_header_for(user: @user)
     get '/api/notifications/unread_count'
@@ -104,6 +115,55 @@ class NotificationsApiTest < ActiveSupport::TestCase
     assert JSON.parse(last_response.body)['success']
     assert_equal 0, @user.notifications.unread.count
     assert_nil others.reload.read_at, 'another user\'s notifications are untouched'
+  end
+
+  # DELETE /api/notifications -------------------------------------------------
+
+  def test_deleting_all_uses_the_confirmed_boundary_and_current_user_scope
+    first = FactoryBot.create(:notification, user: @user)
+    # Created inside the boundary, so only the current_user scope can save it.
+    other_users = FactoryBot.create(:notification, user: @other)
+    through = FactoryBot.create(:notification, user: @user)
+    unseen_newer = FactoryBot.create(:notification, user: @user)
+    assert_operator other_users.id, :<, through.id
+
+    add_auth_header_for(user: @user)
+    delete '/api/notifications', through_id: through.id
+
+    assert_equal 200, last_response.status
+    assert_equal 2, JSON.parse(last_response.body)['deleted_count']
+    assert_not Notification.exists?(first.id)
+    assert_not Notification.exists?(through.id)
+    assert Notification.exists?(unseen_newer.id), 'a notification after confirmation is retained'
+    assert Notification.exists?(other_users.id), 'another user is untouched'
+  end
+
+  def test_deleting_all_rejects_a_missing_negative_or_malformed_boundary
+    notification = FactoryBot.create(:notification, user: @user)
+
+    add_auth_header_for(user: @user)
+
+    [{}, { through_id: -1 }, { through_id: 'all' }].each do |params|
+      assert_no_difference 'Notification.count' do
+        delete '/api/notifications', params
+      end
+
+      assert_equal 400, last_response.status, "expected 400 for #{params.inspect}"
+    end
+    assert Notification.exists?(notification.id)
+  end
+
+  def test_deleting_all_requires_a_positive_confirmation_boundary
+    notification = FactoryBot.create(:notification, user: @user)
+
+    add_auth_header_for(user: @user)
+
+    assert_no_difference 'Notification.count' do
+      delete '/api/notifications', through_id: 0
+    end
+
+    assert_equal 400, last_response.status
+    assert Notification.exists?(notification.id)
   end
 
   # DELETE /api/notifications/:id ---------------------------------------------

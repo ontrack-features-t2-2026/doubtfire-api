@@ -45,6 +45,27 @@ class NotificationsApi < Grape::API
     { success: true }
   end
 
+  desc 'Delete the current user notifications up to a confirmed boundary'
+  params do
+    requires :through_id,
+             type: Integer,
+             values: ->(value) { value.positive? },
+             desc: 'Delete only notifications whose id is at or below this value'
+  end
+  delete '/notifications' do
+    # The boundary is part of the contract, not an optimisation. A notification
+    # can arrive after the browser has shown "Delete all" and while the user is
+    # reading the confirmation. Deleting the unbounded association here would
+    # remove that unseen notification too. Scoping through current_user keeps
+    # the operation account-local in the same way as the single-row endpoint.
+    deleted_count = current_user.notifications
+                                .where('notifications.id <= ?', params[:through_id])
+                                .delete_all
+
+    status 200
+    { success: true, deleted_count: deleted_count }
+  end
+
   desc 'Delete a notification'
   params do
     requires :id, type: Integer, desc: 'The notification id'
