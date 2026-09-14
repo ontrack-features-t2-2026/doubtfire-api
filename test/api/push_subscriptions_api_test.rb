@@ -54,11 +54,15 @@ class PushSubscriptionsApiTest < ActiveSupport::TestCase
     add_auth_header_for(user: @user)
     post '/api/push_subscriptions', params
 
+    # Generate an actual public point; arbitrary 65-byte strings are not keys.
+    key = OpenSSL::PKey::EC.generate('prime256v1')
+    rotated_key = Base64.urlsafe_encode64(key.public_key.to_octet_string(:uncompressed))
+
     assert_no_difference 'PushSubscription.count' do
-      post '/api/push_subscriptions', params.merge(p256dh: 'BRotatedPublicKey')
+      post '/api/push_subscriptions', params.merge(p256dh: rotated_key)
     end
 
-    assert_equal 'BRotatedPublicKey', PushSubscription.last.p256dh
+    assert_equal rotated_key, PushSubscription.last.p256dh
   end
 
   # Shared machine. The endpoint belongs to the browser, so the registration has
