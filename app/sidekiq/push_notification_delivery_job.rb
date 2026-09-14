@@ -15,6 +15,14 @@ class PushNotificationDeliveryJob
     # on a not-yet-visible row makes Sidekiq retry after that transaction commits
     # instead of acknowledging and permanently dropping the delivery.
     notification = Notification.find(notification_id)
+
+    # The category preference was checked when the notification was raised, but
+    # a retried job can run hours later. Ask again so a preference the user has
+    # switched off in the meantime stays off, exactly as NotificationEmailJob
+    # does for the email channel. Without this a queued or retried push still
+    # fires after the user has opted the category out.
+    return unless NotificationService.deliver_to?(notification.user, notification.notification_type)
+
     PushNotificationService.deliver(notification)
   end
 end

@@ -43,6 +43,46 @@ class PushNotificationDeliveryJobTest < ActiveSupport::TestCase
     end
   end
 
+  def test_no_delivery_when_the_preference_was_turned_off_after_queueing
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    notification = FactoryBot.create(
+      :notification,
+      :feedback,
+      user: user,
+      event: 'task_comment_created',
+      message: 'Queued while the category was still on.'
+    )
+
+    # retry: 3 means the job can run well after it was queued.
+    user.update!(receive_feedback_notifications: false)
+
+    PushNotificationService.stub(:deliver, ->(_record) { flunk 'push must not be delivered after the category is off' }) do
+      PushNotificationDeliveryJob.new.perform(notification.id)
+    end
+  end
+
+  def test_a_type_without_a_preference_is_still_delivered
+    user = FactoryBot.create(
+      :user,
+      receive_task_notifications: false,
+      receive_feedback_notifications: false,
+      receive_portfolio_notifications: false
+    )
+    notification = FactoryBot.create(
+      :notification,
+      user: user,
+      event: 'general',
+      message: 'General notices ignore the category toggles.'
+    )
+    delivered = nil
+
+    PushNotificationService.stub(:deliver, ->(record) { delivered = record }) do
+      PushNotificationDeliveryJob.new.perform(notification.id)
+    end
+
+    assert_equal notification, delivered
+  end
+
   def test_real_provider_failure_reaches_the_sidekiq_retry_boundary
     notification = FactoryBot.create(:notification, event: 'general')
     FactoryBot.create(
