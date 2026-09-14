@@ -61,6 +61,18 @@ module Feedback
 
     delegate :role_for, to: :learning_outcome
 
+    # Lets authorise? find the unit role behind a unit or task chip, so
+    # observer-only staff are refused chip writes. Global chips have no unit.
+    def unit_role_for(user)
+      context = learning_outcome&.context
+      unit = if context.is_a?(Unit)
+               context
+             elsif context.is_a?(TaskDefinition)
+               context.unit
+             end
+      unit&.unit_role_for(user)
+    end
+
     def track_usage_by(tutor)
       analytics = chip_usages.find_or_initialize_by(tutor: tutor)
       analytics.usage_count += 1

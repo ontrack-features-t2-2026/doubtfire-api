@@ -145,4 +145,33 @@ class FeedbackChipAuthorizationTest < ActiveSupport::TestCase
     assert_equal 201, last_response.status
     assert_equal [unit_tutor.id], chip.chip_usages.pluck(:tutor_id)
   end
+
+  def test_observer_only_staff_cannot_track_unit_chip_usage
+    unit = FactoryBot.create(:unit, with_students: false)
+    chip = FactoryBot.create(:feedback_template_chip, learning_outcome_id: unit.learning_outcomes.first.id)
+    observer = FactoryBot.create(:user, :tutor)
+    unit.employ_staff(observer, Role.tutor)
+    unit.unit_role_for(observer).update!(observer_only: true)
+
+    add_auth_header_for user: observer
+    track_usage chip
+
+    assert_equal 403, last_response.status
+    assert_equal 0, chip.chip_usages.count
+  end
+
+  def test_observer_only_staff_cannot_track_task_chip_usage
+    unit = FactoryBot.create(:unit, with_students: false)
+    task_outcome = FactoryBot.create(:learning_outcome, context_type: 'TaskDefinition', context_id: unit.task_definitions.first.id)
+    chip = FactoryBot.create(:feedback_template_chip, learning_outcome_id: task_outcome.id)
+    observer = FactoryBot.create(:user, :tutor)
+    unit.employ_staff(observer, Role.tutor)
+    unit.unit_role_for(observer).update!(observer_only: true)
+
+    add_auth_header_for user: observer
+    track_usage chip
+
+    assert_equal 403, last_response.status
+    assert_equal 0, chip.chip_usages.count
+  end
 end
