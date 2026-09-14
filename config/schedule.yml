@@ -73,3 +73,9 @@ send_due_soon_reminders:
 # archive_old_units:
 #   cron: "every 6 months"
 #   class: "ArchiveOldUnitsJob"
+
+# Default off: the worker returns immediately until an administrator configures
+# the approved student-visible channels and Graph application credentials.
+sync_teams_announcements:
+  cron: "every 5 minutes"
+  class: "SyncTeamsAnnouncementsJob"

@@ -9,10 +9,14 @@ class UnitAnnouncement < ApplicationRecord
   validates :title, presence: true, length: { maximum: 200 }
   validates :body, presence: true, length: { maximum: 20_000 }
   validates :pinned, inclusion: { in: [true, false] }
+  validates :source_provider, inclusion: { in: %w[manual microsoft_teams] }
   validate :expiry_follows_publication
 
+  scope :allowed_sources, lambda {
+    where(source_provider: 'manual').or(where(source_provider: 'microsoft_teams', source_mapping_key: UnitHub::Teams::Configuration.new.visible_mapping_keys))
+  }
   scope :visible_at, lambda { |at|
-    where('published_at <= ?', at).where('expires_at IS NULL OR expires_at > ?', at)
+    allowed_sources.where('published_at <= ?', at).where('expires_at IS NULL OR expires_at > ?', at)
   }
   scope :recent_first, -> { order(pinned: :desc, published_at: :desc, id: :desc) }
 

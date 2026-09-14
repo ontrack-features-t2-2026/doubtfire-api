@@ -6,7 +6,10 @@ module UnitHub
       record.attributes.slice('id', 'unit_id', 'title', 'body', 'source_url', 'pinned').symbolize_keys.merge(
         unit_code: record.unit.code, unit_name: record.unit.name,
         published_at: record.published_at&.iso8601, expires_at: record.expires_at&.iso8601,
-        updated_at: record.updated_at.iso8601
+        updated_at: record.updated_at.iso8601, source_provider: record.source_provider,
+        managed_externally: record.source_provider == 'microsoft_teams',
+        author_name: record.source_provider == 'microsoft_teams' ? 'Teaching team' : nil,
+        source_imported_at: record.source_imported_at&.iso8601
       )
     end
 

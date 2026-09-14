@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_14_000001) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_14_000002) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -817,6 +817,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_14_000001) do
     t.index ["period", "year"], name: "index_teaching_periods_on_period_and_year", unique: true
   end
 
+  create_table "teams_announcement_sync_states", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "unit_id", null: false
+    t.string "mapping_key", limit: 64, null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "last_attempt_at"
+    t.datetime "last_succeeded_at"
+    t.datetime "next_attempt_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["mapping_key"], name: "index_teams_announcement_sync_states_on_mapping_key", unique: true
+    t.index ["unit_id"], name: "index_teams_announcement_sync_states_on_unit_id"
+  end
+
   create_table "test_attempts", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "task_id"
     t.datetime "attempted_time", null: false
@@ -960,7 +973,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_14_000001) do
     t.datetime "expires_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "source_provider", default: "manual", null: false
+    t.string "external_source_key", limit: 64
+    t.string "source_mapping_key", limit: 64
+    t.string "source_channel_key", limit: 64
+    t.string "external_message_id", limit: 128
+    t.datetime "source_updated_at"
+    t.datetime "source_imported_at"
+    t.datetime "source_checked_at"
     t.index ["author_id"], name: "index_unit_announcements_on_author_id"
+    t.index ["source_mapping_key", "source_checked_at"], name: "index_announcements_source_scan"
+    t.index ["unit_id", "external_source_key"], name: "index_announcements_external_source", unique: true
     t.index ["unit_id", "published_at"], name: "index_unit_announcements_on_unit_id_and_published_at"
     t.index ["unit_id"], name: "index_unit_announcements_on_unit_id"
   end
@@ -1138,6 +1161,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_14_000001) do
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "target_id"
   add_foreign_key "notifications", "users"
   add_foreign_key "push_subscriptions", "users"
+  add_foreign_key "teams_announcement_sync_states", "units"
   add_foreign_key "unit_announcements", "units"
   add_foreign_key "unit_announcements", "users", column: "author_id", on_delete: :nullify
   add_foreign_key "unit_learning_sessions", "units"

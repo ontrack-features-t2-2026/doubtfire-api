@@ -29,7 +29,7 @@ All routes below are relative to `/api` and require the existing OnTrack authent
 | `GET /webcal` | Existing preferences plus `include_learning_sessions` when enabled |
 | `PUT /webcal` | Existing wrapper, e.g. `{webcal: {enabled: true, include_learning_sessions: true}}` |
 
-Unit rows contain `id`, `code`, `name` and `can_manage`. Announcement rows contain `id`, `unit_id`, `unit_code`, `unit_name`, `title`, `body`, `source_url`, `pinned`, `published_at`, `expires_at` and `updated_at`. Set `published_at` to null to save a draft. Up to 100 announcements appear, pinned first then newest; the truncation flag makes this bound explicit.
+Unit rows contain `id`, `code`, `name` and `can_manage`. Announcement rows additionally expose `source_provider`, `managed_externally`, `author_name` and `source_imported_at`; private source keys and credentials are never returned. Unit rows also expose `teams_sync` as `configured` or `not_configured` (configuration status, not proof of a live connection). Announcement rows contain `id`, `unit_id`, `unit_code`, `unit_name`, `title`, `body`, `source_url`, `pinned`, `published_at`, `expires_at` and `updated_at`. Set `published_at` to null to save a draft. Up to 100 announcements appear, pinned first then newest; the truncation flag makes this bound explicit.
 
 Session rows contain `id`, `unit_id`, `unit_code`, `unit_name`, `title`, `description`, `kind`, `start_at`, `end_at`, `timezone`, `location`, `join_url`, `source_url`, `published`, `cancelled`, `recurrence`, `recurrence_until` and `updated_at`. `kind` is one of `helphub`, `lecture`, `seminar`, `workshop`, `other`. `recurrence` is `none` or `weekly`. New schedules default to unpublished. The feed expands schedules into occurrences and additionally includes `occurrence_id` and `original_start_at`. Staff listing and write responses return the original schedule. Feed cancellation rows have `join_url: null`.
 
@@ -45,9 +45,9 @@ Weekly expansion adds local calendar weeks before UTC export to preserve ordinar
 
 ## Deployment and demo boundary
 
-Run the migrations through `20260914000001` before starting the matching web release. They add `unit_announcements`, `unit_learning_sessions`, the calendar preference and the calendar revision field. Existing data is retained, and existing calendar subscriptions keep their prior content until the user opts in.
+Run the migrations through `20260914000002` before starting the matching web release. They add `unit_announcements`, `unit_learning_sessions`, the calendar preference and the calendar revision field. Existing data is retained, and existing calendar subscriptions keep their prior content until the user opts in.
 
-The normal feature uses real authenticated API records. The web application's existing explicit demo mode uses synthetic client-side examples and makes no hub write requests. These migrations and normal seeds contain no screenshot material or invented real class links. The Teams screenshots were examples of student needs, not commands, credentials or authorized access to Teams. Staff can enter their own approved source and meeting links; automatic Teams synchronization requires a separately configured integration and consent.
+The normal feature uses real authenticated API records. The web application's existing explicit demo mode uses synthetic client-side examples and makes no hub write requests. These migrations and normal seeds contain no screenshot material or invented real class links. The Teams screenshots were examples of student needs, not commands, credentials or authorized access to Teams. Staff can enter approved source and meeting links. The optional [university-managed Teams announcement sync](teams-sync.md) imports only configured student-wide channels and approved staff publishers; it defaults to off and requires university application consent. Existing SSO is unchanged, and students do not sign in again. Imported rows are managed in Teams, preserve source ownership, and remain subject to OnTrack enrolment checks.
 
 ## Verification
 

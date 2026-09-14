@@ -79,6 +79,7 @@ class UnitHubApi < Grape::API
   desc 'Published announcements and learning sessions for the current user units'
   get '/unit_hub' do
     units = UnitHub::Access.units_for(current_user).order(:code, :id).to_a
+    teams_configuration = UnitHub::Teams::Configuration.new
     announcements = UnitAnnouncement.where(unit_id: units.map(&:id)).visible_at(Time.current).includes(:unit).recent_first.limit(101).to_a
     from = 1.day.ago
     to = 90.days.from_now
@@ -92,7 +93,7 @@ class UnitHubApi < Grape::API
     sessions.sort_by! { |occurrence| [Time.iso8601(occurrence[:start_at]), occurrence[:occurrence_id]] }
 
     {
-      units: units.map { |unit| { id: unit.id, code: unit.code, name: unit.name, can_manage: UnitHub::Access.manage?(current_user, unit) } },
+      units: units.map { |unit| { id: unit.id, code: unit.code, name: unit.name, can_manage: UnitHub::Access.manage?(current_user, unit), teams_sync: teams_configuration.configured_for?(unit.id) ? 'configured' : 'not_configured' } },
       announcements: announcements.first(100).map { |record| UnitHub::Serializer.announcement(record) },
       sessions: sessions,
       announcements_truncated: announcements.length > 100,
@@ -104,7 +105,8 @@ class UnitHubApi < Grape::API
     route_param :unit_id, type: Integer do
       resource :announcements do
         get do
-          records = manageable_hub_unit!.unit_announcements.includes(:unit).recent_first
+          scope = manageable_hub_unit!.unit_announcements
+          records = scope.where(source_provider: 'manual').or(scope.visible_at(Time.current)).includes(:unit).recent_first
           records.map { |record| UnitHub::Serializer.announcement(record) }
         end
 
@@ -118,12 +120,15 @@ class UnitHubApi < Grape::API
           params { use :announcement_fields }
           put do
             record = manageable_hub_unit!.unit_announcements.find(params[:id])
+            error!({ error: 'Manage this imported announcement in Teams.' }, 403) if record.source_provider == 'microsoft_teams'
             record.update!(announcement_attributes)
             UnitHub::Serializer.announcement(record)
           end
 
           delete do
-            manageable_hub_unit!.unit_announcements.find(params[:id]).destroy!
+            record = manageable_hub_unit!.unit_announcements.find(params[:id])
+            error!({ error: 'Manage this imported announcement in Teams.' }, 403) if record.source_provider == 'microsoft_teams'
+            record.destroy!
             { success: true }
           end
         end
