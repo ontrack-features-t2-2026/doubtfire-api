@@ -2,6 +2,7 @@ module Entities
   class NotificationEntity < Grape::Entity
     expose :id
     expose :notification_type
+    expose :event
     expose :message
     expose :link
     expose :read_at

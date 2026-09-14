@@ -143,6 +143,11 @@ class Task < ApplicationRecord
   has_many :test_attempts, dependent: :destroy
   has_many :session_activities, dependent: :destroy
 
+  # Notifications that point at this task. They go with it, because a
+  # notification about a record that no longer exists can never be reached by
+  # the reader and so can never be cleared by reading it.
+  has_many :notifications, as: :notifiable, dependent: :destroy, inverse_of: :notifiable
+
   delegate :unit, to: :project
   delegate :student, to: :project
   delegate :upload_requirements, to: :task_definition
@@ -224,10 +229,37 @@ class Task < ApplicationRecord
     end
   end
 
+  # Reading the comments is also reading the notifications that pointed at them.
+  #
+  # The rule lives here rather than in the comments endpoint because this method
+  # is what "the user has now seen these comments" means, and it has more than
+  # one caller. A rule in one endpoint is a rule the next caller forgets.
+  #
+  # Only this user's notifications are touched, so a tutor opening a student's
+  # task cannot clear the student's bell. Only unread ones are touched, so a
+  # notification read three days ago keeps its original timestamp. One
+  # update_all over the whole set, because the loop above is already one write
+  # per comment.
+  #
+  # The type/id pairs are built by Rails from the records themselves rather than
+  # written out as SQL strings, so an STI subclass or a renamed class cannot
+  # leave a literal that still compiles and quietly matches nothing.
   def mark_comments_as_read(user, comments)
+    comments = comments.to_a
+
     comments.each do |comment|
       comment.mark_as_read(user, unit)
     end
+
+    unread = user.notifications.unread
+    # rubocop:disable Rails/SkipsModelValidations
+    # update_all on purpose. Setting read_at has no validation or callback to
+    # run, and the loop above is already one write per comment, so this is one
+    # statement rather than another N.
+    unread.where(notifiable: comments)
+          .or(unread.where(notifiable: self))
+          .update_all(read_at: Time.zone.now)
+    # rubocop:enable Rails/SkipsModelValidations
   end
 
   def mark_comments_as_unread(user, comments)
@@ -248,6 +280,10 @@ class Task < ApplicationRecord
         'task_comments.id AS id',
         'task_comments.comment AS comment',
         'task_comments.content_type AS content_type',
+        'task_comments.attachment_extension AS attachment_extension',
+        'task_comments.attachment_original_filename AS attachment_original_filename',
+        'task_comments.attachment_content_type AS attachment_content_type',
+        'task_comments.attachment_byte_size AS attachment_byte_size',
         "case when u_crr.created_at IS NULL then 1 else 0 end AS is_new",
         'r_crr.created_at AS recipient_read_time',
         'task_comments.created_at AS created_at',
@@ -1218,7 +1254,8 @@ class Task < ApplicationRecord
       type: 'task',
       event: 'task_submitted',
       message: "#{student.name} submitted #{task_definition.name} for marking in #{product_name}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
+      notifiable: self
     )
   rescue StandardError => e
     logger.error "Failed to raise task_submitted notification for task #{id}: #{e.message}"
@@ -1252,7 +1289,8 @@ class Task < ApplicationRecord
       type: 'task',
       event: 'task_status_changed',
       message: "#{by_user.name} updated the status of #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
+      notifiable: self
     )
   rescue StandardError => e
     logger.error "Failed to raise task_status_changed notification for task #{id}: #{e.message}"
@@ -1502,9 +1540,13 @@ class Task < ApplicationRecord
     task_definition.weighting.to_f
   end
 
-  def add_text_comment(user, text, reply_to_id = nil)
+  def add_text_comment(user, text, reply_to_id = nil, client_request_id = nil)
+    return nil if user.nil? || text.nil?
+
+    # Strip before the emptiness check, as 11.0.x did: strip also removes NUL,
+    # which blank? does not count as whitespace.
     text = text.strip
-    return nil if user.nil? || text.nil? || text.empty?
+    return nil if text.blank?
 
     lc = comments.last
 
@@ -1520,6 +1562,7 @@ class Task < ApplicationRecord
     comment.content_type = :text
     comment.recipient = user == project.student ? project.tutor_for(task_definition) : project.student
     comment.reply_to_id = reply_to_id
+    comment.client_request_id = client_request_id
     comment.save!
 
     notify_comment_recipient(comment)
@@ -1549,7 +1592,8 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'task_comment_created',
       message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}/feedback"
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}/feedback",
+      notifiable: comment
     )
   rescue StandardError => e
     logger.error "Failed to raise task_comment_created notification for task #{id}: #{e.message}"
@@ -1649,7 +1693,7 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'discussion_request_created',
       message: 'A discussion prompt is ready for you.',
-      link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}/feedback"
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}/feedback"
     )
   rescue StandardError => e
     logger.error "Failed to raise discussion_request_created notification for task #{id}: #{e.message}"
@@ -1657,27 +1701,50 @@ class Task < ApplicationRecord
   private :notify_discussion_request_recipient
 
   # TODO: Refactor to attachment comment (with inheritance on model)
-  def add_comment_with_attachment(user, tempfile, reply_to_id = nil)
+  def add_comment_with_attachment(user, tempfile, reply_to_id = nil, text = nil, client_request_id = nil)
     ensured_group_submission if group_task? && group
 
-    comment = TaskComment.create
-    comment.task = self
-    comment.user = user
-    comment.reply_to_id = reply_to_id
-    if FileHelper.accept_file(tempfile, "comment attachment audio test", "audio")[:accepted]
-      comment.content_type = :audio
-    elsif FileHelper.accept_file(tempfile, "comment attachment image test", "image")[:accepted]
-      comment.content_type = :image
-    elsif FileHelper.accept_file(tempfile, "comment attachment pdf", "document")[:accepted]
-      comment.content_type = :pdf
-    else
-      raise "Unknown comment attachment type"
+    attachment_type =
+      if FileHelper.accept_file(tempfile, 'comment attachment audio test', 'audio')[:accepted]
+        :audio
+      elsif FileHelper.accept_file(tempfile, 'comment attachment image test', 'image')[:accepted]
+        :image
+      elsif FileHelper.accept_file(tempfile, 'comment attachment PDF', 'document')[:accepted]
+        :pdf
+      elsif FileHelper.accept_file(tempfile, 'comment attachment DOCX', 'word_document')[:accepted]
+        :document
+      end
+
+    return nil if attachment_type.nil?
+
+    comment = TaskComment.new(
+      task: self,
+      user: user,
+      recipient: user == project.student ? project.tutor_for(task_definition) : project.student,
+      reply_to_id: reply_to_id,
+      comment: text.presence,
+      content_type: attachment_type,
+      client_request_id: client_request_id
+    )
+
+    TaskComment.transaction do
+      # Allocate the id inside the transaction because the attachment storage
+      # path is id-based. Any conversion/storage failure rolls the row and its
+      # read receipt back together.
+      comment.save!
+      begin
+        raise 'Error attaching uploaded file.' unless comment.add_attachment(tempfile)
+      rescue StandardError
+        # Filesystem operations are not transactional, and the rollback resets
+        # the new row's id that the storage path is built from. Remove any
+        # moved or converted file now, while that path is still known.
+        FileUtils.rm_f(comment.attachment_path) if comment.attachment_extension.present?
+        raise
+      end
     end
 
-    comment.recipient = user == project.student ? project.tutor_for(task_definition) : project.student
-    raise "Error attaching uploaded file." unless comment.add_attachment(tempfile)
-
-    comment.save!
+    # Notify once after the attachment transaction succeeds.
+    notify_comment_recipient(comment)
     comment
   end
 
@@ -1695,6 +1762,13 @@ class Task < ApplicationRecord
     request.comment = comment
     request.recipient = current_user == project.student ? project.tutor_for(task_definition) : project.student
     request.save!
+
+    # A feedback review request is a comment the recipient needs to act on just
+    # like a text or attachment comment, and both of those notify. This path
+    # stayed silent, so a student's request for a review reached the tutor as no
+    # email, push or in-app notification at all. Notify here too.
+    notify_comment_recipient(request)
+
     request
   end
 

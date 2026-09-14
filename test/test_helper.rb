@@ -27,6 +27,11 @@ rescue ActiveRecord::NoDatabaseError
   exit
 end
 
+# The suite relies on seed data (roles, units) created by `rake test:setup`;
+# a migrated-but-empty database lets every test fail with a confusing error
+# instead of explaining what's missing, so check for that up front.
+abort('Test database has no seed data. Run `rake test:setup` to populate it.') if Role.count.zero? || Unit.count.zero?
+
 # Setup sidekiq
 require 'sidekiq/testing'
 Sidekiq::Testing.fake!
@@ -72,7 +77,7 @@ class ActiveSupport::TestCase
     TestHelpers::TiiTestHelper.setup_tii_eula
     TestHelpers::TiiTestHelper.setup_tii_features_enabled
 
-    @last_unit_id = Unit.last.id
+    @last_unit_id = Unit.maximum(:id).to_i
   end
 
   teardown do

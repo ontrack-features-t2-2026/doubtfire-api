@@ -73,7 +73,7 @@ class NewTaskAvailableNotificationJob
           type: TYPE,
           event: EVENT,
           message: "A new task is available: #{task_definition.abbreviation} in #{unit.code}.",
-          link: "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}",
+          link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
           dedupe_key: "#{EVENT}:task-definition:#{task_definition.id}"
         )
       end

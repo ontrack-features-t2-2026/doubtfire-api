@@ -145,7 +145,7 @@ class SendDueSoonRemindersJob
 
   def notify(project, unit, task_definition)
     student = project.student
-    link = "/projects/#{project.id}/dashboard/#{task_definition.abbreviation}"
+    link = "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}"
 
     # One reminder per student per task, ever.
     #

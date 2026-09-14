@@ -1,6 +1,13 @@
 class Notification < ApplicationRecord
   belongs_to :user
 
+  # What the notification is about: the comment, the task, or whatever record
+  # the event happened to. Optional, because a `general` notification points at
+  # nothing and because every row raised before this column existed has no
+  # target. Polymorphic, because portfolio and extension events do not point at
+  # a task.
+  belongs_to :notifiable, polymorphic: true, optional: true
+
   # Notification categories. The first three map onto the existing user
   # preference columns (receive_task/feedback/portfolio_notifications) so that a
   # single category toggle gates every delivery channel (in-app, email, push).
