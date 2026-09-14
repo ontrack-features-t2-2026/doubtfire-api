@@ -767,8 +767,51 @@ class Task < ApplicationRecord
       end
     end
 
+    notify_extension_request_recipient(extension, user)
+
     extension
   end
+
+  # Tell whoever has to assess a student's extension request that it arrived.
+  #
+  # extension.recipient is already worked out above: the task's tutor, which
+  # tutor_for makes the main convenor when there is no tutor, or the main
+  # convenor when more weeks are asked for than are left before the due date.
+  # Do not recalculate it.
+  #
+  # Only a request still waiting on a person notifies. Staff creating an
+  # extension and a unit approving it automatically both assess it straight
+  # away, and there is nothing left for the tutor to do. Checking assessed?
+  # rather than those two conditions also covers an automatic approval that
+  # failed, which leaves the request waiting.
+  #
+  # The student's reason is left out, the same way comment text is. Failures
+  # are logged and swallowed so the request itself is never lost.
+  def notify_extension_request_recipient(extension, user)
+    # The same test role_for uses for :student, without its staff query.
+    return unless user == project.student
+    return if extension.assessed?
+
+    recipient = extension.recipient
+    return if recipient.blank? || recipient == user
+
+    product_name = Doubtfire::Application.config.institution[:product_name]
+
+    # 'task', not 'extension': 'extension' has no preference behind it, and a
+    # tutor must be able to switch this off with their other task
+    # notifications. The student's extension_assessed keeps 'extension'.
+    NotificationService.notify(
+      user: recipient,
+      type: 'task',
+      event: 'extension_requested',
+      message: "#{user.name} asked for an extension on #{task_definition.name} in #{product_name}.",
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
+      notifiable: extension
+    )
+  rescue StandardError => e
+    logger.error "Failed to raise extension_requested notification for task #{id}: #{e.message}"
+  end
+  private :notify_extension_request_recipient
 
   def weeks_can_extend
     deadline = max_date_with_spec_con_days
