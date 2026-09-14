@@ -10,9 +10,10 @@ namespace :maintenance do
       return true if matcher.call(payload['class'], payload['args'])
     end
 
-    # TODO: We may need to iterate through each queue when we implement parallel sidekiq jobs
-    Sidekiq::Queue.new("default").each do |job|
-      return true if matcher.call(job.klass, job.args)
+    %w[submissions default].each do |queue_name|
+      Sidekiq::Queue.new(queue_name).each do |job|
+        return true if matcher.call(job.klass, job.args)
+      end
     end
 
     false
@@ -270,7 +271,11 @@ namespace :maintenance do
     end
 
     puts "Removing old portfolio PDFs"
-    `find #{FileHelper.root_portfolio_dir} -name "*pdf.old" -exec rm {} \;`
+    Dir.glob(File.join(FileHelper.root_portfolio_dir, '**', '*pdf.old')).each do |old_pdf|
+      FileUtils.rm(old_pdf)
+    rescue StandardError => e
+      puts "Could not remove #{old_pdf}: #{e.message}"
+    end
   end
 end
 # rubocop:enable Metrics/BlockLength

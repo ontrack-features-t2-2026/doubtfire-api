@@ -216,6 +216,26 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     end
   end
 
+  # DN-05: extension_assessed predates the MN-S04 lock-screen review, so it had
+  # no override and its raw message, which names the outcome and a precise date,
+  # went straight to the lock screen. A result and a date are both banned there.
+  def test_extension_assessed_uses_a_reviewed_lock_screen_body
+    notification = Notification.create!(
+      user: @user,
+      notification_type: 'extension',
+      event: 'extension_assessed',
+      message: 'Extension rejected for 1.1P, was due Mon Sep 14.',
+      link: '/projects/2/dashboard/1.1P'
+    )
+
+    body = JSON.parse(PushNotificationService.payload_for(notification))
+               .dig('notification', 'body')
+
+    assert_equal 'An extension request was assessed.', body
+    assert_not_includes body, 'rejected'
+    assert_not_includes body, 'Sep'
+  end
+
   def test_click_payload_preserves_every_approved_route_family
     routes = [
       '/notifications',
@@ -230,7 +250,12 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/2/dashboard/TASK1',
       '/projects/2/dashboard/P-2.21',
       '/projects/2/dashboard/D-9.568',
-      '/projects/2/dashboard/C-4.602'
+      '/projects/2/dashboard/C-4.602',
+      # An abbreviation with a space in it, encoded at the point the link is
+      # built. This is the case the whole ticket is about.
+      '/projects/2/dashboard/Portfolio%20Reflection',
+      # 43 characters, the length this repo's own tests already create.
+      "/projects/2/dashboard/#{'a' * 43}"
     ]
 
     routes.each do |route|
@@ -264,13 +289,20 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       '/projects/2/dashboard/1.1P%3ftoken%3dsecret',
       '/%252f%252fexample.test',
       '/projects/2/dashboard/%',
+      # An encoded slash must still fall back. Admitting %20 must not become
+      # admitting any escape, or a path separator walks past the anchor.
+      '/projects/2/dashboard/A%2FB',
+      '/projects/2/dashboard/A%2fB',
       '/projects/0/dashboard',
       '/projects/2/dashboard/',
       '/projects/2/dashboard/1.1P/extra',
       '/projects/2/dashboard/1.1P/feedback/extra',
       '/projects/2/dashboard/1.1P?token=secret',
       '/projects/2/dashboard/1.1P#feedback',
-      "/projects/2/dashboard/#{'A1' * 20}",
+      # Still here to prove the segment bound is enforced, lengthened because the
+      # bound moved from 32 to 128. This is the only case in this list that
+      # changed.
+      "/projects/2/dashboard/#{'A1' * 70}",
       '/units/2',
       '/home'
     ]
@@ -473,6 +505,55 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
     with_keys { PushNotificationService.deliver(@notification) }
 
     assert_requested good
+  end
+
+  # DN-30: a row written before the key validation existed can hold a malformed
+  # key. web-push would fail to encrypt against it with an error that is neither
+  # ExpiredSubscription nor InvalidSubscription, so the fan-out would treat it as
+  # transient and Sidekiq would retry, re-hitting the healthy devices. It must be
+  # skipped, the same as a refused endpoint.
+  def test_a_stored_subscription_with_malformed_keys_is_never_requested
+    subscription = FactoryBot.build(:push_subscription, user: @user, endpoint: ENDPOINT)
+    subscription.p256dh = 'not-valid-base64-key'
+    subscription.auth = 'nope'
+    subscription.save!(validate: false)
+
+    # No WebMock stub is registered for ENDPOINT, so an outbound request would
+    # raise rather than pass silently.
+    with_keys { PushNotificationService.deliver(@notification) }
+
+    assert_not_requested :post, ENDPOINT
+    assert subscription.reload.persisted?, 'a skipped row is left in place, not deleted'
+  end
+
+  def test_a_subscription_with_malformed_keys_does_not_stop_the_other_browsers
+    bad = FactoryBot.build(:push_subscription, user: @user, endpoint: 'https://fcm.googleapis.com/fcm/send/bad-keys-browser')
+    bad.p256dh = 'not-valid-base64-key'
+    bad.auth = 'nope'
+    bad.save!(validate: false)
+    create_subscription
+    good = stub_request(:post, ENDPOINT).to_return(status: 201)
+
+    assert_nothing_raised do
+      with_keys { PushNotificationService.deliver(@notification) }
+    end
+
+    assert_requested good
+  end
+
+  def test_a_stored_invalid_curve_point_does_not_stop_the_other_browsers
+    bad = FactoryBot.build(:push_subscription, user: @user, endpoint: 'https://fcm.googleapis.com/fcm/send/bad-point')
+    bad.p256dh = Base64.urlsafe_encode64("\x04" + ("\x42" * 64))
+    bad.save!(validate: false)
+    create_subscription
+    good = stub_request(:post, ENDPOINT).to_return(status: 201)
+
+    assert_nothing_raised do
+      with_keys { PushNotificationService.deliver(@notification) }
+    end
+
+    assert_requested good
+    assert_not_requested :post, bad.endpoint
   end
 
   # Timeouts are Net::HTTP settings rather than anything visible on the wire, so

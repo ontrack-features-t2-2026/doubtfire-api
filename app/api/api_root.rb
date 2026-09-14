@@ -57,6 +57,7 @@ class ApiRoot < Grape::API
   mount Admin::OverseerAdminApi
   mount ActivityTypesAuthenticatedApi
   mount ActivityTypesPublicApi
+  mount TaskStatusesApi
   mount AuthenticationApi
   mount AdditionalNotificationEmailVerificationApi
   mount BreaksApi
@@ -113,6 +114,7 @@ class ApiRoot < Grape::API
   mount DiscussionPromptsApi
   mount OverseerStepsApi
   mount TaskPrioritizationApi
+  mount DemoScenarioApi
 
   mount Feedback::FeedbackChipApi
 
@@ -173,6 +175,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to DiscussionPromptsApi
   AuthenticationHelpers.add_auth_to OverseerStepsApi
   AuthenticationHelpers.add_auth_to TaskPrioritizationApi
+  AuthenticationHelpers.add_auth_to DemoScenarioApi
   AuthenticationHelpers.add_auth_to TutorNotesApi
 
   # Notifications feature

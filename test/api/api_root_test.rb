@@ -22,6 +22,7 @@ class ApiRootTest < ActiveSupport::TestCase
     'CampusesPublicApi',                   # read-only list of campuses
     'D2lIntegrationApi::OauthPublicApi',   # OAuth callback from D2L
     'SettingsPublicApi',                   # branding and feature flags for the login page
+    'TaskStatusesApi',                     # read-only list of the fixed task statuses
     'TeachingPeriodsPublicApi',            # read-only list of teaching periods
     'Tii::TurnItInHooksApi',               # inbound webhook from Turnitin, own auth
     'WebcalPublicApi'                      # calendar feed authorised by a per-user secret

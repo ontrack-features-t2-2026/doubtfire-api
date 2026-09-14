@@ -18,7 +18,7 @@ class NotificationsMailer < ApplicationMailer
     # fallback for older installations that have not configured one yet.
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
 
-    email_with_name = %("#{@user.name}" <#{@user.email}>)
+    email_with_name = address_with_name(@user)
     subject = "#{@doubtfire_product_name}: New notification"
 
     # An event may ship its own pair of templates named after it, for example
@@ -96,8 +96,8 @@ class NotificationsMailer < ApplicationMailer
     @convenor = @unit.main_convenor_user
     @summary_stats = summary_stats
 
-    email_with_name = %("#{@staff.name}" <#{@staff.email}>)
-    convenor_email = %("#{@convenor.name}" <#{@convenor.email}>)
+    email_with_name = address_with_name(@staff)
+    convenor_email = address_with_name(@convenor)
     subject = "#{@unit.name}: Weekly Summary"
 
     mail(
@@ -136,8 +136,8 @@ class NotificationsMailer < ApplicationMailer
     @soon_top = @top_tasks.select { |tt| tt[:reason] == :soon }
     @ahead_top = @top_tasks.select { |tt| tt[:reason] == :ahead }
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
+    email_with_name = address_with_name(@student)
+    tutor_email = address_with_name(@tutor)
     subject = "#{project.unit.name}: Weekly Summary"
 
     mail(
@@ -179,4 +179,19 @@ class NotificationsMailer < ApplicationMailer
   helper_method :were_was
   helper_method :are_is
   helper_method :this_these
+
+  private
+
+  # Build the recipient or sender address through Mail so a display name that
+  # contains a quote or a comma cannot break out of the name and inject a second
+  # address, and strip control characters so a name cannot fold an extra header
+  # into the message. User#name comes from first_name/last_name, which are
+  # user-editable and validated for presence only, so the raw
+  # %("#{name}" <#{email}>) interpolation this replaces was header-injectable.
+  def address_with_name(user)
+    safe_name = user.name.to_s.gsub(/[[:cntrl:]]/, ' ').strip
+    address = Mail::Address.new(user.email.to_s)
+    address.display_name = safe_name
+    address.format
+  end
 end

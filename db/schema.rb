@@ -383,6 +383,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
     t.string "event", null: false
     t.string "dedupe_key", limit: 191
     t.datetime "delivered_at"
+    t.string "notifiable_type"
+    t.bigint "notifiable_id"
+    t.index ["notifiable_type", "notifiable_id"], name: "index_notifications_on_notifiable_type_and_notifiable_id"
     t.index ["user_id", "dedupe_key"], name: "index_notifications_on_user_and_dedupe_key", unique: true
     t.index ["user_id", "event"], name: "index_notifications_on_user_id_and_event"
     t.index ["user_id", "read_at"], name: "index_notifications_on_user_id_and_read_at"
@@ -620,6 +623,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
     t.bigint "reply_to_id"
     t.bigint "commentable_id"
     t.string "commentable_type"
+    t.string "attachment_original_filename"
+    t.string "attachment_content_type"
+    t.bigint "attachment_byte_size"
+    t.string "client_request_id"
     t.index ["assessor_id"], name: "index_task_comments_on_assessor_id"
     t.index ["commentable_type", "commentable_id"], name: "index_task_comments_on_commentable_type_and_commentable_id"
     t.index ["discussion_comment_id"], name: "index_task_comments_on_discussion_comment_id"
@@ -627,6 +634,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
     t.index ["reply_to_id"], name: "index_task_comments_on_reply_to_id"
     t.index ["task_id"], name: "index_task_comments_on_task_id"
     t.index ["task_status_id"], name: "index_task_comments_on_task_status_id"
+    t.index ["user_id", "task_id", "client_request_id"], name: "idx_task_comments_user_task_client_request", unique: true
     t.index ["user_id"], name: "index_task_comments_on_user_id"
   end
 
@@ -782,6 +790,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_31_012000) do
     t.datetime "target_start_date"
     t.datetime "target_due_date"
     t.datetime "last_tutor_feedback_at"
+    t.string "submission_processing_state"
+    t.datetime "submission_processing_started_at"
+    t.datetime "submission_processing_finished_at"
+    t.string "submission_processing_error_code"
+    t.integer "submission_processing_attempts", default: 0, null: false
+    t.string "submission_processing_mode"
+    t.bigint "submission_processing_user_id"
+    t.boolean "submission_processing_test_submission", default: false, null: false
+    t.boolean "submission_processing_accepted_tii_eula", default: false, null: false
     t.index ["group_submission_id"], name: "index_tasks_on_group_submission_id"
     t.index ["project_id", "task_definition_id"], name: "tasks_uniq_proj_task_def", unique: true
     t.index ["project_id"], name: "index_tasks_on_project_id"
