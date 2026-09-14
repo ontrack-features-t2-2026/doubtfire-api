@@ -59,6 +59,7 @@ class ApiRoot < Grape::API
   mount ActivityTypesPublicApi
   mount TaskStatusesApi
   mount AuthenticationApi
+  mount AdditionalNotificationEmailVerificationApi
   mount BreaksApi
   mount DiscussionCommentApi
   mount EngagementsApi
@@ -106,6 +107,7 @@ class ApiRoot < Grape::API
   mount D2lIntegrationApi::OauthPublicApi
 
   mount UsersApi
+  mount AdditionalNotificationEmailsApi
   mount WebcalApi
   mount WebcalPublicApi
   mount MarkingSessionsApi
@@ -160,6 +162,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to TutorialStreamsApi
   AuthenticationHelpers.add_auth_to TutorialEnrolmentsApi
   AuthenticationHelpers.add_auth_to UsersApi
+  AuthenticationHelpers.add_auth_to AdditionalNotificationEmailsApi
   AuthenticationHelpers.add_auth_to UnitRolesApi
   AuthenticationHelpers.add_auth_to UnitsApi
   AuthenticationHelpers.add_auth_to WebcalApi

@@ -27,6 +27,14 @@ module Entities
              options.key?(:theme_owner_id) && user.id.present? && options[:theme_owner_id] == user.id
            }
 
+    expose :institutional_identity_managed, unless: :minimal do |_user, _options|
+      !AuthenticationHelpers.db_auth?
+    end
+
+    expose :email_editable, unless: :minimal do |_user, _options|
+      AuthenticationHelpers.db_auth?
+    end
+
     expose :accepted_tii_eula, unless: :minimal, if: ->(user, options) { TurnItIn.enabled? } do |user, options|
       if TiiActionFetchFeaturesEnabled.eula_required?
         TurnItIn.eula_version == user.tii_eula_version

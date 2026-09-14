@@ -121,4 +121,45 @@ class NotificationsMailerTest < ActionMailer::TestCase
     assert_includes mail.to.map(&:downcase), user.email.downcase
     assert_not_includes mail.to.join(','), 'evil.com'
   end
+
+  def test_additional_copy_is_a_separate_message_without_recipient_disclosure
+    notification = FactoryBot.create(
+      :notification,
+      notification_type: 'feedback',
+      event: 'task_comment_created'
+    )
+
+    mail = NotificationsMailer.additional_notification_copy(
+      notification,
+      'secondary@example.org'
+    )
+
+    assert_equal ['secondary@example.org'], mail.to
+    assert_empty mail.cc.to_a
+    assert_empty mail.bcc.to_a
+    assert_not_includes mail.header.to_s, notification.user.email
+    assert mail.html_part.body.to_s.present?
+    assert mail.text_part.body.to_s.present?
+  end
+
+  # The same production sender rule as every other mailer on 11.0.x.
+  def test_additional_mail_refuses_an_unconfigured_sender_in_production
+    institution = Doubtfire::Application.config.institution
+    previous_sender = institution[:email_sender]
+    institution[:email_sender] = nil
+    user = FactoryBot.create(:user, email: 'primary@example.edu')
+    notification = FactoryBot.create(:notification, :feedback, user: user, event: 'task_comment_created')
+    record = AdditionalNotificationEmailService.request(user: user, email: 'secondary@example.org')
+
+    Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new('production')) do
+      assert_raises(ArgumentError) do
+        NotificationsMailer.additional_notification_copy(notification, 'secondary@example.org').message
+      end
+      assert_raises(ArgumentError) do
+        AdditionalNotificationEmailMailer.verification(record).message
+      end
+    end
+  ensure
+    institution[:email_sender] = previous_sender
+  end
 end
