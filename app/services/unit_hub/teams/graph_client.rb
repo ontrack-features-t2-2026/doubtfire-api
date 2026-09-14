@@ -137,7 +137,7 @@ module UnitHub
         value
       rescue JSON::ParserError
         raise Error, 'Teams returned invalid JSON.'
-      rescue IOError, SystemCallError, Timeout::Error, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError
+      rescue IOError, SocketError, SystemCallError, Timeout::Error, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError
         # Never propagate provider bodies, URLs, request headers or credentials.
         raise Error, 'Teams could not be reached securely.'
       end

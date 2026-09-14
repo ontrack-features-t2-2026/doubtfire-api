@@ -160,6 +160,10 @@ class UnitHubApiTest < ActiveSupport::TestCase
     end
     put "/api/units/#{@unit.id}/sessions/#{@session.id}", session: { start_at: '2026-10-01T17:00:00' }
     assert_equal 400, last_response.status
+    put "/api/units/#{@unit.id}/sessions/#{@session.id}", session: { start_at: '2026-10-01T17:00:00', end_at: '2026-10-01T18:00:00' }
+    assert_equal 400, last_response.status, last_response.body
+    put "/api/units/#{@unit.id}/announcements/#{@announcement.id}", announcement: { published_at: 'not a date' }
+    assert_equal 400, last_response.status, last_response.body
     put "/api/units/#{@unit.id}/sessions/#{@session.id}", session: { timezone: 'Bad/Zone' }
     assert_equal 400, last_response.status
     put "/api/units/#{@unit.id}/sessions/#{@session.id}", session: { end_at: 1.day.ago.iso8601 }

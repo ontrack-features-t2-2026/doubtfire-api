@@ -18,7 +18,7 @@ class UnitHubApi < Grape::API
     end
 
     def hub_attributes(key, fields, date_fields: [])
-      attributes = declared(params, include_missing: false).fetch(key).slice(*fields).to_h
+      attributes = declared(params, include_missing: false).fetch(key).slice(*fields).to_h.symbolize_keys
       date_fields.each do |field|
         value = attributes[field]
         next unless value
