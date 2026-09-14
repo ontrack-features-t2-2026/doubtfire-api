@@ -105,12 +105,17 @@ class WebcalApiTest < ActiveSupport::TestCase
     add_auth_header_for user: @student
     # Enable webcal, get GUID
     put_json '/api/webcal', { webcal: { enabled: true } }
+    assert_equal 200, last_response.status
     old_guid = last_response_body['guid']
+    assert old_guid.present?
 
     # Rotate the GUID
     add_auth_header_for user: @student
     put_json '/api/webcal', { webcal: { should_change_guid: true } }
+    assert_equal 200, last_response.status
     new_guid = last_response_body['guid']
+    assert new_guid.present?
+    assert_not_equal old_guid, new_guid
 
     # Old guid must no longer resolve...
     get "/api/webcal/#{old_guid}"
@@ -125,11 +130,16 @@ class WebcalApiTest < ActiveSupport::TestCase
     add_auth_header_for user: @student
     # Enable webcal, get GUID
     put_json '/api/webcal', { webcal: { enabled: true } }
+    assert_equal 200, last_response.status
     guid = last_response_body['guid']
+    assert guid.present?
+    get "/api/webcal/#{guid}"
+    assert_equal 200, last_response.status
 
     # Disable webcal
     add_auth_header_for user: @student
     put_json '/api/webcal', { webcal: { enabled: false } }
+    assert_equal 200, last_response.status
 
     get "/api/webcal/#{guid}"
     assert_equal 404, last_response.status
@@ -139,7 +149,7 @@ class WebcalApiTest < ActiveSupport::TestCase
     get "/api/webcal/#{SecureRandom.uuid}"
 
     assert_equal 404, last_response.status
-    assert_equal 'text/error', last_response['Content-Type']
+    assert_includes last_response['Content-Type'], 'text/error'
     assert_not last_response.body.start_with?('BEGIN:VCALENDAR')
   end
 
