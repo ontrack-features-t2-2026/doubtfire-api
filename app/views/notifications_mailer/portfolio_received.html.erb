@@ -1,21 +1,19 @@
-<p>Hi <%= @user.first_name %>,</p>
+<% content_for :preheader do %>This receipt confirms when the submission was received.<% end %>
+<% content_for :heading do %>Submission received<% end %>
 
-<p><%= @notification.message %></p>
+<p style="margin:0 0 16px 0;">Hi <%= @user.first_name %>,</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message %>
 
-<% if @notification.link.present? %>
-  <p>
-    <a href="<%= @doubtfire_host %><%= @notification.link %>">
-      View the current status in <%= @doubtfire_product_name %>
-    </a>
-  </p>
-<% end %>
-
-<p>
+<p style="margin:0 0 16px 0;">
   This receipt confirms when the submission was received. It does not confirm
   an assessment outcome.
 </p>
-
-<p>
-  You can manage your notification preferences in
-  <a href="<%= @unsubscribe_url %>">your profile</a>.
-</p>
+<% if @notification.link.present? %>
+  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: "View the current status in #{@doubtfire_product_name}" %>
+<% end %>
+<% content_for :footer do %>
+  <p style="margin:0;">
+    You can manage your notification preferences in
+    <a href="<%= @unsubscribe_url %>" style="color:#6b7280; text-decoration:underline;">your profile</a>.
+  </p>
+<% end %>

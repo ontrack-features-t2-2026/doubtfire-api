@@ -1,22 +1,19 @@
-<p>Hi <%= @user.name %>,</p>
+<% content_for :preheader do %>A new task is now available in <%= @doubtfire_product_name %>.<% end %>
+<% content_for :heading do %>New task available<% end %>
 
-<p><%= @notification.message %></p>
+<p style="margin:0 0 16px 0;">Hi <%= @user.name %>,</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message %>
 
-<p>
+<p style="margin:0 0 16px 0;">
   A new task is now available in <%= @doubtfire_product_name %>.
   Open the task to review its details.
 </p>
-
 <% if @notification.link.present? %>
-  <p>
-    <a href="<%= @doubtfire_host %><%= @notification.link %>">
-      Open the task
-    </a>
+  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
+<% end %>
+<% content_for :footer do %>
+  <p style="margin:0;">
+    You are receiving this because your task notifications are turned on.
+    You can change that at <a href="<%= @unsubscribe_url %>" style="color:#6b7280; text-decoration:underline;">your profile</a>.
   </p>
 <% end %>
-
-<p>
-  You are receiving this because your task notifications are turned on.
-  You can change that at
-  <a href="<%= @unsubscribe_url %>">your profile</a>.
-</p>

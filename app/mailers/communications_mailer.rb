@@ -1,4 +1,6 @@
 class CommunicationsMailer < ApplicationMailer
+  layout "notification_mail"
+
   def communication_email(to:, from:, subject:, body:, recipient:, sender:, unit:, rule:)
     @recipient = recipient
     @sender = sender

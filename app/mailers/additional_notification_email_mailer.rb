@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AdditionalNotificationEmailMailer < ApplicationMailer
+  layout "notification_mail"
+
   def verification(record)
     @user = record.user
     @product_name = Doubtfire::Application.config.institution[:product_name]
