@@ -140,6 +140,118 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
     )
   end
 
+  # Regression: a task abbreviation with a space must be percent-encoded in the
+  # stored link, so the email href and plain-text URL are valid. Every other
+  # notification event encodes the abbreviation; this job was the one that did
+  # not, so a space landed raw in the href.
+  def test_link_is_url_encoded_for_a_spaced_abbreviation
+    @task_def.update!(abbreviation: 'AB 1.1')
+    project = eligible_projects.first
+
+    run_job
+
+    notification = Notification.find_by!(
+      user: project.student,
+      event: EVENT
+    )
+
+    assert_equal(
+      "/projects/#{project.id}/dashboard/AB%201.1",
+      notification.link
+    )
+  end
+
+  # Regression: re-running the sweep for the same change must not notify a
+  # student twice. retry: 3 plus a duplicate enqueue can run perform again, so
+  # the notify carries a dedupe_key; the second run finds the existing row
+  # instead of sending a second email.
+  def test_re_running_the_same_change_does_not_notify_twice
+    expected = eligible_projects.count
+    assert_operator expected, :>=, 2
+
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+
+    assert_no_difference 'Notification.count' do
+      assert_no_difference(-> { ActionMailer::Base.deliveries.count }) do
+        run_job
+      end
+    end
+  end
+
+  # Regression: a genuine second change to a different date must notify again.
+  # The dedupe_key includes the new due date, so a new date is a new key.
+  def test_a_later_change_to_a_different_date_notifies_again
+    expected = eligible_projects.count
+
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+
+    later = (@task_def.due_date + 2.weeks).to_date
+    @task_def.update!(due_date: later)
+    @new_due_date = later.iso8601
+
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+  end
+
+  # Regression: a transient failure for one recipient must re-raise so Sidekiq
+  # retries the sweep, not be logged and swallowed. This event fires once off a
+  # convenor's edit and is never swept for again, so a swallowed failure loses
+  # that student's notification for good. Matches NewTaskAvailableNotificationJob.
+  def test_re_raises_so_sidekiq_retries_when_a_recipient_fails
+    NotificationService.stub(:notify, ->(*_args, **_kwargs) { raise 'transient insert failure' }) do
+      assert_raises(RuntimeError) do
+        TaskDueDateChangedNotificationJob.new.perform(
+          @task_def.id,
+          @previous_due_date,
+          @new_due_date
+        )
+      end
+    end
+  end
+
+  def test_returning_to_a_previously_used_date_notifies_again
+    expected = eligible_projects.count
+    first_date = @new_due_date
+    run_job
+
+    @task_def.update!(due_date: @task_def.due_date + 2.weeks)
+    @new_due_date = @task_def[:due_date].to_date.iso8601
+    run_job
+
+    @task_def.update!(due_date: first_date)
+    @new_due_date = first_date
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+  end
+
+  def test_explicit_occurrence_is_stable_across_retries_and_unrelated_edits
+    job = TaskDueDateChangedNotificationJob.new
+    change_id = SecureRandom.uuid
+    job.perform(@task_def.id, @previous_due_date, @new_due_date, change_id)
+    @task_def.update!(name: 'Updated task name')
+
+    assert_no_difference 'Notification.count' do
+      job.perform(@task_def.id, @previous_due_date, @new_due_date, change_id)
+    end
+  end
+
+  def test_legacy_three_argument_job_uses_its_stable_sidekiq_id
+    job = TaskDueDateChangedNotificationJob.new
+    job.jid = 'legacy-job-id'
+    job.perform(@task_def.id, @previous_due_date, @new_due_date)
+    @task_def.update!(name: 'Updated task name')
+
+    assert_no_difference 'Notification.count' do
+      job.perform(@task_def.id, @previous_due_date, @new_due_date)
+    end
+  end
+
   private
 
   def run_job
