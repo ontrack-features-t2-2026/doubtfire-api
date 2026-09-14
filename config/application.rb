@@ -60,8 +60,19 @@ module Doubtfire
     # Minimum time to wait before notifying a student about an unread failed overseer assessment
     config.overseer_student_notification_grace_period = ENV.fetch('OVERSEER_STUDENT_NOTIFICATION_GRACE_PERIOD_MINUTES', 30).to_i.minutes
 
+    # Parse a positive, bounded integer from the environment. Raises at boot on a
+    # value that is not an integer, is below 1, or is above the given maximum, so
+    # a misconfiguration is caught immediately rather than at first use.
+    def self.fetch_positive_integer_env(name, default:, max:)
+      value = Integer(ENV.fetch(name, default), exception: false)
+      unless value && value >= 1 && value <= max
+        raise "#{name} must be an integer between 1 and #{max}, got #{ENV[name].inspect}"
+      end
+      value
+    end
+
     # Limit number of pdf generators to run at once
-    config.pdfgen_max_processes = ENV['DF_MAX_PDF_GEN_PROCESSES'] || 2
+    config.pdfgen_max_processes = fetch_positive_integer_env('DF_MAX_PDF_GEN_PROCESSES', default: 2, max: 100)
 
     # Date range for auditors to view
     config.auditor_unit_access_years = ENV.fetch('DF_AUDITOR_UNIT_ACCESS_YEARS', 2).to_f * 1.year

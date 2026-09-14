@@ -57,6 +57,7 @@ class ApiRoot < Grape::API
   mount Admin::OverseerAdminApi
   mount ActivityTypesAuthenticatedApi
   mount ActivityTypesPublicApi
+  mount TaskStatusesApi
   mount AuthenticationApi
   mount BreaksApi
   mount DiscussionCommentApi
