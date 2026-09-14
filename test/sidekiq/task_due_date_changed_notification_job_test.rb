@@ -214,6 +214,44 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
     end
   end
 
+  def test_returning_to_a_previously_used_date_notifies_again
+    expected = eligible_projects.count
+    first_date = @new_due_date
+    run_job
+
+    @task_def.update!(due_date: @task_def.due_date + 2.weeks)
+    @new_due_date = @task_def[:due_date].to_date.iso8601
+    run_job
+
+    @task_def.update!(due_date: first_date)
+    @new_due_date = first_date
+    assert_difference 'Notification.count', expected do
+      run_job
+    end
+  end
+
+  def test_explicit_occurrence_is_stable_across_retries_and_unrelated_edits
+    job = TaskDueDateChangedNotificationJob.new
+    change_id = SecureRandom.uuid
+    job.perform(@task_def.id, @previous_due_date, @new_due_date, change_id)
+    @task_def.update!(name: 'Updated task name')
+
+    assert_no_difference 'Notification.count' do
+      job.perform(@task_def.id, @previous_due_date, @new_due_date, change_id)
+    end
+  end
+
+  def test_legacy_three_argument_job_uses_its_stable_sidekiq_id
+    job = TaskDueDateChangedNotificationJob.new
+    job.jid = 'legacy-job-id'
+    job.perform(@task_def.id, @previous_due_date, @new_due_date)
+    @task_def.update!(name: 'Updated task name')
+
+    assert_no_difference 'Notification.count' do
+      job.perform(@task_def.id, @previous_due_date, @new_due_date)
+    end
+  end
+
   private
 
   def run_job

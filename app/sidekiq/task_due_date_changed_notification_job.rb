@@ -8,20 +8,26 @@ class TaskDueDateChangedNotificationJob
   TYPE = 'task'
 
   sidekiq_options lock: :until_executed,
-                  lock_args_method: ->(args) { args.first(3) },
+                  lock_args_method: ->(args) { args.first(4) },
                   on_conflict: :reject,
                   retry: 3
 
-  def perform(task_definition_id, _previous_due_date, new_due_date)
+  def perform(task_definition_id, _previous_due_date, new_due_date, change_id = nil)
     task_definition = TaskDefinition.find_by(id: task_definition_id)
     return if task_definition.nil?
     return unless task_definition.unit.active
     return unless current_due_date(task_definition) == new_due_date
 
+    # A date can be used more than once. New API jobs carry an occurrence id;
+    # pre-deployment jobs keep their Sidekiq jid across retries. The timestamp
+    # fallback supports direct invocations without a Sidekiq job envelope.
+    occurrence = change_id.presence || jid.presence ||
+                 "#{new_due_date}:#{task_definition.updated_at.utc.iso8601(6)}"
+
     failed_project_ids = []
 
     eligible_projects(task_definition).find_each(batch_size: BATCH_SIZE) do |project|
-      notify_project(project, task_definition, new_due_date)
+      notify_project(project, task_definition, occurrence)
     rescue StandardError => e
       failed_project_ids << project.id
 
@@ -40,7 +46,7 @@ class TaskDueDateChangedNotificationJob
     # per-project rescue that only logged left one transient insert failure
     # losing that student's notification for good. Re-running the whole sweep is
     # safe because notify_project carries a dedupe_key: a student already
-    # notified for this date is found, not emailed a second time.
+    # notified for this occurrence is found, not emailed a second time.
     raise "Due-date-changed notifications failed for projects: #{failed_project_ids.join(', ')}"
   end
 
@@ -60,7 +66,7 @@ class TaskDueDateChangedNotificationJob
     task_definition[:due_date]&.to_date&.iso8601
   end
 
-  def notify_project(project, task_definition, new_due_date)
+  def notify_project(project, task_definition, occurrence)
     NotificationService.notify(
       user: project.student,
       type: TYPE,
@@ -69,11 +75,9 @@ class TaskDueDateChangedNotificationJob
                "in #{task_definition.unit.code} has changed.",
       link: "/projects/#{project.id}/dashboard/" \
             "#{ERB::Util.url_encode(task_definition.abbreviation)}",
-      # One notification per student per task per due date. A retry or a
-      # duplicate enqueue of the same change finds the existing row rather than
-      # emailing again, while a later change to a different date is a new key and
-      # notifies afresh. Scoped per user by the (user_id, dedupe_key) index.
-      dedupe_key: "#{EVENT}:task-definition:#{task_definition.id}:#{new_due_date}"
+      # Retries share an occurrence; a later edit back to the same date does
+      # not. The unique index scopes this key to each recipient.
+      dedupe_key: "#{EVENT}:task-definition:#{task_definition.id}:#{occurrence}"
     )
   end
 end
