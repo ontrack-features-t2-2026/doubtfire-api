@@ -50,7 +50,56 @@ class Notification < ApplicationRecord
     update!(read_at: Time.zone.now) unless read?
   end
 
+  PROJECT_LINK = %r{\A/projects/(\d+)(?:/|\z)}
+  TASK_LINK = %r{\A/projects/\d+/dashboard/([^/]+)}
+
+  TARGET_KEYS = %i[
+    unit_id project_id student_id task_definition_id task_definition_abbr task_id comment_id group_id
+  ].freeze
+
+  # The ids a client needs to open the page this notification is about.
+  #
+  # Worked out when the notification is read, not stored, so a notification
+  # raised before these fields existed still gets them, and a record deleted
+  # since then comes back as nil rather than as an id that points at nothing.
+  # The notifiable is used first, and the link fills in whatever it cannot
+  # say, for example the project behind a group change or a new task.
+  def target_ids
+    @target_ids ||= resolve_target_ids
+  end
+
   private
+
+  def resolve_target_ids
+    ids = TARGET_KEYS.index_with { nil }
+
+    comment = notifiable if notifiable.is_a?(TaskComment)
+    task = comment ? comment.task : (notifiable if notifiable.is_a?(Task))
+    group = notifiable if notifiable.is_a?(Group)
+    project = notifiable if notifiable.is_a?(Project)
+    project ||= task&.project
+    project ||= Project.find_by(id: Regexp.last_match(1)) if link.to_s =~ PROJECT_LINK
+
+    ids[:comment_id] = comment&.id
+    ids[:group_id] = group&.id
+    return ids if project.nil?
+
+    ids[:project_id] = project.id
+    ids[:unit_id] = project.unit_id
+    ids[:student_id] = project.user_id
+
+    task_definition = task&.task_definition
+    if task_definition.nil? && link.to_s =~ TASK_LINK
+      abbreviation = CGI.unescape(Regexp.last_match(1))
+      task_definition = project.unit.task_definitions.find_by(abbreviation: abbreviation)
+    end
+    return ids if task_definition.nil?
+
+    ids[:task_definition_id] = task_definition.id
+    ids[:task_definition_abbr] = task_definition.abbreviation
+    ids[:task_id] = task&.id || project.tasks.where(task_definition_id: task_definition.id).pick(:id)
+    ids
+  end
 
   def queue_email_delivery
     NotificationService.queue_email(self)

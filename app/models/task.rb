@@ -1749,7 +1749,8 @@ class Task < ApplicationRecord
       type: 'feedback',
       event: 'discussion_request_created',
       message: 'A discussion prompt is ready for you.',
-      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}/feedback"
+      link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}/feedback",
+      notifiable: discussion
     )
   rescue StandardError => e
     logger.error "Failed to raise discussion_request_created notification for task #{id}: #{e.message}"
