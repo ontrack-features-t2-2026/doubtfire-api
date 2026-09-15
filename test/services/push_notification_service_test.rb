@@ -198,6 +198,7 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       'task_submitted' => 'A task is ready for marking.',
       'task_help_requested' => 'A student asked for help with a task.',
       'extension_requested' => 'A student asked for an extension.',
+      'portfolio_submitted' => 'A student submitted a portfolio.',
       'portfolio_received' => 'Your portfolio submission was received.'
     }
 

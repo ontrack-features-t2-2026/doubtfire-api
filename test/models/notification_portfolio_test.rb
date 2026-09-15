@@ -21,6 +21,14 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     @project.campus.update!(timezone: 'Australia/Melbourne')
     @student = @project.student
 
+    # The same submission also tells the student's tutors. This file is about
+    # the student's receipt, so their staff copy is switched off here and
+    # covered on its own in notification_portfolio_submitted_test.rb.
+    staff = @project.tutorial_enrolments.filter_map { |enrolment| enrolment.tutorial&.tutor }
+    (staff + [@project.main_convenor_user]).compact.uniq.each do |user|
+      user.update!(receive_portfolio_notifications: false)
+    end
+
     add_auth_header_for(user: @student)
   end
 

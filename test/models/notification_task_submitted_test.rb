@@ -127,6 +127,17 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
     assert_empty ActionMailer::Base.deliveries
   end
 
+  # A resubmission is the same move into Ready for Feedback, so the tutor hears
+  # about it again once they have asked for changes.
+  def test_resubmitting_after_fix_and_resubmit_notifies_the_tutor_again
+    assert submit_for_marking
+    assert @task.trigger_transition(trigger: 'fix_and_resubmit', by_user: @tutor)
+
+    assert_difference -> { Notification.where(user: @tutor, event: 'task_submitted').count }, 1 do
+      assert submit_for_marking
+    end
+  end
+
   def test_internal_group_transition_does_not_amplify_the_notification
     assert_no_difference 'Notification.count' do
       assert submit_for_marking(group_transition: true)

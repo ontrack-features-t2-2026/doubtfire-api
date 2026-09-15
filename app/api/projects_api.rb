@@ -32,6 +32,41 @@ class ProjectsApi < Grape::API
         "Failed to raise portfolio_received notification for project #{project.id}: #{e.message}"
       )
     end
+
+    # Tell the staff who will mark it that a portfolio arrived.
+    #
+    # Every tutor the student is enrolled with, because a student in a lab and a
+    # workshop stream has two and either may be the one marking. With no tutor
+    # at all it goes to the main convenor, the same fallback tutor_for uses.
+    #
+    # 'portfolio' so the tutor's own portfolio preference switches it off. The
+    # dedupe key is the submission time, so a retried request cannot notify
+    # twice but a later resubmission still does.
+    def notify_portfolio_submitted(project, actor)
+      student = project.student
+      recipients = project.tutorial_enrolments.includes(tutorial: { unit_role: :user })
+                          .filter_map { |enrolment| enrolment.tutorial&.tutor }
+                          .uniq
+      recipients = [project.main_convenor_user].compact if recipients.empty?
+
+      recipients.each do |recipient|
+        next if recipient == student || recipient == actor
+
+        NotificationService.notify(
+          user: recipient,
+          type: 'portfolio',
+          event: 'portfolio_submitted',
+          message: "#{student.name} submitted a portfolio in #{project.unit.code}.",
+          link: "/projects/#{project.id}/dashboard",
+          notifiable: project,
+          dedupe_key: "portfolio_submitted:project:#{project.id}:#{project.portfolio_submission_date.to_i}"
+        )
+      end
+    rescue StandardError => e
+      Rails.logger.error(
+        "Failed to raise portfolio_submitted notification for project #{project.id}: #{e.message}"
+      )
+    end
   end
 
   before do
@@ -200,7 +235,10 @@ class ProjectsApi < Grape::API
         submission_saved = project.save
       end
 
-      notify_portfolio_received(project) if submission_saved && new_portfolio_submission
+      if submission_saved && new_portfolio_submission
+        notify_portfolio_received(project)
+        notify_portfolio_submitted(project, current_user)
+      end
     end
 
     Entities::ProjectEntity.represent(project, only: [:campus_id, :enrolled, :target_grade, :submitted_grade, :compile_portfolio, :portfolio_available, :uses_draft_learning_summary, :stats], for_student: for_student)

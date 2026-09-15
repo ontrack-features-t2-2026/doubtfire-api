@@ -38,7 +38,9 @@ class PushNotificationService
     # override and went out raw. Reveal only that an assessment happened.
     'extension_assessed' => 'An extension request was assessed.',
     # The raw message names the student and task, like task_submitted.
-    'extension_requested' => 'A student asked for an extension.'
+    'extension_requested' => 'A student asked for an extension.',
+    # The raw message names the student.
+    'portfolio_submitted' => 'A student submitted a portfolio.'
   }.freeze
 
   # MN-C03 BEGIN: safe click route constants
