@@ -19,7 +19,7 @@ class NotificationsMailer < ApplicationMailer
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
 
     email_with_name = address_with_name(@user)
-    subject = "#{@doubtfire_product_name}: New notification"
+    subject = "#{@doubtfire_product_name}: #{SUBJECTS.fetch(notification.event, 'New notification')}"
 
     # An event may ship its own pair of templates named after it, for example
     # task_comment_created.html.erb and task_comment_created.text.erb. Events
@@ -46,7 +46,7 @@ class NotificationsMailer < ApplicationMailer
     @user = notification.user
 
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
-    subject = "#{@doubtfire_product_name}: New notification"
+    subject = "#{@doubtfire_product_name}: #{SUBJECTS.fetch(notification.event, 'New notification')}"
 
     mail(
       to: address,
@@ -55,6 +55,19 @@ class NotificationsMailer < ApplicationMailer
       **outbound_sender_headers(development_from: from_address)
     )
   end
+  SUBJECTS = {
+    'task_comment_created' => 'New task comment',
+    'task_status_changed' => 'Task status changed',
+    'task_due_soon' => 'Task due soon',
+    'task_due_date_changed' => 'Task due date changed',
+    'new_task_available' => 'New task available',
+    'task_submitted' => 'Task submitted',
+    'extension_assessed' => 'Extension request assessed',
+    'group_membership_changed' => 'Group membership changed',
+    'discussion_request_created' => 'New discussion request',
+    'portfolio_received' => 'Portfolio received',
+    'tutorial_changed' => 'Tutorial changed'
+  }.freeze
 
   # The event's own template if it exists, otherwise the generic one.
   def event_template_name(event)

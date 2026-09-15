@@ -77,7 +77,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     assert_equal 1, ActionMailer::Base.deliveries.count
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
     assert_equal(
-      "#{Doubtfire::Application.config.institution[:product_name]}: New notification",
+      "#{Doubtfire::Application.config.institution[:product_name]}: Portfolio received",
       ActionMailer::Base.deliveries.last.subject
     )
   end
