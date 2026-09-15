@@ -29,6 +29,10 @@ FactoryBot.define do
       notification_type { 'general' }
     end
 
+    trait :unit_hub do
+      notification_type { 'unit_hub' }
+    end
+
     trait :read do
       read_at { Time.zone.now }
     end

@@ -8,10 +8,11 @@ class Notification < ApplicationRecord
   # a task.
   belongs_to :notifiable, polymorphic: true, optional: true
 
-  # Notification categories. The first three map onto the existing user
-  # preference columns (receive_task/feedback/portfolio_notifications) so that a
-  # single category toggle gates every delivery channel (in-app, email, push).
-  TYPES = %w[task feedback portfolio extension general].freeze
+  # Notification categories. task, feedback, portfolio and unit_hub map onto the
+  # user preference columns in PREFERENCE_FOR_TYPE, so one category toggle gates
+  # every delivery channel (in-app, email, push). unit_hub also has email and
+  # push opt-ins of its own, see CHANNEL_PREFERENCES_FOR_TYPE.
+  TYPES = %w[task feedback portfolio extension general unit_hub].freeze
 
   # `notification_type` is the category the user's preferences switch on.
   # `event` is the specific thing that happened within that category, e.g.
@@ -24,7 +25,19 @@ class Notification < ApplicationRecord
   PREFERENCE_FOR_TYPE = {
     'task' => :receive_task_notifications,
     'feedback' => :receive_feedback_notifications,
-    'portfolio' => :receive_portfolio_notifications
+    'portfolio' => :receive_portfolio_notifications,
+    'unit_hub' => :receive_unit_hub_notifications
+  }.freeze
+
+  # Categories whose email and push channels are separate opt-ins. The column in
+  # PREFERENCE_FOR_TYPE still switches the whole category off, so these only
+  # narrow a category that is on. A type without an entry sends on every
+  # channel, which is how the older categories have always behaved.
+  CHANNEL_PREFERENCES_FOR_TYPE = {
+    'unit_hub' => {
+      email: :receive_unit_hub_email_notifications,
+      push: :receive_unit_hub_push_notifications
+    }
   }.freeze
 
   validates :notification_type, presence: true, inclusion: { in: TYPES }
@@ -55,6 +68,7 @@ class Notification < ApplicationRecord
 
   TARGET_KEYS = %i[
     unit_id project_id student_id task_definition_id task_definition_abbr task_id comment_id group_id
+    announcement_id session_id
   ].freeze
 
   # The ids a client needs to open the page this notification is about.
@@ -113,6 +127,7 @@ class Notification < ApplicationRecord
 
   def resolve_target_ids
     ids = TARGET_KEYS.index_with { nil }
+    return unit_hub_target_ids(ids) if notifiable_type.in?(UNIT_HUB_NOTIFIABLES)
 
     comment = notifiable if notifiable.is_a?(TaskComment)
     task = comment ? comment.task : (notifiable if notifiable.is_a?(Task))
@@ -139,6 +154,21 @@ class Notification < ApplicationRecord
     ids[:task_definition_id] = task_definition.id
     ids[:task_definition_abbr] = task_definition.abbreviation
     ids[:task_id] = task&.id || project.tasks.where(task_definition_id: task_definition.id).pick(:id)
+    ids
+  end
+
+  UNIT_HUB_NOTIFIABLES = %w[UnitAnnouncement UnitLearningSession].freeze
+
+  # A Unit Hub notification opens the hub for its unit, so it only needs the
+  # unit and the announcement or session. A deleted record leaves all of them
+  # nil, which the web client reads as no longer available.
+  def unit_hub_target_ids(ids)
+    record = notifiable
+    return ids if record.nil?
+
+    ids[:unit_id] = record.unit_id
+    key = record.is_a?(UnitAnnouncement) ? :announcement_id : :session_id
+    ids[key] = record.id
     ids
   end
 

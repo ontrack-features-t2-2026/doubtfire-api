@@ -21,7 +21,7 @@ class NotificationEmailJob
     # The category preference was checked when the notification was raised, but
     # a retried job can run hours later. Ask again so a preference the user has
     # switched off in the meantime stays off.
-    return unless NotificationService.deliver_to?(notification.user, notification.notification_type)
+    return unless NotificationService.deliver_to?(notification.user, notification.notification_type, channel: :email)
 
     # The institutional address is always the primary delivery. If this fails,
     # raise so Sidekiq retries as before and do not mark an optional copy as a

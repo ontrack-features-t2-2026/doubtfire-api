@@ -61,6 +61,10 @@ class UsersApi < Grape::API
       optional :receive_task_notifications, type: Boolean, desc: 'Allow user to be sent task notifications'
       optional :receive_portfolio_notifications, type: Boolean, desc: 'Allow user to be sent portfolio notifications'
       optional :receive_feedback_notifications, type: Boolean, desc: 'Allow user to be sent feedback notifications'
+      optional :receive_unit_hub_notifications, type: Boolean, desc: 'Show Unit Hub announcement and session updates in the app'
+      optional :receive_unit_hub_email_notifications, type: Boolean, desc: 'Also email Unit Hub updates'
+      optional :receive_unit_hub_push_notifications, type: Boolean, desc: 'Also push Unit Hub updates to subscribed browsers'
+      optional :receive_unit_hub_session_reminders, type: Boolean, desc: 'Remind the user shortly before Unit Hub sessions start'
       optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
       optional :has_run_first_time_setup, type: Boolean, desc: 'Whether or not user has run first-time setup'
@@ -75,6 +79,16 @@ class UsersApi < Grape::API
     # top-level params instead of the nested :user hash, so it never applied.)
     %i[receive_task_notifications receive_portfolio_notifications receive_feedback_notifications].each do |pref|
       params[:user][pref] = true if params[:user].key?(pref) && params[:user][pref].nil?
+    end
+    # The Unit Hub columns are NOT NULL, so a null goes back to each one's own
+    # default: on for the in-app bell, off for the three opt-ins.
+    {
+      receive_unit_hub_notifications: true,
+      receive_unit_hub_email_notifications: false,
+      receive_unit_hub_push_notifications: false,
+      receive_unit_hub_session_reminders: false
+    }.each do |pref, default|
+      params[:user][pref] = default if params[:user].key?(pref) && params[:user][pref].nil?
     end
     if params[:user].key?(:display_peer_progress) &&
        params[:user][:display_peer_progress].nil?
@@ -115,6 +129,10 @@ class UsersApi < Grape::API
                                                       :receive_task_notifications,
                                                       :receive_portfolio_notifications,
                                                       :receive_feedback_notifications,
+                                                      :receive_unit_hub_notifications,
+                                                      :receive_unit_hub_email_notifications,
+                                                      :receive_unit_hub_push_notifications,
+                                                      :receive_unit_hub_session_reminders,
                                                       :display_peer_progress,
                                                       :opt_in_to_research,
                                                       :has_run_first_time_setup,

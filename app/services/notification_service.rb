@@ -3,8 +3,10 @@
 # Creates the in-app record and fans out to the enabled delivery channels
 # (email and push through Sidekiq). A single category toggle (the user's
 # receive_*_notifications preference) gates every channel: if the category is
-# off, the notification is suppressed entirely. Per-channel granularity
-# (a type x channel matrix) is deferred to a future iteration.
+# off, the notification is suppressed entirely. A category listed in
+# Notification::CHANNEL_PREFERENCES_FOR_TYPE (so far only unit_hub) also has
+# its own email and push opt-ins, checked when those channels are queued and
+# again when their jobs run.
 #
 # Usage:
 #   NotificationService.notify(
@@ -78,11 +80,23 @@ class NotificationService
   end
 
   # Whether the user's category preference allows this notification type.
-  def self.deliver_to?(user, type)
+  #
+  # channel - nil for the category as a whole (the in-app record), or :email or
+  #         :push. A channel is only asked about for categories listed in
+  #         Notification::CHANNEL_PREFERENCES_FOR_TYPE, and the category itself
+  #         has to be on first.
+  def self.deliver_to?(user, type, channel: nil)
     pref = Notification::PREFERENCE_FOR_TYPE[type.to_s]
-    return true if pref.nil? # types without a preference are always sent
+    return false unless pref.nil? || user.public_send(pref)
 
-    user.public_send(pref)
+    channel.nil? || channel_enabled?(user, type, channel)
+  end
+
+  # Whether the user opted in to one delivery channel for a category. True for
+  # categories that have no per-channel columns.
+  def self.channel_enabled?(user, type, channel)
+    column = Notification::CHANNEL_PREFERENCES_FOR_TYPE.dig(type.to_s, channel.to_sym)
+    column.nil? || user.public_send(column)
   end
 
   # A non-null dedupe key is an immutable event identity. The unique database
@@ -110,6 +124,11 @@ class NotificationService
   # best-effort so the in-app record and push delivery are not blocked. Delivery
   # failures are raised by the job for Sidekiq to retry.
   def self.queue_email(notification)
+    # A category with its own email opt-in skips the job entirely when the
+    # recipient has not opted in, so a cohort-wide announcement does not queue
+    # hundreds of jobs that would only return early. The job asks again anyway.
+    return false unless channel_enabled?(notification.user, notification.notification_type, :email)
+
     NotificationEmailJob.perform_async(notification.id)
   rescue StandardError => e
     Rails.logger.error(
@@ -123,6 +142,10 @@ class NotificationService
   # delivered_at unset, allowing the existing availability retry to try the
   # push hand-off again without duplicating the after-commit email.
   def self.queue_push(notification)
+    # Nothing to hand off when the recipient has not opted in to push for this
+    # category. Counts as handed off, so a retry does not try again.
+    return true unless channel_enabled?(notification.user, notification.notification_type, :push)
+
     PushNotificationDeliveryJob.perform_async(notification.id)
   rescue StandardError => e
     Rails.logger.error(
