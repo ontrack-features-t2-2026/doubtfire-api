@@ -9,15 +9,20 @@ require 'test_helper'
 # missing template for that event falls back silently to
 # single_notification and nothing catches it.
 class NotificationsMailerTest < ActionMailer::TestCase
-  # event => notification_type, matching the six events currently wired up
-  # in NotificationService.notify call sites across the app.
+  # event => notification_type, matching the eleven non-demo events
+  # currently wired through NotificationService across the app.
   EVENTS = {
     'task_comment_created' => 'feedback',
+    'task_status_changed' => 'task',
+    'task_due_soon' => 'task',
+    'task_due_date_changed' => 'task',
+    'new_task_available' => 'task',
+    'task_submitted' => 'task',
     'extension_assessed' => 'extension',
     'group_membership_changed' => 'general',
-    'new_task_available' => 'task',
-    'task_due_date_changed' => 'task',
-    'task_status_changed' => 'task'
+    'discussion_request_created' => 'feedback',
+    'portfolio_received' => 'portfolio',
+    'tutorial_changed' => 'general'
   }.freeze
 
   LINK = '/projects/1/dashboard/A1'.freeze
@@ -52,18 +57,24 @@ class NotificationsMailerTest < ActionMailer::TestCase
       assert mail.text_part.body.to_s.present?, "#{event}: text part did not render"
     end
 
-    define_method("test_#{event}_subject_is_not_blank") do
-      notification = FactoryBot.create(:notification, notification_type: notification_type, event: event)
+    define_method("test_#{event}_subject_is_event_specific") do
+      notification = FactoryBot.create(
+        :notification,
+        notification_type: notification_type,
+        event: event
+      )
 
       mail = NotificationsMailer.single_notification(notification)
 
-      assert mail.subject.present?, "#{event}: subject was blank"
+      product_name = Doubtfire::Application.config.institution[:product_name]
+      fallback_subject = "#{product_name}: New notification"
+      expected_subject = "#{product_name}: #{NotificationsMailer::SUBJECTS.fetch(event)}"
 
-      # Every event shares one subject today, built at
-      # app/mailers/notifications_mailer.rb:22. This assertion needs to
-      # change if anyone adds a per-event subject lookup.
-      expected_subject = "#{Doubtfire::Application.config.institution[:product_name]}: New notification"
-      assert_equal expected_subject, mail.subject, "#{event}: subject shape changed"
+      assert mail.subject.present?, "#{event}: subject was blank"
+      assert_not_equal fallback_subject, mail.subject,
+                       "#{event}: still used the generic fallback subject"
+      assert_equal expected_subject, mail.subject,
+                   "#{event}: subject did not match its configured subject"
     end
 
     define_method("test_#{event}_link_is_in_the_body") do
@@ -80,6 +91,23 @@ class NotificationsMailerTest < ActionMailer::TestCase
       assert_includes mail.html_part.body.to_s, expected_url, "#{event}: exact link missing from HTML body"
       assert_includes mail.text_part.body.to_s, expected_url, "#{event}: exact link missing from text body"
     end
+  end
+
+  def test_unknown_event_uses_generic_subject_fallback
+    notification = FactoryBot.create(
+      :notification,
+      notification_type: 'general',
+      event: 'unwired_event',
+      message: 'A generic notification.',
+      link: LINK
+    )
+
+    mail = NotificationsMailer.single_notification(notification)
+
+    expected_subject =
+      "#{Doubtfire::Application.config.institution[:product_name]}: New notification"
+
+    assert_equal expected_subject, mail.subject
   end
 
   def test_configured_sender_is_used
@@ -134,6 +162,8 @@ class NotificationsMailerTest < ActionMailer::TestCase
       'secondary@example.org'
     )
 
+    expected_subject = "#{Doubtfire::Application.config.institution[:product_name]}: #{NotificationsMailer::SUBJECTS.fetch('task_comment_created')}"
+    assert_equal expected_subject, mail.subject
     assert_equal ['secondary@example.org'], mail.to
     assert_empty mail.cc.to_a
     assert_empty mail.bcc.to_a

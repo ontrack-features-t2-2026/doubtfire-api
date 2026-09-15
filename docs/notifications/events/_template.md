@@ -7,7 +7,7 @@
 | What triggers it | |
 | Who receives it | |
 | Preference that gates it | |
-| Email subject | |
+| Email subject | Required — add the event-specific subject text |
 | Email body summary | |
 | Where it is raised | |
 
@@ -38,11 +38,10 @@ full. Write `none, always sent` for `extension` and `general`, which have no
 entry there. When the preference is off the notification is dropped on every
 channel, the in-app bell included.
 
-**Email subject.** What lands in the inbox. Every notification shares one
-subject built in `NotificationsMailer#single_notification`, so unless you
-changed the mailer this is the same line as everyone else's. The product name
-at the front is config and not a fixed word, so quote the line that builds it
-and say what your stack sets it to.
+**Email subject.** What lands in the inbox. Every wired event must have a
+human-readable entry in `NotificationsMailer::SUBJECTS`. Record the event-specific
+text here, without hard-coding the product name. Unknown or unwired events fall
+back to `New notification`.
 
 **Email body summary.** Two or three lines on what the email tells the reader,
 and what it leaves out on purpose. Name the templates. If the event has no
@@ -73,7 +72,7 @@ this section and of the guidance above it. Delete both from your own file.
 | What triggers it | Someone saves a text comment on a task. `Task#add_text_comment` saves the comment and then calls `notify_comment_recipient` |
 | Who receives it | `comment.recipient`, set by `add_text_comment` at `task.rb:945` and read here rather than worked out again. The student when a tutor commented. When a student commented it is `Project#tutor_for`, which gives the tutorial's tutor, or the unit's main convenor when there is no tutorial or the tutorial has no tutor |
 | Preference that gates it | `receive_feedback_notifications` |
-| Email subject | `#{product name}: New notification`, built at `app/mailers/notifications_mailer.rb:22`. `config/institution.yml` defaults the product name to `Doubtfire` and `DF_INSTITUTION_PRODUCT_NAME` overrides it. Our deploy sets `OnTrack`, so the inbox shows `OnTrack: New notification` |
+| Email subject | `#{product name}: New task comment`, using the `task_comment_created` entry in `NotificationsMailer::SUBJECTS`. The product name is configured separately, so the event-specific part is `New task comment`. |
 | Email body summary | Greets the user by name, gives one line saying who commented on which task in which unit, then says the comment is not included and to open the task to read it. A link to the task and a line about turning the emails off. Templates are `app/views/notifications_mailer/task_comment_created.text.erb` and `.html.erb` |
 | Where it is raised | `app/models/task.rb:971`, in `Task#notify_comment_recipient`, called from `add_text_comment` at line 949 |
 
@@ -95,9 +94,9 @@ the code says that happens when the project has no tutor, which is not right,
 insurance rather than a case anyone has hit, and the test for it passes a nil
 recipient in by hand instead of going through `add_text_comment`.
 
-The subject is generic on purpose. Per-event subjects need a lookup that every
-event ticket would have to edit, which is the collision this folder exists to
-avoid. It is a known limitation, left as it is for now.
+The subject is event-specific. Each wired event must add a short human-readable
+entry to `NotificationsMailer::SUBJECTS`; unknown events keep the generic
+`New notification` fallback so they can still send safely.
 
 ## How to check it by hand
 
