@@ -69,7 +69,6 @@ class NotificationsMailer < ApplicationMailer
     'tutorial_changed' => 'Tutorial changed'
   }.freeze
 
-
   # The event's own template if it exists, otherwise the generic one.
   def event_template_name(event)
     return 'single_notification' if event.blank?
