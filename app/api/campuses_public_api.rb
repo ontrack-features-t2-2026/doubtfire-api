@@ -1,6 +1,7 @@
 require 'grape'
 
 class CampusesPublicApi < Grape::API
+  helpers CollectionPaginationHelpers
   desc "Get a campus details"
   get '/campuses/:id' do
     campus = Campus.find(params[:id])
@@ -8,14 +9,12 @@ class CampusesPublicApi < Grape::API
   end
 
   desc 'Get all the Campuses'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/campuses' do
-    if params.key?(:per_page) || params.key?(:page)
-      per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-      page = params[:page].to_i > 0 ? params[:page].to_i : 1
-      result = Campus.limit(per_page).offset((page - 1) * per_page)
-    else
-      result = Campus.all
-    end
+    result = paginate_collection(Campus.all)
 
     present result, with: Entities::CampusEntity
   end

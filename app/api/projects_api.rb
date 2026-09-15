@@ -1,6 +1,7 @@
 require 'grape'
 
 class ProjectsApi < Grape::API
+  helpers CollectionPaginationHelpers
   TASK_DEFINITION_PRELOADS = [
     :discussion_prompts,
     :grade_due_dates,
@@ -40,6 +41,8 @@ class ProjectsApi < Grape::API
 
   desc "Fetches all of the current user's projects"
   params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
     optional :include_inactive, type: Boolean, desc: 'Include projects for units that are no longer active?'
     optional :include_task_definitions, type: Boolean, desc: 'Include all task definitions with tasks for each project?'
   end
@@ -52,9 +55,7 @@ class ProjectsApi < Grape::API
       projects = projects.preload(unit: { task_definitions: TASK_DEFINITION_PRELOADS })
     end
 
-    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-    page = params[:page].to_i > 0 ? params[:page].to_i : 1
-    projects = projects.limit(per_page).offset((page - 1) * per_page)
+    projects = paginate_collection(projects)
 
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, include_task_definitions: include_task_definitions, user: current_user
   end

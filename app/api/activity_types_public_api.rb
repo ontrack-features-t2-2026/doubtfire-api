@@ -1,20 +1,19 @@
 require 'grape'
 
 class ActivityTypesPublicApi < Grape::API
+  helpers CollectionPaginationHelpers
   desc "Get an activity type details"
   get '/activity_types/:id' do
     present ActivityType.find(params[:id]), with: Entities::ActivityTypeEntity
   end
 
   desc 'Get all the activity types'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/activity_types' do
-    if params.key?(:per_page) || params.key?(:page)
-      per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-      page = params[:page].to_i > 0 ? params[:page].to_i : 1
-      result = ActivityType.limit(per_page).offset((page - 1) * per_page)
-    else
-      result = ActivityType.all
-    end
+    result = paginate_collection(ActivityType.all)
 
     present result, with: Entities::ActivityTypeEntity
   end

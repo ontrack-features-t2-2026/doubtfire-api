@@ -3,6 +3,7 @@ require 'csv_helper'
 require 'entities/unit_entity'
 
 class UnitsApi < Grape::API
+  helpers CollectionPaginationHelpers
   helpers AuthenticationHelpers
   helpers AuthorisationHelpers
   helpers MimeCheckHelpers
@@ -25,6 +26,8 @@ class UnitsApi < Grape::API
 
   desc 'Get units related to the current user for admin purposes'
   params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
     optional :include_in_active, type: Boolean, desc: 'Include units that are not active'
   end
   get '/units' do
@@ -37,9 +40,7 @@ class UnitsApi < Grape::API
 
     units = units.where('active = true') unless params[:include_in_active]
 
-    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-    page = params[:page].to_i > 0 ? params[:page].to_i : 1
-    units = units.limit(per_page).offset((page - 1) * per_page)
+    units = paginate_collection(units)
 
     present units, with: Entities::UnitEntity, user: current_user, summary_only: true, in_unit: true
   end

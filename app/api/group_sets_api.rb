@@ -4,6 +4,7 @@ require 'grape'
 # Allow GroupSets to be managed via the API
 #
 class GroupSetsApi < Grape::API
+  helpers CollectionPaginationHelpers
   helpers AuthenticationHelpers
   helpers AuthorisationHelpers
   helpers MimeCheckHelpers
@@ -363,6 +364,10 @@ class GroupSetsApi < Grape::API
   end
 
   desc 'Get the members of a group'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/units/:unit_id/group_sets/:group_set_id/groups/:group_id/members' do
     unit = Unit.find(params[:unit_id])
     group_set = unit.group_sets.find(params[:group_set_id])
@@ -372,13 +377,7 @@ class GroupSetsApi < Grape::API
       error!({ error: 'Not authorised to get groups for this unit' }, 403)
     end
 
-    if params.key?(:per_page) || params.key?(:page)
-      per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-      page = params[:page].to_i > 0 ? params[:page].to_i : 1
-      result = grp.projects.limit(per_page).offset((page - 1) * per_page)
-    else
-      result = grp.projects
-    end
+    result = paginate_collection(grp.projects)
 
     present result, with: Entities::ProjectEntity, only: [:student, :id, :target_grade], user: current_user
   end

@@ -1,6 +1,7 @@
 require 'grape'
 
 class UsersApi < Grape::API
+  helpers CollectionPaginationHelpers
   helpers AuthenticationHelpers
   helpers AuthorisationHelpers
   helpers MimeCheckHelpers
@@ -10,14 +11,16 @@ class UsersApi < Grape::API
   end
 
   desc 'Get the list of users'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/users' do
     unless authorise? current_user, User, :list_users
       error!({ error: 'Cannot list users - not authorised' }, 403)
     end
 
-    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-    page = params[:page].to_i > 0 ? params[:page].to_i : 1
-    users = User.eager_load(:role).limit(per_page).offset((page - 1) * per_page)
+    users = paginate_collection(User.eager_load(:role))
     present users, with: Entities::UserEntity
   end
 
@@ -34,26 +37,30 @@ class UsersApi < Grape::API
   end
 
   desc 'Get convenors'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/users/convenors' do
     unless authorise? current_user, User, :get_staff_list
       error!({ error: 'Cannot list convenors - not authorised' }, 403)
     end
 
-    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-    page = params[:page].to_i > 0 ? params[:page].to_i : 1
-    users = User.convenors.eager_load(:role).limit(per_page).offset((page - 1) * per_page)
+    users = paginate_collection(User.convenors.eager_load(:role))
     present users, with: Entities::UserEntity
   end
 
   desc 'Get tutors'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/users/tutors' do
     unless authorise? current_user, User, :get_staff_list
       error!({ error: 'Cannot list tutors - not authorised' }, 403)
     end
 
-    per_page = params[:per_page].to_i > 0 ? [params[:per_page].to_i, 500].min : 50
-    page = params[:page].to_i > 0 ? params[:page].to_i : 1
-    users = User.tutors.eager_load(:role).limit(per_page).offset((page - 1) * per_page)
+    users = paginate_collection(User.tutors.eager_load(:role))
     present users, with: Entities::UserEntity
   end
 
