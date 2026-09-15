@@ -26,11 +26,17 @@ class NotificationExtensionTest < ActiveSupport::TestCase
   end
 
   def create_extension_request
-    @task.apply_for_extension(
+    extension = @task.apply_for_extension(
       @student,
       EXTENSION_REQUEST_TEXT,
       1
     )
+
+    # The request itself emails the tutor (extension_requested). Drop that job
+    # so these tests only count what the assessment sends the student.
+    NotificationEmailJob.clear
+
+    extension
   end
 
   def delivered_parts
