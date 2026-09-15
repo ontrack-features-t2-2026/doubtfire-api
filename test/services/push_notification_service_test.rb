@@ -199,7 +199,11 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       'task_help_requested' => 'A student asked for help with a task.',
       'extension_requested' => 'A student asked for an extension.',
       'portfolio_submitted' => 'A student submitted a portfolio.',
-      'portfolio_received' => 'Your portfolio submission was received.'
+      'portfolio_received' => 'Your portfolio submission was received.',
+      'unit_announcement_published' => 'There is a new announcement in your unit.',
+      'unit_announcement_updated' => 'An announcement in your unit was updated.',
+      'unit_session_changed' => 'A session in your unit has changed.',
+      'unit_session_starting_soon' => 'A session in your unit starts soon.'
     }
 
     expected_bodies.each do |event, expected_body|
@@ -258,7 +262,10 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       # built. This is the case the whole ticket is about.
       '/projects/2/dashboard/Portfolio%20Reflection',
       # 43 characters, the length this repo's own tests already create.
-      "/projects/2/dashboard/#{'a' * 43}"
+      "/projects/2/dashboard/#{'a' * 43}",
+      # The Unit Hub, opened on one announcement or one session.
+      '/unit-hub?unit=4&announcement=12',
+      '/unit-hub?unit=4&session=9'
     ]
 
     routes.each do |route|
@@ -307,7 +314,17 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       # changed.
       "/projects/2/dashboard/#{'A1' * 70}",
       '/units/2',
-      '/home'
+      '/home',
+      # Only the exact Unit Hub shape is allowed a query string.
+      '/unit-hub',
+      '/unit-hub?unit=4',
+      '/unit-hub?unit=4&announcement=12&next=//example.test',
+      '/unit-hub?unit=0&announcement=12',
+      '/unit-hub?announcement=12&unit=4',
+      '/unit-hub?unit=4&announcement=abc',
+      '/unit-hub?unit=4&task=12',
+      "/unit-hub?unit=4&session=9\n",
+      '/unit-hub?unit=4&session=9#x'
     ]
 
     invalid_links.each do |link|

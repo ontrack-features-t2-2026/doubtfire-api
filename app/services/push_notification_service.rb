@@ -40,7 +40,13 @@ class PushNotificationService
     # The raw message names the student and task, like task_submitted.
     'extension_requested' => 'A student asked for an extension.',
     # The raw message names the student.
-    'portfolio_submitted' => 'A student submitted a portfolio.'
+    'portfolio_submitted' => 'A student submitted a portfolio.',
+    # Unit Hub messages carry the announcement title, or a session's title,
+    # time and room. Say only what kind of thing happened.
+    'unit_announcement_published' => 'There is a new announcement in your unit.',
+    'unit_announcement_updated' => 'An announcement in your unit was updated.',
+    'unit_session_changed' => 'A session in your unit has changed.',
+    'unit_session_starting_soon' => 'A session in your unit starts soon.'
   }.freeze
 
   # MN-C03 BEGIN: safe click route constants
@@ -59,6 +65,10 @@ class PushNotificationService
   # these repos run past 40 characters; it is not raised further because
   # MAX_CLICK_LINK_LENGTH is checked first and would decide anyway.
   SAFE_PROJECT_TASK_LINK = %r{\A/projects/[1-9]\d*/dashboard/[A-Za-z0-9](?:[A-Za-z0-9._-]|%20){0,127}(?:/feedback)?\z}x
+  # The Unit Hub opens on a unit and one announcement or session. This is the
+  # only destination allowed a query string, and only in exactly this shape of
+  # two numeric ids, so it is matched whole before the text screen below.
+  SAFE_UNIT_HUB_LINK = %r{\A/unit-hub\?unit=[1-9]\d{0,9}&(?:announcement|session)=[1-9]\d{0,9}\z}
   # MN-C03 END: safe click route constants
   # Seconds. web-push sets no timeouts of its own, so without these a push
   # service that accepts a connection and then never answers holds a Sidekiq
@@ -156,6 +166,7 @@ class PushNotificationService
     return SAFE_CLICK_FALLBACK unless link.is_a?(String)
     return SAFE_CLICK_FALLBACK if link.empty? || link.length > MAX_CLICK_LINK_LENGTH
     return SAFE_CLICK_FALLBACK unless link == link.strip
+    return link if link.match?(SAFE_UNIT_HUB_LINK)
     return SAFE_CLICK_FALLBACK if link.match?(FORBIDDEN_CLICK_LINK_TEXT)
     return link if link == SAFE_CLICK_FALLBACK || link.match?(SAFE_PROJECT_ROOT_LINK)
     return link if link.match?(SAFE_PROJECT_TASK_LINK)

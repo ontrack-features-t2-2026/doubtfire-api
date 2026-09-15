@@ -79,3 +79,10 @@ send_due_soon_reminders:
 sync_teams_announcements:
   cron: "every 5 minutes"
   class: "SyncTeamsAnnouncementsJob"
+
+# Unit Hub session reminders for people who opted in. Every five minutes because
+# the reminder is 30 minutes before a start time, so a daily sweep cannot land
+# it. Each occurrence is reminded once per person however many runs see it.
+send_unit_session_reminders:
+  cron: "every 5 minutes"
+  class: "SendUnitSessionRemindersJob"

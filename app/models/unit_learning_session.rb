@@ -18,6 +18,10 @@ class UnitLearningSession < ApplicationRecord
   validates :published, :cancelled, inclusion: { in: [true, false] }
   validate :valid_schedule
 
+  # Only updates: a new session is not one of the changes people are told
+  # about, and the delete endpoint cancels rather than destroys.
+  after_commit :queue_hub_notifications, on: :update
+
   # Add calendar weeks in the named zone, not 604800 seconds in UTC: the local
   # HelpHub time stays constant across daylight saving changes.
   def occurrences(from:, to:)
@@ -41,6 +45,13 @@ class UnitLearningSession < ApplicationRecord
   end
 
   private
+
+  # A notification must never stop a session being saved.
+  def queue_hub_notifications
+    UnitHub::Notifications.session_committed(self)
+  rescue StandardError => e
+    Rails.logger.error("Failed to queue Unit Hub notifications for UnitLearningSession #{id}: #{e.class}")
+  end
 
   def valid_schedule
     begin
