@@ -1,6 +1,7 @@
 require 'grape'
 
 class UsersApi < Grape::API
+  helpers CollectionPaginationHelpers
   helpers AuthenticationHelpers
   helpers AuthorisationHelpers
   helpers MimeCheckHelpers
@@ -10,12 +11,17 @@ class UsersApi < Grape::API
   end
 
   desc 'Get the list of users'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/users' do
     unless authorise? current_user, User, :list_users
       error!({ error: 'Cannot list users - not authorised' }, 403)
     end
 
-    present User.all.eager_load(:role), with: Entities::UserEntity
+    users = paginate_collection(User.eager_load(:role))
+    present users, with: Entities::UserEntity
   end
 
   desc 'Get user'
@@ -31,21 +37,31 @@ class UsersApi < Grape::API
   end
 
   desc 'Get convenors'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/users/convenors' do
     unless authorise? current_user, User, :get_staff_list
       error!({ error: 'Cannot list convenors - not authorised' }, 403)
     end
 
-    present User.convenors, with: Entities::UserEntity
+    users = paginate_collection(User.convenors.eager_load(:role))
+    present users, with: Entities::UserEntity
   end
 
   desc 'Get tutors'
+  params do
+    optional :page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PAGE, allow_blank: false
+    optional :per_page, type: Integer, values: 1..CollectionPaginationHelpers::MAX_PER_PAGE, allow_blank: false
+  end
   get '/users/tutors' do
     unless authorise? current_user, User, :get_staff_list
       error!({ error: 'Cannot list tutors - not authorised' }, 403)
     end
 
-    present User.tutors.eager_load(:role), with: Entities::UserEntity
+    users = paginate_collection(User.tutors.eager_load(:role))
+    present users, with: Entities::UserEntity
   end
 
   desc 'Update a user'

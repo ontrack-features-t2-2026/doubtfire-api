@@ -306,7 +306,8 @@ module Doubtfire
     config.middleware.insert_before Warden::Manager, Rack::Cors do
       allow do
         origins '*'
-        resource '*', headers: :any, methods: %i(get post put delete options)
+        resource '*', headers: :any, methods: %i(get post put delete options),
+                      expose: %w(X-Total-Count X-Page X-Per-Page X-Total-Pages)
       end
     end
 

@@ -321,7 +321,7 @@ class ExecuteCommunicationSetJob
       }]
     end
 
-    recipients = unit.convenors.includes(:user).map(&:user).select { |user| user&.email.present? }.uniq(&:id)
+    recipients = User.joins(:unit_roles).where(unit_roles: { unit_id: unit.id, role_id: Role.convenor_id }).distinct.where.not(email: [nil, '']).to_a
 
     if recipients.empty?
       return [{
@@ -376,7 +376,7 @@ class ExecuteCommunicationSetJob
     end
 
     if action.email_convenors
-      recipients.concat(unit.convenors.includes(:user).map(&:user))
+      recipients.concat(User.joins(:unit_roles).where(unit_roles: { unit_id: unit.id, role_id: Role.convenor_id }).distinct.to_a)
     end
 
     recipients.select { |recipient| recipient&.email.present? }.uniq(&:id)
