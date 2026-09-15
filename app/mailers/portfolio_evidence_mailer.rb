@@ -1,4 +1,6 @@
 class PortfolioEvidenceMailer < ApplicationMailer
+  layout "notification_mail"
+
   def add_general
     @doubtfire_host = Doubtfire::Application.config.institution[:host]
     @doubtfire_product_name = Doubtfire::Application.config.institution[:product_name]
