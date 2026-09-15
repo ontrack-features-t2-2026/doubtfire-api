@@ -92,7 +92,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
     @project.stub :tutor_for, nil do
       assert_no_difference 'Notification.count' do
         assert_nothing_raised do
-          @task.notify_tutor_of_task_submission(
+          @task.notify_tutor_of_student_request(
             @student,
             :student,
             TaskStatus.not_started.id,

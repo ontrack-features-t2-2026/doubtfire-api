@@ -196,6 +196,8 @@ class PushNotificationServiceTest < ActiveSupport::TestCase
       'tutorial_changed' => 'Your tutorial details changed.',
       'group_membership_changed' => 'Your group membership changed.',
       'task_submitted' => 'A task is ready for marking.',
+      'task_help_requested' => 'A student asked for help with a task.',
+      'extension_requested' => 'A student asked for an extension.',
       'portfolio_received' => 'Your portfolio submission was received.'
     }
 
