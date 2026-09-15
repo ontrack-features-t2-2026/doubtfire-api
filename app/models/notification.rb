@@ -68,7 +68,48 @@ class Notification < ApplicationRecord
     @target_ids ||= resolve_target_ids
   end
 
+  STUDENT_FEEDBACK_EVENTS = %w[task_comment_created discussion_request_created extension_assessed].freeze
+  PORTFOLIO_EVENTS = %w[portfolio_received portfolio_submitted].freeze
+
+  # The in-app page this notification opens, for the person it was sent to.
+  #
+  # The same decision the web client makes in notification-target.ts, kept here
+  # so an email button lands on the page the bell would have opened. A student
+  # goes to their own project, staff go to the task inbox or the staff
+  # portfolio view. Falls back to link when the ids cannot be worked out, which
+  # is also what an email for a deleted record gets.
+  def web_path
+    ids = target_ids
+    return link if ids[:project_id].nil?
+
+    abbreviation = ids[:task_definition_abbr]
+    return link if abbreviation.nil? && link.to_s.match?(TASK_LINK)
+
+    ids[:student_id] == user_id ? student_web_path(ids, abbreviation) : staff_web_path(ids, abbreviation)
+  end
+
   private
+
+  def student_web_path(ids, abbreviation)
+    project = "/projects/#{ids[:project_id]}"
+    return "#{project}/groups" if event == 'group_membership_changed'
+    return "#{project}/tutorials" if event == 'tutorial_changed'
+    return "#{project}/portfolio" if PORTFOLIO_EVENTS.include?(event) || (notification_type == 'portfolio' && abbreviation.nil?)
+    return "#{project}/dashboard" if abbreviation.nil?
+
+    task = "#{project}/dashboard/#{ERB::Util.url_encode(abbreviation)}"
+    STUDENT_FEEDBACK_EVENTS.include?(event) ? "#{task}/feedback" : task
+  end
+
+  def staff_web_path(ids, abbreviation)
+    unit = "/units/#{ids[:unit_id]}"
+    if PORTFOLIO_EVENTS.include?(event) || (notification_type == 'portfolio' && abbreviation.nil?)
+      return "#{unit}/students/portfolios/#{ids[:project_id]}"
+    end
+    return "#{unit}/students" if abbreviation.nil?
+
+    "#{unit}/tasks/inbox/#{ids[:student_id]}/#{ERB::Util.url_encode(abbreviation)}?students=all"
+  end
 
   def resolve_target_ids
     ids = TARGET_KEYS.index_with { nil }

@@ -8,7 +8,7 @@
 | Who receives it | Every tutor of the student's tutorial enrolments. With none, the unit's main convenor. The student and the staff member who made the request are skipped. |
 | Preference that gates it | The recipient's `receive_portfolio_notifications`. |
 | Email subject | `#{product name}: New notification`, the generic subject. |
-| Email body summary | The generic `single_notification` template with the message. No event template was added. |
+| Email body summary | Names the student and unit, with one button to the staff portfolio view (`Notification#web_path`). Templates are `app/views/notifications_mailer/portfolio_submitted.html.erb` and `.text.erb`, on the shared `notification_mail` layout. |
 | Where it is raised | `app/api/projects_api.rb`, in the `notify_portfolio_submitted` helper. |
 
 ## Guards

@@ -1,5 +1,5 @@
 <% content_for :preheader do %>Open the task in <%= @doubtfire_product_name %> to read it and reply.<% end %>
-<% content_for :heading do %>New comment on your task<% end %>
+<% content_for :heading do %>New comment on a task<% end %>
 
 <p style="margin:0 0 16px 0;">Hi <%= @user.name %>,</p>
 <%= render 'layouts/notification_mail/details', body: @notification.message %>
@@ -8,8 +8,8 @@
   The comment is not included in this email. Open the task in
   <%= @doubtfire_product_name %> to read it and reply.
 </p>
-<% if @notification.link.present? %>
-  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
+<% if @notification_url.present? %>
+  <%= render 'layouts/notification_mail/button', url: @notification_url, label: 'Open the task' %>
 <% end %>
 <% content_for :footer do %>
   <p style="margin:0;">

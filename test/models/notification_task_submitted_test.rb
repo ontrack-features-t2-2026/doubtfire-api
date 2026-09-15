@@ -78,7 +78,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
       assert_not_empty body
       assert_includes body, "Hi #{@tutor.first_name}"
       assert_includes body, 'The submission and any assessment content are not included in this email.'
-      assert_includes body, notification.link
+      assert_includes body, notification.web_path
       assert_includes body, '/edit_profile'
     end
 

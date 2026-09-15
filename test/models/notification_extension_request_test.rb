@@ -90,7 +90,7 @@ class NotificationExtensionRequestTest < ActiveSupport::TestCase
     parts.each_value do |body|
       assert_not_empty body
       assert_includes body, "Hi #{tutor.first_name}"
-      assert_includes body, notification.link
+      assert_includes body, notification.web_path
       assert_includes body, '/edit_profile'
       assert_not_includes body, EXTENSION_REQUEST_TEXT
     end

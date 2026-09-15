@@ -100,7 +100,16 @@ class NotificationPortfolioSubmittedTest < ActiveSupport::TestCase
     submit_portfolio
     NotificationEmailJob.drain
 
-    assert_includes ActionMailer::Base.deliveries.flat_map(&:to), @tutor.email
-    assert_equal 1, ActionMailer::Base.deliveries.count { |mail| mail.to.include?(@tutor.email) }
+    tutor_mail = ActionMailer::Base.deliveries.select { |mail| mail.to.include?(@tutor.email) }
+    staff_url = "/units/#{@unit.id}/students/portfolios/#{@project.id}"
+
+    assert_equal 1, tutor_mail.count
+    [tutor_mail.first.html_part.body.decoded, tutor_mail.first.text_part.body.decoded].each do |body|
+      assert_includes body, "Hi #{@tutor.first_name}"
+      assert_includes body, "#{@student.name} submitted a portfolio"
+      assert_includes body, staff_url
+      assert_includes body, '/edit_profile'
+    end
+    assert_includes tutor_mail.first.html_part.body.decoded, 'Portfolio submitted'
   end
 end

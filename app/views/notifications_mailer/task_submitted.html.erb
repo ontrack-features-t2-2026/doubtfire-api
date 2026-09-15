@@ -2,11 +2,12 @@
 <% content_for :heading do %>Task submitted<% end %>
 
 <p style="margin:0 0 16px 0;">Hi <%= @user.first_name %>,</p>
+<p style="margin:0 0 16px 0;">A student has submitted work that is ready for you to mark.</p>
 <%= render 'layouts/notification_mail/details', body: @notification.message %>
 
 <p style="margin:0 0 16px 0;">The submission and any assessment content are not included in this email.</p>
-<% if @notification.link.present? %>
-  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: "Open the task in #{@doubtfire_product_name}" %>
+<% if @notification_url.present? %>
+  <%= render 'layouts/notification_mail/button', url: @notification_url, label: "Open the task in #{@doubtfire_product_name}" %>
 <% end %>
 <% content_for :footer do %>
   <p style="margin:0;">

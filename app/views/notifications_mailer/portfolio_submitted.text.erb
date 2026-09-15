@@ -2,12 +2,11 @@ Hi <%= @user.first_name %>,
 
 <%= @notification.message %>
 
-Open the task to review the submission:
+The portfolio itself is not attached to this email.
 <% if @notification_url.present? -%>
-<%= @notification_url %>
-<% end -%>
 
-The submission and any assessment content are not included in this email.
+Open the portfolio: <%= @notification_url %>
+<% end -%>
 
 You can manage your notification preferences here:
 <%= @unsubscribe_url %>

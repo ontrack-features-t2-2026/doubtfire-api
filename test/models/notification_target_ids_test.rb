@@ -125,6 +125,53 @@ class NotificationTargetIdsTest < ActiveSupport::TestCase
     assert(ids.values.all?(&:nil?), ids.inspect)
   end
 
+  # web_path mirrors the web client's notification-target.ts, so an email
+  # button opens the page the bell would.
+  def test_web_path_for_a_student_opens_their_own_pages
+    comment_link = "#{task_link}/feedback"
+    project = "/projects/#{@project.id}"
+    abbreviation = ERB::Util.url_encode(@task_definition.abbreviation)
+
+    {
+      ['task_comment_created', 'feedback', comment_link] => "#{project}/dashboard/#{abbreviation}/feedback",
+      ['extension_assessed', 'extension', task_link] => "#{project}/dashboard/#{abbreviation}/feedback",
+      ['task_status_changed', 'task', task_link] => "#{project}/dashboard/#{abbreviation}",
+      ['group_membership_changed', 'general', "#{project}/groups"] => "#{project}/groups",
+      ['tutorial_changed', 'general', "#{project}/dashboard"] => "#{project}/tutorials",
+      ['portfolio_received', 'portfolio', "#{project}/dashboard"] => "#{project}/portfolio"
+    }.each do |(event, type, link), expected|
+      notification = Notification.new(user: @student, event: event, notification_type: type, message: 'x', link: link)
+
+      assert_equal expected, notification.web_path, event
+    end
+  end
+
+  def test_web_path_for_staff_opens_the_inbox_or_the_staff_portfolio_view
+    abbreviation = ERB::Util.url_encode(@task_definition.abbreviation)
+    inbox = "/units/#{@unit.id}/tasks/inbox/#{@student.id}/#{abbreviation}?students=all"
+
+    %w[task_submitted task_help_requested extension_requested task_comment_created].each do |event|
+      notification = Notification.new(user: @tutor, event: event, notification_type: 'task', message: 'x', link: task_link)
+
+      assert_equal inbox, notification.web_path, event
+    end
+
+    portfolio = Notification.new(
+      user: @tutor, event: 'portfolio_submitted', notification_type: 'portfolio', message: 'x',
+      link: "/projects/#{@project.id}/dashboard", notifiable: @project
+    )
+
+    assert_equal "/units/#{@unit.id}/students/portfolios/#{@project.id}", portfolio.web_path
+  end
+
+  def test_web_path_falls_back_to_the_link_when_the_target_is_gone
+    gone = Notification.new(user: @student, event: 'task_comment_created', notification_type: 'feedback',
+                            message: 'x', link: task_link(@project, 'NOPE'))
+
+    assert_equal task_link(@project, 'NOPE'), gone.web_path
+    assert_nil Notification.new(user: @student, event: 'general_event', notification_type: 'general', message: 'x').web_path
+  end
+
   def test_the_api_adds_the_ids_beside_the_existing_fields
     notification = notification_for(notifiable: @task, link: task_link)
 

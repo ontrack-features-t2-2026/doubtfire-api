@@ -15,6 +15,7 @@ class NotificationsMailer < ApplicationMailer
 
     @notification = notification
     @user = notification.user
+    @notification_url = notification_url_for(notification)
 
     # Use the deployment's SMTP-authorised sender, with a development-safe
     # fallback for older installations that have not configured one yet.
@@ -46,6 +47,7 @@ class NotificationsMailer < ApplicationMailer
 
     @notification = notification
     @user = notification.user
+    @notification_url = notification_url_for(notification)
 
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
     subject = "#{@doubtfire_product_name}: New notification"
@@ -56,6 +58,13 @@ class NotificationsMailer < ApplicationMailer
       template_name: event_template_name(notification.event),
       **outbound_sender_headers(development_from: from_address)
     )
+  end
+
+  # The page the email's button opens: the same page the bell would open for
+  # this recipient, or nothing when the notification has nowhere to go.
+  def notification_url_for(notification)
+    path = notification.web_path
+    path.present? ? "#{@doubtfire_host}#{path}" : nil
   end
 
   # The event's own template if it exists, otherwise the generic one.
