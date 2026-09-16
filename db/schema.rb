@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_15_000000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_16_000000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -1124,6 +1124,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_15_000000) do
     t.boolean "receive_unit_hub_email_notifications", default: false, null: false
     t.boolean "receive_unit_hub_push_notifications", default: false, null: false
     t.boolean "receive_unit_hub_session_reminders", default: false, null: false
+    t.string "digest_frequency", default: "weekly", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["login_id"], name: "index_users_on_login_id", unique: true
     t.index ["role_id"], name: "index_users_on_role_id"

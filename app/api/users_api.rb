@@ -65,6 +65,7 @@ class UsersApi < Grape::API
       optional :receive_unit_hub_email_notifications, type: Boolean, desc: 'Also email Unit Hub updates'
       optional :receive_unit_hub_push_notifications, type: Boolean, desc: 'Also push Unit Hub updates to subscribed browsers'
       optional :receive_unit_hub_session_reminders, type: Boolean, desc: 'Remind the user shortly before Unit Hub sessions start'
+      optional :digest_frequency, type: String, values: User::DIGEST_FREQUENCIES, desc: 'How often to send the unit summary email [off, daily, weekly, monthly]'
       optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
       optional :has_run_first_time_setup, type: Boolean, desc: 'Whether or not user has run first-time setup'
@@ -94,6 +95,9 @@ class UsersApi < Grape::API
        params[:user][:display_peer_progress].nil?
       params[:user][:display_peer_progress] = true
     end
+    # NOT NULL with a default, so a null means "put it back to the default"
+    # rather than "clear it", matching the Unit Hub preferences above.
+    params[:user][:digest_frequency] = 'weekly' if params[:user].key?(:digest_frequency) && params[:user][:digest_frequency].nil?
 
     # can only modify if current_user.id is same as :id provided
     # (i.e., user wants to update their own data) or if update_user token
@@ -145,6 +149,7 @@ class UsersApi < Grape::API
                                                       :receive_unit_hub_email_notifications,
                                                       :receive_unit_hub_push_notifications,
                                                       :receive_unit_hub_session_reminders,
+                                                      :digest_frequency,
                                                       :display_peer_progress,
                                                       :opt_in_to_research,
                                                       :has_run_first_time_setup,

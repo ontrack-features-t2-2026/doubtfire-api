@@ -738,6 +738,7 @@ class Project < ApplicationRecord
     # end
 
     return unless student.receive_feedback_notifications
+    return unless student.wants_digest_on?(summary_stats[:cadence])
     return if portfolio_exists? && !middle_of_unit
 
     begin
