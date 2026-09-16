@@ -1,16 +1,13 @@
+<% content_for :icon do %>announcement<% end %>
 <% content_for :preheader do %>A new task is now available in <%= @doubtfire_product_name %>.<% end %>
 <% content_for :heading do %>New task available<% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @user.name %>,</p>
-<%= render 'layouts/notification_mail/details', body: @notification.message %>
-
-<p style="margin:0 0 16px 0;">
-  A new task is now available in <%= @doubtfire_product_name %>.
-  Open the task to review its details.
-</p>
+<p style="margin:0 0 20px 0;">Hi <%= @user.name %>,</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'announcement', label: 'New task' %>
 <% if @notification.link.present? %>
   <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
 <% end %>
+<%= render 'layouts/notification_mail/note', body: "Open the task to review its details and when it is due." %>
 <% content_for :footer do %>
   <p style="margin:0;">
     You are receiving this because your task notifications are turned on.

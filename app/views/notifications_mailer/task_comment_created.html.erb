@@ -1,16 +1,13 @@
+<% content_for :icon do %>comment<% end %>
 <% content_for :preheader do %>Open the task in <%= @doubtfire_product_name %> to read it and reply.<% end %>
 <% content_for :heading do %>New comment on your task<% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @user.name %>,</p>
-<%= render 'layouts/notification_mail/details', body: @notification.message %>
-
-<p style="margin:0 0 16px 0;">
-  The comment is not included in this email. Open the task in
-  <%= @doubtfire_product_name %> to read it and reply.
-</p>
+<p style="margin:0 0 20px 0;">Hi <%= @user.name %>,</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'comment', label: 'New comment' %>
 <% if @notification.link.present? %>
   <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
 <% end %>
+<%= render 'layouts/notification_mail/note', body: "The comment is not included in this email. Open the task in #{@doubtfire_product_name} to read it and reply." %>
 <% content_for :footer do %>
   <p style="margin:0;">
     You are receiving this because your feedback notifications are turned on.

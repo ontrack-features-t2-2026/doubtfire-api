@@ -1,19 +1,21 @@
+<% content_for :icon do %>summary<% end %>
 <% content_for :preheader do %><%= @affected_students_count %> students matched this rule.<% end %>
-<% content_for :heading do %><%= @doubtfire_product_name %> Notification<% end %>
+<% content_for :heading do %>Communication rule ran<% end %>
+<% if @unit&.name.present? %><% content_for :subheading do %><%= @unit.name %><% end %><% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @recipient&.nickname.presence || @recipient&.first_name || @recipient&.name %>,</p>
+<p style="margin:0 0 20px 0;">Hi <%= @recipient&.nickname.presence || @recipient&.first_name || @recipient&.name %>,</p>
+
+<% affected_summary = capture do %>
+  <strong style="font-size:20px;"><%= @affected_students_count %></strong>
+  student<%= "s" unless @affected_students_count == 1 %> matched this rule and were affected by the configured actions.
+<% end %>
+<%= render 'layouts/notification_mail/details', body: affected_summary, category: 'summary', label: 'Result' %>
 
 <% @body_paragraphs.each do |paragraph| %>
   <p style="margin:0 0 16px 0;"><%= paragraph %></p>
 <% end %>
 
-<% affected_summary = capture do %>
-  <strong style="font-size:20px;"><%= @affected_students_count %></strong>
-  students matched this rule and were affected by the configured actions.
-<% end %>
-<%= render 'layouts/notification_mail/details', body: affected_summary %>
-
-<p style="margin:0 0 16px 0;">A full log of actions has been attached as a CSV.</p>
+<%= render 'layouts/notification_mail/note', body: 'A full log of actions is attached as a CSV.' %>
 
 <p style="margin:24px 0 0 0;">
   Cheers,<br />

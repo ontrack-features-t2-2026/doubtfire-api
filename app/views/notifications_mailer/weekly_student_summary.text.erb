@@ -2,58 +2,59 @@ Hi <%= @student.first_name %>,
 
 <%= @summary_stats[:unit].name %> - Weekly Summary
 <%= "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")}" %> to <%= "#{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}" %>
-
 <% if @did_revert_to_pass %>
-Hope you had a good week!
 
-Before we get into the summary, it seems that you are falling behind in your Pass Tasks. It is really important that you catch up with these tasks, as you must have all Pass tasks marked as Complete to Pass the unit. I've reset your Target Grade to Pass for the moment, to help you focus on these tasks. I would like to encourage you to work through the Pass tasks in order to catch up as quickly as you can. Once you have caught up, you can upgrade your Target Grade again, and go back and complete any higher grade tasks you skipped.
-
-With that out of the way, here's a summary of what has happened in this unit over the last week and some notes on what you should do next.
-<% else %>
-Hope you had a good week! Here's a summary of what has happened in this unit over the last week and some notes on what you should do next.
+FALLING BEHIND ON PASS TASKS
+Your target grade has been reset to Pass while you catch up. Every Pass task has to be marked Complete to pass this unit, so work through them in order. Once you have caught up you can set your target grade back and return to the higher grade tasks you skipped.
 <% end %>
-
 <% if @project.tutorial_enrolments.blank? %>
 
-Firstly... it looks like you are not assigned a tutor! Please login and make sure your tutorial is correctly set. You should be able to do that here: <%= @doubtfire_host %>/projects/<%= @project.id %>/tutorials
-
-Here is what you should focus on right now.
-<% else %>
-
-Firstly, here is what you should focus on right now.
+NO TUTOR SET
+You are not assigned a tutor. Set your tutorial so your work reaches someone:
+<%= @doubtfire_host %>/projects/<%= @project.id %>/tutorials
 <% end %>
 
-<%  if @top_tasks && @top_tasks.count > 0 %>
-<%      if @overdue_top && @overdue_top.count > 0 %>
-Catch up by completing the following *overdue* task<%="s" if @overdue_top.count > 1%>!
-<%          @overdue_top.each do |ot| %>
+FOCUS ON THIS
+<% if @overdue_top && @overdue_top.count > 0 %>
+<%= @overdue_top.count %> task<%= "s" if @overdue_top.count > 1 %> <%= @overdue_top.count == 1 ? 'is' : 'are' %> overdue. Start there.
+<% elsif @soon_top && @soon_top.count > 0 %>
+<%= @soon_top.count %> task<%= "s" if @soon_top.count > 1 %> <%= @soon_top.count == 1 ? 'is' : 'are' %> due soon. Nothing is overdue.
+<% elsif @project.portfolio_exists? %>
+Every task is done and your portfolio is prepared. Time to party.
+<% else %>
+Every task is done. Log in and prepare your portfolio to finish up.
+<% end %>
+<% if @overdue_top && @overdue_top.count > 0 %>
+
+OVERDUE
+<%   @overdue_top.each do |ot| %>
 * <%= top_task_desc(ot) %>
-<%          end %>
-<%      end %>
-<%      if @soon_top && @soon_top.count > 0 %>
-Work to get the following task<%="s" if @soon_top.count > 1%> done, as these are *due* soon!
-<%          @soon_top.each do |st| %>
+<%   end %>
+<% end %>
+<% if @soon_top && @soon_top.count > 0 %>
+
+DUE SOON
+<%   @soon_top.each do |st| %>
 * <%= top_task_desc(st) %>
-<%          end %>
-<%      end %>
-<%      if @ahead_top && @ahead_top.count > 0 %>
-Get ahead by working on the following task<%="s" if @ahead_top.count > 1%> next!
-<%          @ahead_top.each do |at| %>
+<%   end %>
+<% end %>
+<% if @ahead_top && @ahead_top.count > 0 %>
+
+GET AHEAD
+<%   @ahead_top.each do |at| %>
 * <%= top_task_desc(at) %>
-<%          end %>
-<%      end %>
-<%  elsif @project.portfolio_exists? %>
-Its time to Party! You have completed all of the tasks and prepared your portfolio.
-<%  else %>
-Its almost party time... You have completed all of the tasks, now make sure you login and prepare your portfolio.
-<%  end %>
+<%   end %>
+<% end %>
 
-What has happened in <%= @doubtfire_product_name %> this week:
+Open your unit in <%= @doubtfire_product_name %>:
+<%= @doubtfire_host %>/projects/<%= @project.id %>/dashboard
 
-* In total, there <%= were_was(@summary_stats[:unit_week_comments]) %> <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made in this unit.
-* You posted a total of <%= @sent_comments %> comment<%= "s" if @sent_comments != 1 %>, and received back <%= @received_comments %> comment<%= "s" if @received_comments != 1 %> <%= "- try posting some comments this week" if @sent_comments == 0 %>
-* Tasks changed state <%= @summary_stats[:unit_week_engagements] %> time<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> in this unit.
-* Your tasks changed state <%= @engagements_count %> time<%= "s" unless @engagements_count == 1 %> <%= "- looks like you need to be more active" if @student_engagements == 0%>
+YOUR WEEK
+* <%= @sent_comments %> comment<%= "s" if @sent_comments != 1 %> you posted <%= "- try posting some this week" if @sent_comments == 0 %>
+* <%= @received_comments %> comment<%= "s" if @received_comments != 1 %> you received
+* <%= @engagements_count %> change<%= "s" unless @engagements_count == 1 %> to your tasks <%= "- looks like you need to be more active" if @student_engagements == 0 %>
+* <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made across the unit
+* <%= @summary_stats[:unit_week_engagements] %> task state change<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> across the unit
 
 We hope your studies are going well, and look forward to your submissions over the next week!
 

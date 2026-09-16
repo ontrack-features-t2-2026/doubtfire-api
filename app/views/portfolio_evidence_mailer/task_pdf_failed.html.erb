@@ -1,19 +1,15 @@
+<% content_for :icon do %>alert<% end %>
 <% content_for :preheader do %>Something went wrong with the processing of your submitted tasks.<% end %>
 <% content_for :heading do %>Task submission processing failed<% end %>
+<% content_for :subheading do %><%= @tasks.count %> task<%= "s" unless @tasks.count == 1 %> could not be processed<% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @student.first_name %>,</p>
-<p style="margin:0 0 16px 0;">
-  Something went wrong with the processing of the following tasks. Please check what you have submitted and try uploading them again. Watch out for character encodings, and file formats.
-</p>
-<p style="margin:0 0 8px 0;">The tasks with issues are:</p>
-<ul style="margin:0 0 16px 0; padding:0 0 0 20px;">
-  <% @tasks.each do |task| %>
-    <li style="margin:0 0 8px 0;">
-      <strong><%= task.task_definition.abbreviation %> - </strong>
-      <a href="<%= @doubtfire_host %>/projects/<%= @project.id %>/dashboard/<%= ERB::Util.url_encode(task.task_definition.abbreviation) %>" class="ot-link" style="color:#3939ff; text-decoration:underline;"><%= task.task_definition.name %></a>
-    </li>
-  <% end %>
-</ul>
+<p style="margin:0 0 20px 0;">Hi <%= @student.first_name %>,</p>
+<%= render 'layouts/notification_mail/details', body: "Check what you submitted and upload it again. Character encodings and file formats are the usual cause.", category: 'alert', label: 'What to do' %>
+
+<p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Tasks with issues</p>
+<%= render 'layouts/notification_mail/task_rows', tasks: @tasks, project: @project, host: @doubtfire_host %>
+
+<%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}/projects/#{@project.id}/dashboard", label: "Open your tasks in #{@doubtfire_product_name}" %>
 
 <p style="margin:24px 0 0 0;">
   Cheers, <br />
