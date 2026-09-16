@@ -10,7 +10,7 @@
   <tr>
     <td class="ot-details" style="background-color:<%= callout[:tint] %>; border-left:4px solid <%= callout[:accent] %>; border-radius:4px; padding:14px 18px; font-size:16px; line-height:1.5; color:#1f2937;">
       <% if callout_label.present? %>
-        <p style="margin:0 0 6px 0; font-size:12px; line-height:1.3; font-weight:700; letter-spacing:0.6px; text-transform:uppercase; color:<%= callout[:accent] %>;"><%= callout_label %></p>
+        <p style="margin:0 0 6px 0; font-size:12px; line-height:1.3; font-weight:700; letter-spacing:0.6px; text-transform:uppercase; color:<%= notification_mail_text_accent(callout[:accent]) %>;"><%= callout_label %></p>
       <% end %>
       <%= body %>
     </td>

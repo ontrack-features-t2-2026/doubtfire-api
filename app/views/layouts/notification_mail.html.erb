@@ -16,8 +16,21 @@
     :root { color-scheme: light only; supported-color-schemes: light; }
     @media only screen and (max-width: 620px) {
       .ot-pad { padding-left: 20px !important; padding-right: 20px !important; }
+      /* At phone width a fixed label column and a fixed value column leave the
+         bar a few pixels to draw in, and the bar only ever repeats the number
+         printed beside it. Drop the bars and let the numbers carry the chart. */
+      .ot-bar { display: none !important; }
+      .ot-bar-label { width: auto !important; }
+      /* Four characters do not need ninety six pixels when the screen is three
+         hundred and twenty wide. */
+      .ot-code { width: 72px !important; }
     }
   </style>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, p, a, span, h1, h2 { font-family: 'Segoe UI', Arial, sans-serif !important; }
+  </style>
+  <![endif]-->
 </head>
 <%
   product_name = @doubtfire_product_name.presence || @product_name.presence || 'OnTrack'
@@ -36,6 +49,11 @@
   <table role="presentation" class="ot-bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;">
     <tr>
       <td align="center" style="padding:32px 12px;">
+        <%# Word ignores max-width, so on a maximised Outlook window the card
+            fills the screen and every percentage width inside it stretches with
+            it. The ghost table is a real fixed-width table that only Word sees,
+            which pins the column back to 600. %>
+        <!--[if mso | IE]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td width="600"><![endif]-->
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; width:100%;">
           <tr>
             <td class="ot-pad" style="padding:0 8px 16px 8px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, system-ui;">
@@ -73,10 +91,13 @@
               <% if content_for?(:footer) %>
                 <%= yield :footer %>
               <% end %>
-              <p style="margin:8px 0 0 0; color:#9ca3af;">Sent by <%= product_name %></p>
+              <%# Was #9ca3af, which measures 2.54 against white. #6b7280 is the
+                  same muted grey the rest of the footer already uses, at 4.83. %>
+              <p style="margin:8px 0 0 0; color:#6b7280;">Sent by <%= product_name %></p>
             </td>
           </tr>
         </table>
+        <!--[if mso | IE]></td></tr></table><![endif]-->
       </td>
     </tr>
   </table>
