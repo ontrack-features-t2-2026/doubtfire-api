@@ -1,9 +1,9 @@
-<% content_for :icon do %>announcement<% end %>
+<% content_for :icon do %>new<% end %>
 <% content_for :preheader do %>A new task is now available in <%= @doubtfire_product_name %>.<% end %>
 <% content_for :heading do %>New task available<% end %>
 
 <p style="margin:0 0 20px 0;">Hi <%= @user.name %>,</p>
-<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'announcement', label: 'New task' %>
+<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'new', label: 'New task' %>
 <% if @notification.link.present? %>
   <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
 <% end %>

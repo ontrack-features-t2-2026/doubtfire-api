@@ -1,10 +1,10 @@
-<% content_for :icon do %>submission<% end %>
+<% content_for :icon do %>ready_for_feedback<% end %>
 <% content_for :preheader do %>Your submitted evidence is ready to be viewed and assessed.<% end %>
 <% content_for :heading do %>Task PDFs ready to view<% end %>
 <% content_for :subheading do %><%= @tasks.count %> task<%= "s" unless @tasks.count == 1 %> prepared for your tutor<% end %>
 
 <p style="margin:0 0 20px 0;">Hi <%= @student.first_name %>,</p>
-<%= render 'layouts/notification_mail/details', body: "Your evidence has been prepared and is now with your tutor to assess. There is nothing more for you to do on these.", category: 'submission', label: 'Status' %>
+<%= render 'layouts/notification_mail/details', body: "Your evidence has been prepared and is now with your tutor to assess. There is nothing more for you to do on these.", category: 'ready_for_feedback', label: 'Status' %>
 
 <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Ready to view</p>
 <%= render 'layouts/notification_mail/task_rows', tasks: @tasks, project: @project, host: @doubtfire_host %>

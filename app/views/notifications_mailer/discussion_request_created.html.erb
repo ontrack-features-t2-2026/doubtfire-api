@@ -1,9 +1,9 @@
-<% content_for :icon do %>comment<% end %>
+<% content_for :icon do %>discuss<% end %>
 <% content_for :preheader do %>A discussion prompt is ready for you in <%= @doubtfire_product_name %>.<% end %>
 <% content_for :heading do %>Discussion prompt ready<% end %>
 
 <p style="margin:0 0 20px 0;">Hi <%= @user.name %>,</p>
-<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'comment', label: 'Discussion prompt' %>
+<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'discuss', label: 'Discussion prompt' %>
 <% if @notification.link.present? %>
   <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
 <% end %>

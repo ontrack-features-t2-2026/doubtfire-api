@@ -1,9 +1,9 @@
-<% content_for :icon do %>session<% end %>
+<% content_for :icon do %>change<% end %>
 <% content_for :preheader do %>A task due date has changed.<% end %>
 <% content_for :heading do %>Task due date changed<% end %>
 
 <p style="margin:0 0 20px 0;">Hi <%= @user.name %>,</p>
-<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'session', label: 'What changed' %>
+<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'change', label: 'What changed' %>
 <% if @notification.link.present? %>
   <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
 <% end %>
