@@ -31,8 +31,8 @@
 
   <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Your week</p>
   <%= render 'layouts/notification_mail/stats', rows: [
-        [@data[:received_comments], "comment#{'s' if @data[:received_comments] != 1} received"],
-        [@data[:sent_comments], "comment#{'s' if @data[:sent_comments] != 1} posted"],
+        [@data[:received_comments], "comment#{'s' if @data[:received_comments] != 1} and pieces of feedback received"],
+        [@data[:sent_comments], "comment#{'s' if @data[:sent_comments] != 1} and pieces of feedback posted"],
         [@data[:staff_engagements], "task#{'s' unless @data[:staff_engagements] == 1} you gave a new status"],
         [@data[:weekly_total_tasks_discussed], "task#{'s' unless @data[:weekly_total_tasks_discussed] == 1} you discussed"],
         [@data[:weekly_engagements_count], "state change#{'s' unless @data[:weekly_engagements_count] == 1} on your students' tasks"]
@@ -40,7 +40,7 @@
 
   <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Across the unit</p>
   <%= render 'layouts/notification_mail/stats', rows: [
-        [@summary_stats[:unit_week_comments], "comment#{'s' if @summary_stats[:unit_week_comments] != 1} made"],
+        [@summary_stats[:unit_week_comments], "text comment#{'s' if @summary_stats[:unit_week_comments] != 1} made"],
         [@summary_stats[:unit_week_engagements], "task state change#{'s' unless @summary_stats[:unit_week_engagements] == 1}"]
       ] %>
 
@@ -60,7 +60,7 @@
 <% else %>
   <p style="margin:0 0 20px 0;">Hope you had a good week. Here is what happened in this unit.</p>
   <%= render 'layouts/notification_mail/stats', rows: [
-        [@summary_stats[:unit_week_comments], "comment#{'s' if @summary_stats[:unit_week_comments] != 1} made in this unit"],
+        [@summary_stats[:unit_week_comments], "text comment#{'s' if @summary_stats[:unit_week_comments] != 1} made in this unit"],
         [@summary_stats[:unit_week_engagements], "task state change#{'s' unless @summary_stats[:unit_week_engagements] == 1} in this unit"]
       ] %>
 <% end %>

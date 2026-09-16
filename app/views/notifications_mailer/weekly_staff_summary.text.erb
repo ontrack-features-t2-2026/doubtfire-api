@@ -12,14 +12,14 @@ Nothing is waiting for your feedback.
 <% end %>
 
 YOUR WEEK
-* <%= @data[:received_comments] %> comment<%= "s" if @data[:received_comments] != 1 %> received
-* <%= @data[:sent_comments] %> comment<%= "s" if @data[:sent_comments] != 1 %> posted
+* <%= @data[:received_comments] %> comment<%= "s" if @data[:received_comments] != 1 %> and pieces of feedback received
+* <%= @data[:sent_comments] %> comment<%= "s" if @data[:sent_comments] != 1 %> and pieces of feedback posted
 * <%= @data[:staff_engagements] %> task<%= "s" unless @data[:staff_engagements] == 1 %> you gave a new status
 * <%= @data[:weekly_total_tasks_discussed] %> task<%= "s" unless @data[:weekly_total_tasks_discussed] == 1 %> you discussed
 * <%= @data[:weekly_engagements_count] %> state change<%= "s" unless @data[:weekly_engagements_count] == 1 %> on your students' tasks
 
 ACROSS THE UNIT
-* <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made
+* <%= @summary_stats[:unit_week_comments] %> text comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made
 * <%= @summary_stats[:unit_week_engagements] %> task state change<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %>
 <%   if @summary_stats[:revert][@staff].count > 0 %>
 
@@ -31,7 +31,7 @@ These students have been advised to revert their grade to Pass, because they are
 <%   end %>
 <% else %>
 ACROSS THE UNIT
-* <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made in this unit
+* <%= @summary_stats[:unit_week_comments] %> text comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made in this unit
 * <%= @summary_stats[:unit_week_engagements] %> task state change<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> in this unit
 <% end %>
 

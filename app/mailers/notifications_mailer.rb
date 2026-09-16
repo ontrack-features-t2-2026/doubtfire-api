@@ -138,6 +138,73 @@ class NotificationsMailer < ApplicationMailer
     @soon_top = @top_tasks.select { |tt| tt[:reason] == :soon }
     @ahead_top = @top_tasks.select { |tt| tt[:reason] == :ahead }
 
+    # What the student can actually act on. Two cheap reads and one grouped
+    # count, no query per task: the definitions the target grade asks for, the
+    # due date of each task the student already has, and how those tasks are
+    # spread across the statuses. top_tasks drops the date it sorted on, so the
+    # dates are looked up here and matched back by task definition.
+    assigned_defs = project.assigned_task_defs.select(:id, :target_date).to_a
+    @grade_task_total = assigned_defs.count
+    @task_due_dates = project.tasks.each_with_object({}) do |task, dates|
+      dates[task.task_definition_id] = task.due_date
+    end
+    status_counts = project.assigned_tasks.group(:task_status_id).count
+
+    # Ready for feedback is the one status that is not the student's move. Every
+    # other incomplete status is, which is the split the dashboard makes too.
+    @waiting_on_tutor = status_counts.fetch(TaskStatus.ready_for_feedback.id, 0)
+    @tasks_complete = status_counts.fetch(TaskStatus.complete.id, 0)
+    @waiting_on_student = [@grade_task_total - @tasks_complete - @waiting_on_tutor, 0].max
+
+    # Work the tutor has already handed back. It is not the same as a task never
+    # opened, and it is the pile most worth clearing, so it gets counted apart.
+    returned_statuses = [
+      TaskStatus.fix_and_resubmit, TaskStatus.redo, TaskStatus.discuss,
+      TaskStatus.rediscuss, TaskStatus.demonstrate, TaskStatus.feedback_exceeded,
+      TaskStatus.attention_required
+    ]
+    @needs_your_response = returned_statuses.sum { |status| status_counts.fetch(status.id, 0) }
+
+    # Every status the student's own tasks are in, in the order they matter,
+    # dropping the ones nobody is sitting on. A task definition with no task row
+    # has never been opened, so it joins the not started pile rather than
+    # vanishing from the total.
+    ordered_statuses = [
+      [TaskStatus.complete, 'complete'],
+      [TaskStatus.ready_for_feedback, 'with your tutor to mark'],
+      [TaskStatus.fix_and_resubmit, 'to fix and resubmit'],
+      [TaskStatus.redo, 'to redo'],
+      [TaskStatus.discuss, 'to talk through with your tutor'],
+      [TaskStatus.rediscuss, 'to talk through again'],
+      [TaskStatus.demonstrate, 'to demonstrate'],
+      [TaskStatus.feedback_exceeded, 'out of feedback attempts'],
+      [TaskStatus.attention_required, 'needing attention'],
+      [TaskStatus.time_exceeded, 'past the deadline'],
+      [TaskStatus.assess_in_portfolio, 'to carry into your portfolio'],
+      [TaskStatus.fail, 'marked fail'],
+      [TaskStatus.need_help, 'where you asked for help'],
+      [TaskStatus.working_on_it, 'you are working on']
+    ]
+    @status_summary = ordered_statuses.filter_map do |status, label|
+      count = status_counts.fetch(status.id, 0)
+      [status.status_key, label, count] if count.positive?
+    end
+    never_opened = @grade_task_total - status_counts.values.sum
+    not_started = status_counts.fetch(TaskStatus.not_started.id, 0) + [never_opened, 0].max
+    @status_summary << [:not_started, 'not opened yet', not_started] if not_started.positive?
+
+    # Pace. How much of the grade was meant to be done by today, against how much
+    # is. Both come from rows already in memory.
+    @tasks_due_by_now = assigned_defs.count do |definition|
+      due = @task_due_dates[definition.id] || definition.target_date
+      due.present? && due.to_date <= Time.zone.today
+    end
+
+    unit_end = project.unit.end_date
+    @weeks_left = unit_end.present? ? ((unit_end.to_date - Time.zone.today).to_f / 7).ceil : nil
+    @portfolio_due = project.unit.portfolio_auto_generation_date
+    @portfolio_days_left = @portfolio_due.present? ? (@portfolio_due.to_date - Time.zone.today).to_i : nil
+
     email_with_name = address_with_name(@student)
     tutor_email = address_with_name(@tutor)
     subject = "#{project.unit.name}: Weekly Summary"

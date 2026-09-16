@@ -1,6 +1,39 @@
-<% content_for :icon do %>summary<% end %>
-<% week_range = "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")} to #{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}" %>
-<% content_for :preheader do %><%= week_range %><% end %>
+<%
+  week_range = "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")} to #{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}"
+  overdue_count = @overdue_top.to_a.count
+  soon_count = @soon_top.to_a.count
+
+  # The due date top_tasks sorted on, matched back by task definition. A task the
+  # student has not opened yet has no row of its own, so it falls back to the
+  # date the definition targets.
+  due_date_for = lambda do |definition|
+    @task_due_dates[definition.id] || definition.target_date
+  end
+
+  # "Fri 3 Oct, 4 days late" rather than a bare date, because the number of days
+  # is the part that decides what a student does next.
+  due_phrase = lambda do |date|
+    return nil if date.blank?
+
+    days = (date.to_date - Time.zone.today).to_i
+    when_text =
+      if days.negative?
+        "#{days.abs} day#{'s' unless days.abs == 1} late"
+      elsif days.zero?
+        'today'
+      elsif days == 1
+        'tomorrow'
+      else
+        "in #{days} days"
+      end
+    "#{date.to_date.strftime('%a %-d %b')}, #{when_text}"
+  end
+
+  next_due = (@overdue_top.to_a + @soon_top.to_a + @ahead_top.to_a).first
+  section_heading = 'margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase;'
+%>
+<% content_for :icon do %><%= overdue_count.positive? ? 'overdue' : 'summary' %><% end %>
+<% content_for :preheader do %><%= overdue_count.positive? ? "#{@overdue_top.first[:task_definition].abbreviation} is overdue." : "#{@tasks_complete} of #{@grade_task_total} tasks complete." %> <%= week_range %><% end %>
 <% content_for :heading do %><%= @summary_stats[:unit].name %> - Weekly Summary<% end %>
 <% content_for :subheading do %><%= week_range %><% end %>
 
@@ -11,73 +44,148 @@
     <p style="margin:0 0 8px 0;">Your target grade has been reset to Pass while you catch up.</p>
     <p style="margin:0;">Every Pass task has to be marked Complete to pass this unit, so work through them in order. Once you have caught up you can set your target grade back and return to the higher grade tasks you skipped.</p>
   <% end %>
-  <%= render 'layouts/notification_mail/details', body: revert_note, category: 'due', label: 'Falling behind on pass tasks' %>
+  <%= render 'layouts/notification_mail/details', body: revert_note, category: 'overdue', label: 'Falling behind on pass tasks' %>
 <% end %>
 
 <% if @project.tutorial_enrolments.blank? %>
   <% no_tutor = capture do %>
     You are not assigned a tutor. Set your tutorial on your
-    <a href="<%= @doubtfire_host%>/projects/<%= @project.id%>/tutorials" class="ot-link" style="color:#b42318; text-decoration:underline;">tutorials page</a>
+    <a href="<%= @doubtfire_host%>/projects/<%= @project.id%>/tutorials" class="ot-link" style="color:#d93713; text-decoration:underline;">tutorials page</a>
     so your work reaches someone.
   <% end %>
   <%= render 'layouts/notification_mail/details', body: no_tutor, category: 'alert', label: 'No tutor set' %>
 <% end %>
 
-<%# Lead with what is actually due, not with the week that has already gone. %>
-<% if @overdue_top && @overdue_top.count > 0 %>
+<%# top_tasks hands back at most five rows in total, so the number of overdue
+    ones it carries is a floor and not a count. The lead names the single oldest
+    instead, which is both the honest claim and the one a student acts on. %>
+<% if overdue_count.positive? %>
+  <% oldest = @overdue_top.first[:task_definition] %>
   <% focus = capture do %>
-    <strong style="font-size:20px;"><%= @overdue_top.count %></strong>
-    task<%= "s" if @overdue_top.count > 1 %> <%= @overdue_top.count == 1 ? 'is' : 'are' %> overdue. Start there.
+    <p style="margin:0 0 6px 0;"><strong style="font-size:18px;"><%= oldest.abbreviation %> <%= oldest.name %></strong></p>
+    <p style="margin:0;">is your oldest overdue task, due <%= due_phrase.call(due_date_for.call(oldest)) %>. Start there.</p>
   <% end %>
-  <%= render 'layouts/notification_mail/details', body: focus, category: 'due', label: 'Focus on this' %>
-<% elsif @soon_top && @soon_top.count > 0 %>
+  <%= render 'layouts/notification_mail/details', body: focus, category: 'overdue', label: 'Start here' %>
+<% elsif next_due.present? %>
   <% focus = capture do %>
-    <strong style="font-size:20px;"><%= @soon_top.count %></strong>
-    task<%= "s" if @soon_top.count > 1 %> <%= @soon_top.count == 1 ? 'is' : 'are' %> due soon. Nothing is overdue.
+    <p style="margin:0 0 6px 0;"><strong style="font-size:18px;"><%= next_due[:task_definition].abbreviation %> <%= next_due[:task_definition].name %></strong></p>
+    <p style="margin:0;">is due <%= due_phrase.call(due_date_for.call(next_due[:task_definition])) %>. Nothing is overdue.</p>
   <% end %>
-  <%= render 'layouts/notification_mail/details', body: focus, category: 'summary', label: 'Focus on this' %>
-<% elsif @top_tasks.blank? && @project.portfolio_exists? %>
-  <%= render 'layouts/notification_mail/details', body: 'Every task is done and your portfolio is prepared. Time to party.', category: 'submission', label: 'All caught up' %>
-<% elsif @top_tasks.blank? %>
-  <%= render 'layouts/notification_mail/details', body: 'Every task is done. Log in and prepare your portfolio to finish up.', category: 'submission', label: 'Almost there' %>
+  <%= render 'layouts/notification_mail/details', body: focus, category: soon_count.positive? ? 'due' : 'summary', label: 'Next deadline' %>
+<%# Nothing claims the student is done unless the counts below agree. top_tasks
+    covers only the statuses it selects for, so it going empty is not on its own
+    proof that there is no work left, and an email must not contradict its own
+    charts a screen later. %>
+<% elsif @waiting_on_student.to_i.zero? && @project.portfolio_exists? %>
+  <%= render 'layouts/notification_mail/details', body: 'Every task is done and your portfolio is prepared. Nothing is outstanding.', category: 'submission', label: 'All caught up' %>
+<% elsif @waiting_on_student.to_i.zero? %>
+  <%= render 'layouts/notification_mail/details', body: 'Every task is done. Prepare your portfolio to finish up.', category: 'portfolio', label: 'Almost there' %>
+<% else %>
+  <% steady = capture do %>
+    <p style="margin:0;">Nothing is overdue and nothing falls due this week.
+    <strong><%= @waiting_on_student %></strong> task<%= "s" unless @waiting_on_student == 1 %> <%= @waiting_on_student == 1 ? 'is' : 'are' %> still with you, so this is a good week to get ahead.</p>
+  <% end %>
+  <%= render 'layouts/notification_mail/details', body: steady, category: 'summary', label: 'Nothing due this week' %>
 <% end %>
 
+<%# Each task with its own date and its own status colour, so the list answers
+    what is late, what is next and whose move it is without a legend. %>
 <% task_groups = [
-     ['Overdue', @overdue_top],
-     ['Due soon', @soon_top],
-     ['Get ahead', @ahead_top]
+     ['Overdue', @overdue_top, 'time-exceeded'],
+     ['Due in the next week', @soon_top, 'working-on-it'],
+     ['Get ahead', @ahead_top, nil]
    ] %>
-<% task_groups.each do |group_label, group_tasks| %>
+<% task_groups.each do |group_label, group_tasks, group_status| %>
   <% next if group_tasks.blank? %>
-  <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;"><%= group_label %></p>
+  <p style="<%= section_heading %> color:<%= group_status.present? ? notification_mail_accent("status:#{group_status}") : '#6b7280' %>;"><%= group_label %></p>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0; border-collapse:collapse;">
     <% group_tasks.each_with_index do |tt, index| %>
       <% definition = tt[:task_definition] %>
+      <% status_category = notification_mail_status_category(tt[:status]) %>
       <tr>
         <td valign="top" width="96" style="width:96px; padding:<%= index.zero? ? '0' : '12px' %> 14px 12px 0; border-bottom:1px solid #e5e7eb;">
           <span style="display:inline-block; padding:3px 9px; border:1px solid #e5e7eb; border-radius:4px; background-color:#f9fafb; font-size:13px; line-height:1.3; font-weight:700; color:#374151;"><%= definition.abbreviation %></span>
         </td>
         <td valign="top" style="padding:<%= index.zero? ? '0' : '12px' %> 0 12px 0; border-bottom:1px solid #e5e7eb; font-size:15px; line-height:1.5;">
           <a href="<%= @doubtfire_host %>/projects/<%= @project.id %>/dashboard/<%= ERB::Util.url_encode(definition.abbreviation) %>" class="ot-link" style="color:#3939ff; text-decoration:underline;"><%= definition.name %></a>
-          <% if tt[:status] == :discuss %>
-            <span class="ot-muted" style="color:#6b7280;">- discuss this one with your tutor</span>
-          <% end %>
+          <br />
+          <span class="ot-muted" style="font-size:13px; color:#6b7280;">
+            Due <%= due_phrase.call(due_date_for.call(definition)) %><% if status_category.present? %> &middot; <span style="color:<%= notification_mail_accent(status_category) %>; font-weight:600;"><%= tt[:status].to_s.tr('_', ' ').capitalize %></span><% end %>
+          </span>
         </td>
       </tr>
     <% end %>
   </table>
 <% end %>
 
+<% if @top_tasks.to_a.count >= 5 %>
+  <%= render 'layouts/notification_mail/note', body: 'These are the five most urgent. Your dashboard has the rest.' %>
+<% end %>
+
+<% if @needs_your_response.to_i.positive? %>
+  <% returned = capture do %>
+    <strong style="font-size:20px;"><%= @needs_your_response %></strong>
+    task<%= "s" unless @needs_your_response == 1 %> <%= @needs_your_response == 1 ? 'has' : 'have' %> come back from your tutor and <%= @needs_your_response == 1 ? 'is' : 'are' %> waiting on you to resubmit, redo or talk it through.
+  <% end %>
+  <%= render 'layouts/notification_mail/details', body: returned, category: 'status:fix-and-resubmit', label: 'Feedback waiting for you' %>
+<% end %>
+
 <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}/projects/#{@project.id}/dashboard", label: "Open your unit in #{@doubtfire_product_name}" %>
 
-<p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Your week</p>
-<%= render 'layouts/notification_mail/stats', rows: [
-      [@sent_comments, "comment#{'s' if @sent_comments != 1} you posted#{@sent_comments == 0 ? ' - try posting some this week' : ''}"],
-      [@received_comments, "comment#{'s' if @received_comments != 1} you received"],
-      [@engagements_count, "change#{'s' unless @engagements_count == 1} to your tasks#{@student_engagements == 0 ? ' - looks like you need to be more active' : ''}"],
-      [@summary_stats[:unit_week_comments], "comment#{'s' if @summary_stats[:unit_week_comments] != 1} made across the unit"],
-      [@summary_stats[:unit_week_engagements], "task state change#{'s' unless @summary_stats[:unit_week_engagements] == 1} across the unit"]
-    ] %>
+<%# Where the student stands against the grade they are aiming at, drawn rather
+    than listed. The comment counts this block used to carry were a scoreboard,
+    not something anyone could act on. %>
+<% if @grade_task_total.to_i.positive? %>
+  <p style="<%= section_heading %> color:#6b7280;">Your <%= @project.target_grade_desc %> target</p>
+  <%= render 'layouts/notification_mail/progress', value: @tasks_complete, total: @grade_task_total, accent: notification_mail_accent('status:complete') %>
+  <p style="margin:0 0 20px 0; font-size:15px; line-height:1.5;">
+    <strong><%= @tasks_complete %> of <%= @grade_task_total %></strong> tasks complete.
+    <% if @tasks_due_by_now.to_i > @tasks_complete.to_i %>
+      <span style="color:<%= notification_mail_accent('status:time-exceeded') %>;"><strong><%= @tasks_due_by_now - @tasks_complete %></strong> of the <%= @tasks_due_by_now %> due by today <%= (@tasks_due_by_now - @tasks_complete) == 1 ? 'is' : 'are' %> still open.</span>
+    <% elsif @tasks_due_by_now.to_i.positive? %>
+      <span style="color:<%= notification_mail_accent('status:complete') %>;">You are level with the <%= @tasks_due_by_now %> due by today.</span>
+    <% end %>
+  </p>
+
+  <p style="<%= section_heading %> color:#6b7280;">Pace</p>
+  <%= render 'layouts/notification_mail/bar_chart', scale: @grade_task_total, rows: [
+        ['Due by today', @tasks_due_by_now, notification_mail_accent('status:not-started')],
+        ['Complete', @tasks_complete, notification_mail_accent('status:complete')]
+      ] %>
+<% end %>
+
+<% if @status_summary.present? %>
+  <p style="<%= section_heading %> color:#6b7280;">Every task, by status</p>
+  <%= render 'layouts/notification_mail/bar_chart', scale: @grade_task_total, rows: @status_summary.map { |status_key, label, count|
+        [label.to_s.capitalize, count, notification_mail_accent(notification_mail_status_category(status_key) || '')]
+      } %>
+<% end %>
+
+<p style="<%= section_heading %> color:#6b7280;">Whose move</p>
+<% standing_rows = [
+     [@waiting_on_tutor, 'with your tutor, waiting to be marked', notification_mail_accent('status:ready-for-feedback')],
+     [@needs_your_response, 'handed back for you to act on', notification_mail_accent('status:fix-and-resubmit')],
+     [@waiting_on_student, 'still with you in total', notification_mail_accent(overdue_count.positive? ? 'status:time-exceeded' : 'status:working-on-it')]
+   ] %>
+<%# A count of comments posted is not something a student can act on, so it only
+    appears when it is nought, where it is a prompt rather than a scoreboard. %>
+<% standing_rows << [0, 'comments posted this week - asking your tutor a question is the fastest way to get unstuck'] if @sent_comments.zero? %>
+<%= render 'layouts/notification_mail/stats', rows: standing_rows %>
+
+<% if @weeks_left.present? && @weeks_left.positive? %>
+  <%= render 'layouts/notification_mail/note', body: "#{@weeks_left} week#{'s' unless @weeks_left == 1} left in this unit." %>
+<% end %>
+
+<% if @project.portfolio_exists? %>
+  <%= render 'layouts/notification_mail/note', body: "Your portfolio is prepared.#{@portfolio_days_left.present? && @portfolio_days_left >= 0 ? " You can keep changing it for another #{@portfolio_days_left} day#{'s' unless @portfolio_days_left == 1}." : ''}" %>
+<% elsif @portfolio_days_left.present? && @portfolio_days_left.between?(0, 42) %>
+  <% portfolio_note = capture do %>
+    Your portfolio is not prepared yet and the deadline is
+    <strong><%= @portfolio_due.to_date.strftime('%a %-d %b') %></strong>,
+    <%= @portfolio_days_left.zero? ? 'today' : "in #{@portfolio_days_left} day#{'s' unless @portfolio_days_left == 1}" %>.
+  <% end %>
+  <%= render 'layouts/notification_mail/details', body: portfolio_note, category: @portfolio_days_left <= 14 ? 'due' : 'portfolio', label: 'Portfolio' %>
+<% end %>
 
 <p style="margin:24px 0 0 0;">
     Cheers, <br />
