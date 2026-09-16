@@ -4,19 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="x-apple-disable-message-reformatting">
-  <meta name="color-scheme" content="light dark">
-  <meta name="supported-color-schemes" content="light dark">
+  <%# One palette, always light. A dark variant only reaches the few clients that
+      honour a style block at all: Gmail and Outlook.com drop or rewrite it, and
+      several force their own inversion on top, which turned dark text on a dark
+      card. Declaring light only is also what stops Apple Mail auto-darkening a
+      template it would otherwise treat as dark-aware. %>
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title><%= message.subject %></title>
   <style type="text/css">
-    @media (prefers-color-scheme: dark) {
-      .ot-bg { background-color: #111318 !important; }
-      .ot-card { background-color: #1b1e25 !important; border-color: #2a2e37 !important; }
-      .ot-text, .ot-text p, .ot-text li, .ot-text td, .ot-text th { color: #e5e7eb !important; }
-      .ot-muted, .ot-muted a { color: #9ca3af !important; }
-      .ot-details { background-color: #232733 !important; border-color: #6b6bff !important; }
-      .ot-wordmark { color: #8a8aff !important; }
-      .ot-link { color: #8a8aff !important; }
-    }
+    :root { color-scheme: light only; supported-color-schemes: light; }
     @media only screen and (max-width: 620px) {
       .ot-pad { padding-left: 20px !important; padding-right: 20px !important; }
     }
