@@ -86,3 +86,45 @@ sync_teams_announcements:
 send_unit_session_reminders:
   cron: "every 5 minutes"
   class: "SendUnitSessionRemindersJob"
+
+# The student digest, once per cadence a student can choose.
+#
+# These three replace `0 7 * * 1 send_weekly_emails.sh` in .ci-setup/crontab,
+# which is deleted. That line ran the older per-unit mail, which is still there
+# and still works but is no longer on any schedule, because a student on both
+# would get the digest and a mail per unit in the same morning.
+#
+# Scheduled here and not in that crontab because the crontab is only installed
+# inside the pdfgen container, so a deployment without LaTeX has never sent a
+# summary at all. CheckUnitSimilarityJob above moved for the same reason.
+#
+# All three at 7am, which is the hour the weekly one has always used, so a
+# student who switches cadence sees the mail arrive at the same time of day. It
+# is early enough to be waiting when they start and late enough not to buzz a
+# phone overnight, which is the whole reason this is pinned to an hour instead
+# of running on an interval. Five minutes apart so that on a Monday the 1st the
+# three do not all land on the mailers queue at once, and so a log line says
+# which one ran.
+#
+# The hour is 7am wherever the Sidekiq process thinks it is, the same as
+# send_due_soon_reminders above. There is no timezone in this file and no
+# config.time_zone in the app, so TZ in the process environment decides.
+# development/api.env sets TZ=Australia/Melbourne; a deployment that leaves TZ
+# unset gets the image default of UTC and mails these in the evening.
+#
+# The 1st for the monthly run because it is the one day of the month every month
+# has, and a summary that arrives on the 1st covers the month that just ended.
+send_daily_digest_emails:
+  cron: "every day at 7am"
+  class: "SendDigestEmailsJob"
+  args: ["daily"]
+
+send_weekly_digest_emails:
+  cron: "every monday at 7:05am"
+  class: "SendDigestEmailsJob"
+  args: ["weekly"]
+
+send_monthly_digest_emails:
+  cron: "every month on the 1st at 7:10am"
+  class: "SendDigestEmailsJob"
+  args: ["monthly"]
