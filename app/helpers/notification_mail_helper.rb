@@ -116,10 +116,25 @@ module NotificationMailHelper
   # The callout behind a colour: the same hue mixed most of the way to white.
   # Derived rather than listed, so there is no second palette to drift.
   def notification_mail_tint(accent)
-    hex = accent.to_s.delete_prefix('#')
-    return '#f5f5ff' unless hex.length == 6
+    notification_mail_mix(accent, 255, 0.08) || '#f5f5ff'
+  end
 
-    mixed = hex.scan(/../).map { |pair| (pair.to_i(16) * 0.08 + 255 * 0.92).round }
+  # The same hue, darkened, for small text sitting on that tint. The status
+  # colours are built to carry white on a solid fill, which is a different job
+  # from carrying themselves on a pale wash: measured on the tint, the accents
+  # land near 4.1 against the 4.5 that 12px bold needs. Mixing a third of the
+  # way to black clears it without a second list of hexes to keep in step.
+  def notification_mail_text_accent(accent)
+    notification_mail_mix(accent, 0, 0.68) || '#1f2937'
+  end
+
+  # Blend a hex colour towards `towards` (0 for black, 255 for white), keeping
+  # `weight` of the original.
+  def notification_mail_mix(accent, towards, weight)
+    hex = accent.to_s.delete_prefix('#')
+    return nil unless hex.length == 6
+
+    mixed = hex.scan(/../).map { |pair| (pair.to_i(16) * weight + towards * (1 - weight)).round.clamp(0, 255) }
     format('#%02x%02x%02x', *mixed)
   end
 

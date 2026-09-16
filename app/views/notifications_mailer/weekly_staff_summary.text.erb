@@ -10,6 +10,8 @@ Nothing is waiting for your feedback.
 <% else %>
 <%= @data[:tasks_awaiting_feedback_count] %> task<%= "s" unless @data[:tasks_awaiting_feedback_count] == 1 %> <%= are_is(@data[:tasks_awaiting_feedback_count]) %> waiting for your feedback. The oldest was submitted <%= @data[:oldest_task_days] %> day<%= "s" unless @data[:oldest_task_days] == 1 %> ago.
 <% end %>
+Open your marking queue:
+<%= @doubtfire_host %>/units/<%= @unit.id %>/tasks/inbox
 
 YOUR WEEK
 * <%= @data[:received_comments] %> comment<%= "s" if @data[:received_comments] != 1 %> and pieces of feedback received

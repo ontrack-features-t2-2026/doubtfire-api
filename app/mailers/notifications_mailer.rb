@@ -1,6 +1,11 @@
 class NotificationsMailer < ApplicationMailer
   layout "notification_mail"
 
+  # Project#top_tasks slices its result to five. The number is not exposed by the
+  # model, so it is named here rather than written into the copy of two templates
+  # where nobody would find it again.
+  TOP_TASK_LIMIT = 5
+
   def add_general
     @doubtfire_host = Doubtfire::Application.config.institution[:host]
     @doubtfire_product_name = Doubtfire::Application.config.institution[:product_name]
@@ -100,10 +105,19 @@ class NotificationsMailer < ApplicationMailer
 
     email_with_name = address_with_name(@staff)
     convenor_email = address_with_name(@convenor)
-    subject = "#{@unit.name}: Weekly Summary"
+
+    # A distinct shape from the student subject, so the two never look like the
+    # same mail in the inbox of someone who is both.
+    waiting = @data[:tasks_awaiting_feedback_count].to_i
+    subject =
+      if waiting.positive?
+        "#{@unit.name} teaching: #{waiting} task#{'s' unless waiting == 1} waiting for your feedback"
+      else
+        "#{@unit.name} teaching: weekly summary"
+      end
 
     mail(
-      { to: email_with_name, subject: subject }.merge(
+      { to: email_with_name, subject: subject }.merge(bulk_list_headers).merge(
         outbound_sender_headers(development_from: convenor_email, reply_to: convenor_email)
       )
     )
@@ -134,21 +148,35 @@ class NotificationsMailer < ApplicationMailer
     @sent_comments = project.comments.where("user_id = :student_id AND task_comments.created_at > :start", student_id: @student.id, start: Time.zone.now - 7.days).count
 
     @top_tasks = project.top_tasks
-    @overdue_top = @top_tasks.select { |tt| tt[:reason] == :overdue }
-    @soon_top = @top_tasks.select { |tt| tt[:reason] == :soon }
-    @ahead_top = @top_tasks.select { |tt| tt[:reason] == :ahead }
+    @top_tasks_truncated = @top_tasks.count >= TOP_TASK_LIMIT
 
     # What the student can actually act on. Two cheap reads and one grouped
     # count, no query per task: the definitions the target grade asks for, the
-    # due date of each task the student already has, and how those tasks are
+    # target date of each task the student already has, and how those tasks are
     # spread across the statuses. top_tasks drops the date it sorted on, so the
     # dates are looked up here and matched back by task definition.
     assigned_defs = project.assigned_task_defs.select(:id, :target_date).to_a
     @grade_task_total = assigned_defs.count
-    @task_due_dates = project.tasks.each_with_object({}) do |task, dates|
-      dates[task.task_definition_id] = task.due_date
+    @task_due_dates = {}
+    status_by_definition = {}
+    project.tasks.each do |task|
+      @task_due_dates[task.task_definition_id] = task.due_date
+      status_by_definition[task.task_definition_id] = task.task_status_id
     end
     status_counts = project.assigned_tasks.group(:task_status_id).count
+
+    # top_tasks orders by target grade band and then by where the definition sits
+    # in the unit, never by date, because that is the order the dashboard wants.
+    # An email that says "your oldest" has to sort by date itself, and the list,
+    # the lead and the subject all have to read the same order.
+    target_date_for = lambda do |entry|
+      @task_due_dates[entry[:task_definition].id] || entry[:task_definition].target_date
+    end
+    by_date = ->(entries) { entries.sort_by { |entry| target_date_for.call(entry) || Date.new(9999, 1, 1) } }
+
+    @overdue_top = by_date.call(@top_tasks.select { |tt| tt[:reason] == :overdue })
+    @soon_top = by_date.call(@top_tasks.select { |tt| tt[:reason] == :soon })
+    @ahead_top = by_date.call(@top_tasks.select { |tt| tt[:reason] == :ahead })
 
     # Ready for feedback is the one status that is not the student's move. Every
     # other incomplete status is, which is the split the dashboard makes too.
@@ -193,12 +221,35 @@ class NotificationsMailer < ApplicationMailer
     not_started = status_counts.fetch(TaskStatus.not_started.id, 0) + [never_opened, 0].max
     @status_summary << [:not_started, 'not opened yet', not_started] if not_started.positive?
 
-    # Pace. How much of the grade was meant to be done by today, against how much
-    # is. Both come from rows already in memory.
-    @tasks_due_by_now = assigned_defs.count do |definition|
-      due = @task_due_dates[definition.id] || definition.target_date
-      due.present? && due.to_date <= Time.zone.today
+    # Pace, against the target schedule rather than against the hard deadline.
+    # The date on a task is its target date, adjusted for any extension, which is
+    # not the same thing as TaskDefinition#due_date, the date after which work
+    # stops being accepted. The copy has to say target wherever this is the
+    # number behind it.
+    #
+    # The comparison is strictly before today, matching top_tasks, so a task
+    # whose target date is today is not counted as having slipped.
+    complete_id = TaskStatus.complete.id
+    passed, behind = 0, 0
+    assigned_defs.each do |definition|
+      target = @task_due_dates[definition.id] || definition.target_date
+      next if target.blank? || target.to_date >= Time.zone.today
+
+      passed += 1
+      behind += 1 unless status_by_definition[definition.id] == complete_id
     end
+    @targets_passed = passed
+
+    # Tasks past their target date and still not complete. This is the honest
+    # total, and it is not the same as the overdue list above: task_definitions_
+    # and_status keeps only seven statuses, so a task sitting in time_exceeded,
+    # feedback_exceeded, attention_required, rediscuss or assess_in_portfolio is
+    # never eligible for that list however far past its date it is, and neither
+    # is one whose target grade is not among the unit's grade values. Without
+    # this number the email can say nothing is overdue and then draw a chart
+    # that disagrees.
+    @behind_target = behind
+    @on_target = passed - behind
 
     unit_end = project.unit.end_date
     @weeks_left = unit_end.present? ? ((unit_end.to_date - Time.zone.today).to_f / 7).ceil : nil
@@ -207,10 +258,24 @@ class NotificationsMailer < ApplicationMailer
 
     email_with_name = address_with_name(@student)
     tutor_email = address_with_name(@tutor)
-    subject = "#{project.unit.name}: Weekly Summary"
+
+    # Every state used to send the same subject, so a student who filtered the
+    # quiet weeks lost the week they fell behind along with them. The subject now
+    # leads on whatever is worst, and only says "Weekly summary" when there is
+    # genuinely nothing outstanding.
+    subject =
+      if @behind_target.positive?
+        "#{project.unit.name}: #{@behind_target} task#{'s' unless @behind_target == 1} behind target"
+      elsif @needs_your_response.positive?
+        "#{project.unit.name}: #{@needs_your_response} task#{'s' unless @needs_your_response == 1} waiting on you"
+      elsif @soon_top.present?
+        "#{project.unit.name}: #{@soon_top.first[:task_definition].abbreviation} due this week"
+      else
+        "#{project.unit.name}: Weekly summary"
+      end
 
     mail(
-      { to: email_with_name, subject: subject }.merge(
+      { to: email_with_name, subject: subject }.merge(bulk_list_headers).merge(
         outbound_sender_headers(development_from: tutor_email, reply_to: tutor_email)
       )
     )
@@ -250,6 +315,22 @@ class NotificationsMailer < ApplicationMailer
   helper_method :this_these
 
   private
+
+  # The weekly summaries go to every student and every staff member of every
+  # active unit on a schedule, which is bulk mail whatever it is about. Without
+  # List-Unsubscribe the only way out is a body link behind a login, and Gmail
+  # offers "report spam" where it would otherwise offer "unsubscribe".
+  #
+  # List-Unsubscribe-Post is deliberately not set. One-Click promises a URL that
+  # accepts an unauthenticated POST and acts on it, and the preferences page this
+  # points at is a logged-in page; advertising One-Click against it would have
+  # Gmail POST to something that cannot honour it, which is worse than not
+  # claiming it. It can be added the day a one-click endpoint exists.
+  def bulk_list_headers
+    return {} if @unsubscribe_url.blank?
+
+    { 'List-Unsubscribe' => "<#{@unsubscribe_url}>" }
+  end
 
   # Build the recipient or sender address through Mail so a display name that
   # contains a quote or a comma cannot break out of the name and inject a second

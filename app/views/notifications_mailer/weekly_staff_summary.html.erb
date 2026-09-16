@@ -1,3 +1,4 @@
+<% section_heading = 'margin:0 0 12px 0; font-size:14px; line-height:1.4; font-weight:600; letter-spacing:0.4px; text-transform:uppercase;' %>
 <% content_for :icon do %>summary<% end %>
 <% week_range = "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")} to #{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}" %>
 <% content_for :preheader do %><%= week_range %><% end %>
@@ -29,7 +30,11 @@
   <% end %>
   <%= render 'layouts/notification_mail/details', body: waiting_summary, category: waiting_category, label: 'Waiting on you' %>
 
-  <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Your week</p>
+  <%# The only link in this email used to be Unsubscribe. It told a tutor how
+      many tasks were waiting and gave them no way to reach any of them. %>
+  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}/units/#{@unit.id}/tasks/inbox", label: 'Open your marking queue' %>
+
+  <h2 style="<%= section_heading %> color:#6b7280;">Your week</h2>
   <%= render 'layouts/notification_mail/stats', rows: [
         [@data[:received_comments], "comment#{'s' if @data[:received_comments] != 1} and pieces of feedback received"],
         [@data[:sent_comments], "comment#{'s' if @data[:sent_comments] != 1} and pieces of feedback posted"],
@@ -38,7 +43,7 @@
         [@data[:weekly_engagements_count], "state change#{'s' unless @data[:weekly_engagements_count] == 1} on your students' tasks"]
       ] %>
 
-  <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">Across the unit</p>
+  <h2 style="<%= section_heading %> color:#6b7280;">Across the unit</h2>
   <%= render 'layouts/notification_mail/stats', rows: [
         [@summary_stats[:unit_week_comments], "text comment#{'s' if @summary_stats[:unit_week_comments] != 1} made"],
         [@summary_stats[:unit_week_engagements], "task state change#{'s' unless @summary_stats[:unit_week_engagements] == 1}"]
@@ -69,29 +74,29 @@
   <%# Create a table for each tutorial stream %>
   <% @summary_stats[:tutorial_streams].each do |tutorial_stream, tutorial_stream_data | %>
   <% next unless tutorial_stream_data[:stream_linked_to_task_definition] %>
-  <p style="margin:0 0 12px 0; font-size:14px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; color:#6b7280;">
+  <h2 style="<%= section_heading %> color:#6b7280;">
     Tutorial stream: <%= tutorial_stream.name %>
-  </p>
+  </h2>
   <%# Skip table if no tutorials%>
   <% unless tutorial_stream_data.nil? || tutorial_stream_data[:tutorials].nil?%>
       <div style="overflow-x:auto;"><table role="table" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; margin:0 0 20px 0; font-size:13px; line-height:1.4;">
           <thead>
               <tr>
-                  <th rowspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Name</th>
-                  <th rowspan="2" style="width:10%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Students</th>
-                  <th colspan="2" style="width:20%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Assessments</th>
-                  <th colspan="2" style="width:20%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Comments</th>
-                  <th rowspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Awaiting Feedback</th>
-                  <th rowspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Oldest Task</th>
-                  <th colspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Discussions</th>
+                  <th rowspan="2" scope="col" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Name</th>
+                  <th rowspan="2" scope="col" style="width:10%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Students</th>
+                  <th colspan="2" scope="colgroup" style="width:20%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Assessments</th>
+                  <th colspan="2" scope="colgroup" style="width:20%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Comments</th>
+                  <th rowspan="2" scope="col" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Awaiting Feedback</th>
+                  <th rowspan="2" scope="col" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Oldest Task</th>
+                  <th colspan="2" scope="colgroup" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Discussions</th>
               </tr>
               <tr>
-                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
-                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
-                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
-                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
-                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
-                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
+                  <th scope="col" style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
+                  <th scope="col" style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
+                  <th scope="col" style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
+                  <th scope="col" style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
+                  <th scope="col" style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
+                  <th scope="col" style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
               </tr>
           </thead>
           <tbody>

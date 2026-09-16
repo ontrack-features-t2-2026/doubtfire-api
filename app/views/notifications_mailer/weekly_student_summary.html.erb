@@ -18,7 +18,7 @@
     days = (date.to_date - Time.zone.today).to_i
     when_text =
       if days.negative?
-        "#{days.abs} day#{'s' unless days.abs == 1} late"
+        "#{days.abs} day#{'s' unless days.abs == 1} past"
       elsif days.zero?
         'today'
       elsif days == 1
@@ -63,15 +63,26 @@
   <% oldest = @overdue_top.first[:task_definition] %>
   <% focus = capture do %>
     <p style="margin:0 0 6px 0;"><strong style="font-size:18px;"><%= oldest.abbreviation %> <%= oldest.name %></strong></p>
-    <p style="margin:0;">is your oldest overdue task, due <%= due_phrase.call(due_date_for.call(oldest)) %>. Start there.</p>
+    <p style="margin:0;">is the one furthest past its target date, targeted <%= due_phrase.call(due_date_for.call(oldest)) %>. Start there.</p>
   <% end %>
   <%= render 'layouts/notification_mail/details', body: focus, category: 'overdue', label: 'Start here' %>
+<% elsif @behind_target.to_i.positive? %>
+  <%# Nothing reached the list above, but tasks have still slipped past their
+      target date. They are in a state the deadline list does not select for, so
+      saying "nothing is overdue" here would contradict the chart below. %>
+  <% slipped = capture do %>
+    <p style="margin:0;"><strong style="font-size:20px;"><%= @behind_target %></strong>
+    task<%= "s" unless @behind_target == 1 %> <%= @behind_target == 1 ? 'is' : 'are' %> past
+    <%= @behind_target == 1 ? 'its' : 'their' %> target date and not finished. None of them is
+    on the list below, so open your dashboard to find them.</p>
+  <% end %>
+  <%= render 'layouts/notification_mail/details', body: slipped, category: 'overdue', label: 'Behind the target schedule' %>
 <% elsif next_due.present? %>
   <% focus = capture do %>
     <p style="margin:0 0 6px 0;"><strong style="font-size:18px;"><%= next_due[:task_definition].abbreviation %> <%= next_due[:task_definition].name %></strong></p>
-    <p style="margin:0;">is due <%= due_phrase.call(due_date_for.call(next_due[:task_definition])) %>. Nothing is overdue.</p>
+    <p style="margin:0;">is next, targeted <%= due_phrase.call(due_date_for.call(next_due[:task_definition])) %>. Nothing has slipped.</p>
   <% end %>
-  <%= render 'layouts/notification_mail/details', body: focus, category: soon_count.positive? ? 'due' : 'summary', label: 'Next deadline' %>
+  <%= render 'layouts/notification_mail/details', body: focus, category: soon_count.positive? ? 'due' : 'summary', label: 'Next target date' %>
 <%# Nothing claims the student is done unless the counts below agree. top_tasks
     covers only the statuses it selects for, so it going empty is not on its own
     proof that there is no work left, and an email must not contradict its own
@@ -82,17 +93,17 @@
   <%= render 'layouts/notification_mail/details', body: 'Every task is done. Prepare your portfolio to finish up.', category: 'portfolio', label: 'Almost there' %>
 <% else %>
   <% steady = capture do %>
-    <p style="margin:0;">Nothing is overdue and nothing falls due this week.
+    <p style="margin:0;">Nothing has slipped past its target date and nothing is targeted this week.
     <strong><%= @waiting_on_student %></strong> task<%= "s" unless @waiting_on_student == 1 %> <%= @waiting_on_student == 1 ? 'is' : 'are' %> still with you, so this is a good week to get ahead.</p>
   <% end %>
-  <%= render 'layouts/notification_mail/details', body: steady, category: 'summary', label: 'Nothing due this week' %>
+  <%= render 'layouts/notification_mail/details', body: steady, category: 'summary', label: 'Nothing targeted this week' %>
 <% end %>
 
 <%# Each task with its own date and its own status colour, so the list answers
     what is late, what is next and whose move it is without a legend. %>
 <% task_groups = [
-     ['Overdue', @overdue_top, 'time-exceeded'],
-     ['Due in the next week', @soon_top, 'working-on-it'],
+     ['Past target date', @overdue_top, 'time-exceeded'],
+     ['Target date this week', @soon_top, 'working-on-it'],
      ['Get ahead', @ahead_top, nil]
    ] %>
 <% task_groups.each do |group_label, group_tasks, group_status| %>
@@ -103,14 +114,14 @@
       <% definition = tt[:task_definition] %>
       <% status_category = notification_mail_status_category(tt[:status]) %>
       <tr>
-        <td valign="top" width="96" style="width:96px; padding:<%= index.zero? ? '0' : '12px' %> 14px 12px 0; border-bottom:1px solid #e5e7eb;">
-          <span style="display:inline-block; padding:3px 9px; border:1px solid #e5e7eb; border-radius:4px; background-color:#f9fafb; font-size:13px; line-height:1.3; font-weight:700; color:#374151;"><%= definition.abbreviation %></span>
-        </td>
+        <td class="ot-code" valign="top" width="96" style="width:96px; padding:<%= index.zero? ? '0' : '12px' %> 14px 12px 0; border-bottom:1px solid #e5e7eb;">
+          <%= render 'layouts/notification_mail/code_chip', code: definition.abbreviation %>
+                </td>
         <td valign="top" style="padding:<%= index.zero? ? '0' : '12px' %> 0 12px 0; border-bottom:1px solid #e5e7eb; font-size:15px; line-height:1.5;">
           <a href="<%= @doubtfire_host %>/projects/<%= @project.id %>/dashboard/<%= ERB::Util.url_encode(definition.abbreviation) %>" class="ot-link" style="color:#3939ff; text-decoration:underline;"><%= definition.name %></a>
           <br />
           <span class="ot-muted" style="font-size:13px; color:#6b7280;">
-            Due <%= due_phrase.call(due_date_for.call(definition)) %><% if status_category.present? %> &middot; <span style="color:<%= notification_mail_accent(status_category) %>; font-weight:600;"><%= tt[:status].to_s.tr('_', ' ').capitalize %></span><% end %>
+            Target <%= due_phrase.call(due_date_for.call(definition)) %><% if status_category.present? %> &middot; <span style="color:<%= notification_mail_accent(status_category) %>; font-weight:600;"><%= tt[:status].to_s.tr('_', ' ').capitalize %></span><% end %>
           </span>
         </td>
       </tr>
@@ -118,8 +129,8 @@
   </table>
 <% end %>
 
-<% if @top_tasks.to_a.count >= 5 %>
-  <%= render 'layouts/notification_mail/note', body: 'These are the five most urgent. Your dashboard has the rest.' %>
+<% if @top_tasks_truncated %>
+  <%= render 'layouts/notification_mail/note', body: "These are the #{NotificationsMailer::TOP_TASK_LIMIT} most urgent. Your dashboard has the rest." %>
 <% end %>
 
 <% if @needs_your_response.to_i.positive? %>
@@ -136,36 +147,36 @@
     than listed. The comment counts this block used to carry were a scoreboard,
     not something anyone could act on. %>
 <% if @grade_task_total.to_i.positive? %>
-  <p style="<%= section_heading %> color:#6b7280;">Your <%= @project.target_grade_desc %> target</p>
+  <h2 style="<%= section_heading %> color:#6b7280;">Your <%= @project.target_grade_desc %> target</h2>
   <%= render 'layouts/notification_mail/progress', value: @tasks_complete, total: @grade_task_total, accent: notification_mail_accent('status:complete') %>
   <p style="margin:0 0 20px 0; font-size:15px; line-height:1.5;">
     <strong><%= @tasks_complete %> of <%= @grade_task_total %></strong> tasks complete.
-    <% if @tasks_due_by_now.to_i > @tasks_complete.to_i %>
-      <span style="color:<%= notification_mail_accent('status:time-exceeded') %>;"><strong><%= @tasks_due_by_now - @tasks_complete %></strong> of the <%= @tasks_due_by_now %> due by today <%= (@tasks_due_by_now - @tasks_complete) == 1 ? 'is' : 'are' %> still open.</span>
-    <% elsif @tasks_due_by_now.to_i.positive? %>
-      <span style="color:<%= notification_mail_accent('status:complete') %>;">You are level with the <%= @tasks_due_by_now %> due by today.</span>
+    <% if @behind_target.to_i.positive? %>
+      <span style="color:<%= notification_mail_text_accent(notification_mail_accent('status:time-exceeded')) %>;"><strong><%= @behind_target %></strong> of the <%= @targets_passed %> whose target date has passed <%= @behind_target == 1 ? 'is' : 'are' %> still open.</span>
+    <% elsif @targets_passed.to_i.positive? %>
+      <span style="color:<%= notification_mail_text_accent(notification_mail_accent('status:complete')) %>;">All <%= @targets_passed %> whose target date has passed are done.</span>
     <% end %>
   </p>
 
-  <p style="<%= section_heading %> color:#6b7280;">Pace</p>
+  <h2 style="<%= section_heading %> color:#6b7280;">Pace</h2>
   <%= render 'layouts/notification_mail/bar_chart', scale: @grade_task_total, rows: [
-        ['Due by today', @tasks_due_by_now, notification_mail_accent('status:not-started')],
-        ['Complete', @tasks_complete, notification_mail_accent('status:complete')]
+        ['Target date passed', @targets_passed, notification_mail_accent('status:not-started')],
+        ['Of those, finished', @on_target, notification_mail_accent('status:complete')]
       ] %>
 <% end %>
 
 <% if @status_summary.present? %>
-  <p style="<%= section_heading %> color:#6b7280;">Every task, by status</p>
+  <h2 style="<%= section_heading %> color:#6b7280;">Every task, by status</h2>
   <%= render 'layouts/notification_mail/bar_chart', scale: @grade_task_total, rows: @status_summary.map { |status_key, label, count|
         [label.to_s.capitalize, count, notification_mail_accent(notification_mail_status_category(status_key) || '')]
       } %>
 <% end %>
 
-<p style="<%= section_heading %> color:#6b7280;">Whose move</p>
+<h2 style="<%= section_heading %> color:#6b7280;">Whose move</h2>
 <% standing_rows = [
      [@waiting_on_tutor, 'with your tutor, waiting to be marked', notification_mail_accent('status:ready-for-feedback')],
      [@needs_your_response, 'handed back for you to act on', notification_mail_accent('status:fix-and-resubmit')],
-     [@waiting_on_student, 'still with you in total', notification_mail_accent(overdue_count.positive? ? 'status:time-exceeded' : 'status:working-on-it')]
+     [@waiting_on_student, 'still with you in total', notification_mail_accent('status:working-on-it')]
    ] %>
 <%# A count of comments posted is not something a student can act on, so it only
     appears when it is nought, where it is a prompt rather than a scoreboard. %>
