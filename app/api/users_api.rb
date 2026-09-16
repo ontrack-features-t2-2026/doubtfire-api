@@ -112,6 +112,18 @@ class UsersApi < Grape::API
         error!({ error: 'Sign-in email is managed by your institution and cannot be changed here.' }, 422)
       end
 
+      # Names come from the same asserted identity as the sign-in email. Without
+      # this a student could rename themselves permanently, because SAML/AAF only
+      # writes first/last name when the account is first created, so a later
+      # sign-in never restores what the institution holds.
+      name_changed =
+        (params[:user].key?(:first_name) && params[:user][:first_name].to_s != user.first_name.to_s) ||
+        (params[:user].key?(:last_name) && params[:user][:last_name].to_s != user.last_name.to_s)
+
+      if name_changed && !AuthenticationHelpers.db_auth?
+        error!({ error: 'Your name is managed by your institution and cannot be changed here.' }, 422)
+      end
+
       if params[:user].key?(:student_id) &&
          params[:user][:student_id].to_s != user.student_id.to_s &&
          (change_self || !AuthenticationHelpers.db_auth?)
