@@ -1,4 +1,8 @@
 class ApplicationMailer < ActionMailer::Base
+  # Mailer views do not pick up app helpers on their own, and the notification
+  # layout needs the shared colour and glyph map for every message it renders.
+  helper :notification_mail
+
   private
 
   # Azure Communication Services only accepts a verified sender in From.
