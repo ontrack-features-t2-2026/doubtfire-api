@@ -309,12 +309,220 @@ class NotificationsMailer < ApplicationMailer
     end
   end
 
+  # One email covering every unit a student is in, at the cadence they asked
+  # for. This is a sibling of weekly_student_summary, not a replacement: that one
+  # still sends per unit and still carries the unit's convenor in From and the
+  # unit's tutor in Reply-To, which a combined email cannot.
+  #
+  # The cadence is passed in rather than read off the user, so the scheduler owns
+  # who gets mailed and when, and this owns what the mail says. A run selects its
+  # recipients, then calls this once per student with the cadence it is running.
+  def student_digest(user, cadence = 'weekly')
+    return nil if user.nil?
+
+    add_general
+
+    @cadence = DIGEST_CADENCES.include?(cadence.to_s) ? cadence.to_s : 'weekly'
+    @window = DIGEST_WINDOWS.fetch(@cadence)
+    @window_start = @window[:length].ago
+    @student = user
+
+    # What each cadence is for. Daily is a deadline list and nothing else, short
+    # enough to read on a lock screen. Weekly adds the standing picture. Monthly
+    # drops deadlines entirely: a date rendered as "in two days" is read up to a
+    # month after it was true, which teaches the reader that the email lies.
+    @show_deadlines = @cadence != 'monthly'
+    @show_standing = @cadence != 'daily'
+    @show_trend = @cadence == 'monthly'
+
+    projects = Project.where(user: user, enrolled: true)
+                      .joins(:unit).where(units: { active: true })
+                      .includes(:unit)
+                      .to_a
+    @units = projects.filter_map { |project| digest_unit_summary(project) }
+    return nil if @units.empty?
+
+    # A student's real question does not respect unit boundaries, so the thing
+    # they open the mail for is one list across all of them, in date order.
+    @next_up = @units
+               .flat_map { |summary| (summary[:overdue] + summary[:soon]).map { |entry| entry.merge(unit_summary: summary) } }
+               .sort_by { |entry| entry[:target_date] || Date.new(9999, 1, 1) }
+               .first(DIGEST_NEXT_UP_LIMIT)
+
+    @overdue_total = @units.sum { |summary| summary[:behind_target] }
+    @needs_response_total = @units.sum { |summary| summary[:needs_your_response] }
+    @waiting_on_tutor_total = @units.sum { |summary| summary[:waiting_on_tutor] }
+    @tasks_complete_total = @units.sum { |summary| summary[:tasks_complete] }
+    @grade_task_total = @units.sum { |summary| summary[:grade_task_total] }
+    @completed_in_window = @units.sum { |summary| summary[:completed_in_window] }
+    @comments_in_window = @units.sum { |summary| summary[:comments_in_window] }
+    @remaining_total = [@grade_task_total - @tasks_complete_total, 0].max
+
+    # The monthly projection. The soonest unit end date is the one that binds, so
+    # that is the horizon, and the rate is what they actually did this window.
+    soonest_end = @units.filter_map { |summary| summary[:unit].end_date }.min
+    @months_left = soonest_end.present? ? ((soonest_end.to_date - Time.zone.today).to_f / 30).round(1) : nil
+    if @show_trend && @months_left.present? && @months_left.positive?
+      @projected_finish = (@completed_in_window * @months_left).floor
+      @projected_shortfall = [@remaining_total - @projected_finish, 0].max
+    end
+
+    # From and Reply-To. The per-unit mail could put a real person in both
+    # because it only ever spoke for one unit. This one spans several, each with
+    # its own convenor and its own tutor, and picking any of them would send a
+    # reply about one unit to the staff of another. So the institution sender
+    # carries it, no Reply-To is set, and every unit block names that unit's
+    # tutor with a mailto beside it. That is more correct than the single header
+    # ever was, not less.
+    from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
+
+    mail(
+      { to: address_with_name(user), subject: digest_subject }.merge(bulk_list_headers).merge(
+        outbound_sender_headers(development_from: from_address)
+      )
+    )
+  end
+
   helper_method :top_task_desc
   helper_method :were_was
   helper_method :are_is
   helper_method :this_these
 
   private
+
+  DIGEST_CADENCES = %w[daily weekly monthly].freeze
+  DIGEST_NEXT_UP_LIMIT = 6
+
+  DIGEST_WINDOWS = {
+    'daily' => { length: 1.day, noun: 'today', since: 'since yesterday' },
+    'weekly' => { length: 7.days, noun: 'this week', since: 'this week' },
+    'monthly' => { length: 30.days, noun: 'this month', since: 'over the last month' }
+  }.freeze
+
+  # Everything one unit contributes to the digest. Same shape as the figures the
+  # per-unit weekly builds, so the two agree, but every window here comes from
+  # the cadence rather than from a hardcoded seven days.
+  def digest_unit_summary(project)
+    unit = project.unit
+    return nil if unit.nil?
+
+    assigned_defs = project.assigned_task_defs.select(:id, :target_date).to_a
+    return nil if assigned_defs.empty?
+
+    due_dates = {}
+    status_by_definition = {}
+    project.tasks.each do |task|
+      due_dates[task.task_definition_id] = task.due_date
+      status_by_definition[task.task_definition_id] = task.task_status_id
+    end
+    status_counts = project.assigned_tasks.group(:task_status_id).count
+
+    complete_id = TaskStatus.complete.id
+    targets_passed = 0
+    behind_target = 0
+    assigned_defs.each do |definition|
+      target = due_dates[definition.id] || definition.target_date
+      next if target.blank? || target.to_date >= Time.zone.today
+
+      targets_passed += 1
+      behind_target += 1 unless status_by_definition[definition.id] == complete_id
+    end
+
+    returned = [
+      TaskStatus.fix_and_resubmit, TaskStatus.redo, TaskStatus.discuss, TaskStatus.rediscuss,
+      TaskStatus.demonstrate, TaskStatus.feedback_exceeded, TaskStatus.attention_required
+    ].sum { |status| status_counts.fetch(status.id, 0) }
+
+    grade_task_total = assigned_defs.count
+    tasks_complete = status_counts.fetch(complete_id, 0)
+    waiting_on_tutor = status_counts.fetch(TaskStatus.ready_for_feedback.id, 0)
+
+    entries = project.top_tasks.map do |entry|
+      definition = entry[:task_definition]
+      entry.merge(
+        project: project,
+        unit: unit,
+        target_date: due_dates[definition.id] || definition.target_date
+      )
+    end
+    by_date = ->(list) { list.sort_by { |entry| entry[:target_date] || Date.new(9999, 1, 1) } }
+
+    {
+      project: project,
+      unit: unit,
+      tutor: project.main_convenor_user,
+      overdue: by_date.call(entries.select { |entry| entry[:reason] == :overdue }),
+      soon: by_date.call(entries.select { |entry| entry[:reason] == :soon }),
+      ahead: by_date.call(entries.select { |entry| entry[:reason] == :ahead }),
+      grade_task_total: grade_task_total,
+      tasks_complete: tasks_complete,
+      waiting_on_tutor: waiting_on_tutor,
+      needs_your_response: returned,
+      waiting_on_student: [grade_task_total - tasks_complete - waiting_on_tutor, 0].max,
+      targets_passed: targets_passed,
+      behind_target: behind_target,
+      status_summary: digest_status_summary(status_counts, grade_task_total),
+      # Both of these used to be pinned to seven days whatever the caller wanted,
+      # which would have made them wrong rather than stale in a daily email.
+      completed_in_window: project.task_engagements
+                                  .where(engagement: TaskStatus.complete.name)
+                                  .where('task_engagements.engagement_time >= ?', @window_start)
+                                  .count,
+      comments_in_window: project.comments
+                                 .where('task_comments.user_id = :uid AND task_comments.created_at >= :start',
+                                        uid: project.user_id, start: @window_start)
+                                 .count
+    }
+  end
+
+  def digest_status_summary(status_counts, grade_task_total)
+    ordered = [
+      [TaskStatus.complete, 'complete'],
+      [TaskStatus.ready_for_feedback, 'with your tutor to mark'],
+      [TaskStatus.fix_and_resubmit, 'to fix and resubmit'],
+      [TaskStatus.redo, 'to redo'],
+      [TaskStatus.discuss, 'to talk through with your tutor'],
+      [TaskStatus.rediscuss, 'to talk through again'],
+      [TaskStatus.demonstrate, 'to demonstrate'],
+      [TaskStatus.feedback_exceeded, 'out of feedback attempts'],
+      [TaskStatus.attention_required, 'needing attention'],
+      [TaskStatus.time_exceeded, 'past the deadline'],
+      [TaskStatus.assess_in_portfolio, 'to carry into your portfolio'],
+      [TaskStatus.fail, 'marked fail'],
+      [TaskStatus.need_help, 'where you asked for help'],
+      [TaskStatus.working_on_it, 'you are working on']
+    ]
+    summary = ordered.filter_map do |status, label|
+      count = status_counts.fetch(status.id, 0)
+      [status.status_key, label, count] if count.positive?
+    end
+    never_opened = grade_task_total - status_counts.values.sum
+    not_started = status_counts.fetch(TaskStatus.not_started.id, 0) + [never_opened, 0].max
+    summary << [:not_started, 'not opened yet', not_started] if not_started.positive?
+    summary
+  end
+
+  # A subject that says which of the three this is and what state the student is
+  # in, so a filter on the quiet ones cannot swallow the week they fall behind.
+  def digest_subject
+    scope = "#{@doubtfire_product_name} #{@window[:noun]}"
+
+    if @show_trend
+      return "#{scope}: #{@completed_in_window} task#{'s' unless @completed_in_window == 1} finished" if @completed_in_window.positive?
+
+      return "#{scope}: nothing finished yet"
+    end
+
+    if @overdue_total.positive?
+      "#{scope}: #{@overdue_total} task#{'s' unless @overdue_total == 1} behind target"
+    elsif @needs_response_total.positive?
+      "#{scope}: #{@needs_response_total} task#{'s' unless @needs_response_total == 1} waiting on you"
+    elsif @next_up.present?
+      "#{scope}: #{@next_up.first[:task_definition].abbreviation} next in #{@next_up.first[:unit].code}"
+    else
+      "#{scope}: nothing outstanding"
+    end
+  end
 
   # The weekly summaries go to every student and every staff member of every
   # active unit on a schedule, which is bulk mail whatever it is about. Without
