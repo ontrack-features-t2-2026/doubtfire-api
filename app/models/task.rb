@@ -1643,11 +1643,23 @@ class Task < ApplicationRecord
   def notify_comment_recipient(comment)
     return if comment.recipient.blank?
 
+    # An automated comment is stored against the tutor because a comment needs an
+    # author, but saying they wrote it is not true and reads as a person having
+    # replied. Name OnTrack instead, and use its own event so a client can tell
+    # the two apart without matching on the text.
+    automated = comment.respond_to?(:automated?) && comment.automated?
+    message =
+      if automated
+        "OnTrack added a note to #{task_definition.abbreviation} in #{unit.code}."
+      else
+        "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}."
+      end
+
     NotificationService.notify(
       user: comment.recipient,
       type: 'feedback',
-      event: 'task_comment_created',
-      message: "#{comment.user.name} commented on #{task_definition.abbreviation} in #{unit.code}.",
+      event: automated ? 'task_automated_comment_created' : 'task_comment_created',
+      message: message,
       link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}/feedback",
       notifiable: comment
     )

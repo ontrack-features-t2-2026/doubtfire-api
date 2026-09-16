@@ -82,7 +82,12 @@ class Notification < ApplicationRecord
     @target_ids ||= resolve_target_ids
   end
 
-  STUDENT_FEEDBACK_EVENTS = %w[task_comment_created discussion_request_created extension_assessed].freeze
+  STUDENT_FEEDBACK_EVENTS = %w[
+    task_comment_created
+    task_automated_comment_created
+    discussion_request_created
+    extension_assessed
+  ].freeze
   PORTFOLIO_EVENTS = %w[portfolio_received portfolio_submitted].freeze
 
   # The in-app page this notification opens, for the person it was sent to.
