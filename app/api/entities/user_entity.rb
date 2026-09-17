@@ -7,6 +7,7 @@ module Entities
     expose :last_name
     expose :username
     expose :nickname
+    expose :display_name
     expose :receive_task_notifications, unless: :minimal
     expose :receive_portfolio_notifications, unless: :minimal
     expose :receive_feedback_notifications, unless: :minimal

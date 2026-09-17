@@ -102,4 +102,37 @@ class UserTest < ActiveSupport::TestCase
     assert_nil user.theme_preference
     assert_nil user.theme_preference_updated_at
   end
+
+  def test_display_name_uses_nickname_when_present
+    user = FactoryBot.build(
+      :user,
+      first_name: 'Elizabeth',
+      last_name: 'Smith',
+      nickname: 'Liz'
+    )
+
+    assert_equal 'Liz Smith', user.display_name
+  end
+
+  def test_display_name_falls_back_to_legal_first_name
+    user = FactoryBot.build(
+      :user,
+      first_name: 'Elizabeth',
+      last_name: 'Smith',
+      nickname: nil
+    )
+
+    assert_equal 'Elizabeth Smith', user.display_name
+  end
+
+  def test_display_name_ignores_blank_nickname
+    user = FactoryBot.build(
+      :user,
+      first_name: 'Elizabeth',
+      last_name: 'Smith',
+      nickname: '   '
+    )
+
+    assert_equal 'Elizabeth Smith', user.display_name
+  end
 end

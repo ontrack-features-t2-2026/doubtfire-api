@@ -438,6 +438,19 @@ class User < ApplicationRecord
     auth_tokens.where("auth_token_expiry > :now", now: Time.zone.now)
   end
 
+  def self.display_name_for(first_name:, last_name:, nickname: nil)
+    preferred_first_name = nickname.to_s.strip.presence || first_name.to_s.strip
+    [preferred_first_name, last_name.to_s.strip].reject(&:blank?).join(' ')
+  end
+
+  def display_name
+    self.class.display_name_for(
+      first_name: first_name,
+      last_name: last_name,
+      nickname: nickname
+    )
+  end
+
   def name
     fn = first_name.split.first
     # fn = nickname
