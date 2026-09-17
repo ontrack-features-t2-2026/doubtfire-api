@@ -21,6 +21,8 @@ Doubtfire is a feedback-driven learning support system.
 
 ## Getting started
 
+Ruby 3.4.10 is required; the version is specified in `.ruby-version`.
+
 See [Doubtfire Deploy](https://github.com/doubtfire-lms/doubtfire-deploy) for instructions on deploying, and contributing, to the Doubtfire project.
 
 The legacy root `docker-compose.yml` defaults to local database authentication.
