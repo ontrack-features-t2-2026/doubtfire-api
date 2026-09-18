@@ -613,7 +613,60 @@ class UnitsTest < ActiveSupport::TestCase
     end
   end
 
-  def test_sso_staff_identity_is_read_only_while_genuine_settings_still_save
+  # MISC-PN03: preferred-name fallback test
+  def test_preferred_name_can_be_blank_and_falls_back_safely
+    with_auth_method(:saml) do
+      user = FactoryBot.create(
+        :user,
+        first_name: 'Shaashwat',
+        last_name: 'Sharma',
+        nickname: 'Preferred'
+      )
+      add_auth_header_for(user: user)
+
+      put_json "/api/users/#{user.id}", {
+        user: {
+          email: user.email,
+          student_id: user.student_id,
+          nickname: ''
+        }
+      }
+
+      assert_equal 200, last_response.status
+      assert_equal '', user.reload.nickname
+      assert_equal 'Shaashwat', user.first_name
+      assert_equal 'Sharma', user.last_name
+    end
+  end
+
+  # MISC-PN03: duplicate preferred-name privacy test
+  def test_duplicate_preferred_names_do_not_change_legal_identity
+    with_auth_method(:saml) do
+      first_user = FactoryBot.create(
+        :user,
+        first_name: 'Shaashwat',
+        last_name: 'Sharma',
+        nickname: 'Sam'
+      )
+
+      second_user = FactoryBot.create(
+        :user,
+        first_name: 'Different',
+        last_name: 'Student',
+        nickname: 'Sam'
+      )
+
+      assert_equal 'Sam', first_user.nickname
+      assert_equal 'Sam', second_user.nickname
+      assert_equal 'Shaashwat', first_user.first_name
+      assert_equal 'Sharma', first_user.last_name
+      assert_equal 'Different', second_user.first_name
+      assert_equal 'Student', second_user.last_name
+      assert_not_equal first_user.id, second_user.id
+    end
+  end  
+
+def test_sso_staff_identity_is_read_only_while_genuine_settings_still_save
     with_auth_method(:saml) do
       staff = FactoryBot.create(:user, :convenor, email: 'staff-institutional@example.edu')
       add_auth_header_for(user: staff)
