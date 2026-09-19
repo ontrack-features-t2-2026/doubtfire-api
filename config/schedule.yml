@@ -69,6 +69,9 @@ send_new_task_available_notifications:
 send_due_soon_reminders:
   cron: "every day at 8am"
   class: "SendDueSoonRemindersJob"
+notify_discuss_timeout:
+  cron: "every day at 8am"
+  class: "NotifyDiscussTimeoutJob"
 
 # archive_old_units:
 #   cron: "every 6 months"

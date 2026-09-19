@@ -124,6 +124,9 @@ module Submission
       optional :as_attachment, type: Boolean, desc: 'Whether or not to download file as attachment. Default is false.'
     end
     get '/projects/:id/task_def_id/:task_definition_id/submission' do
+      # Requests through Caddy are intercepted before the general /api proxy.
+      # Rails authorises those requests via SubmissionDownloadAuthorizationsController,
+      # then Caddy serves the PDF. This remains the direct-Rails fallback path.
       project = Project.eager_load(:unit).find(params[:id])
       task_definition = project.unit.task_definitions.select(:id, :name, :abbreviation).find(params[:task_definition_id])
 
@@ -225,7 +228,9 @@ module Submission
         error!({ error: "A submission for this task definition have never been created" }, 401)
       end
 
-      result = OverseerAssessment.where(task_id: task.id).order(submission_timestamp: :desc).limit(10)
+      result = OverseerAssessment.where(submission_history_id: task.related_submission_histories.select(:id))
+                                 .order(submission_timestamp: :desc)
+                                 .limit(10)
       present result, with: Entities::OverseerAssessmentEntity
     end
 
@@ -250,7 +255,7 @@ module Submission
         error!({ error: 'Submission history is not available' }, 404)
       end
 
-      histories = task.submission_histories.order(submission_timestamp: :desc)
+      histories = task.related_submission_histories.order(submission_timestamp: :desc)
 
       if student_request
         student_histories = histories.each_with_index.map do |history, index|
@@ -294,7 +299,7 @@ module Submission
         error!({ error: 'Submission history is not available' }, 404)
       end
 
-      history = task.submission_histories.find_by(id: params[:history_id])
+      history = task.related_submission_histories.find_by(id: params[:history_id])
       error!({ error: 'Submission history is not available' }, 404) unless history
 
       unless history.has_submission_files?
@@ -328,7 +333,9 @@ module Submission
 
       oa_id = timestamp = params[:oa_id]
 
-      oa = task.overseer_assessments.find(oa_id)
+      oa = OverseerAssessment
+           .where(submission_history_id: task.related_submission_histories.select(:id))
+           .find(oa_id)
       response = oa.send_to_overseer
       if response[:error].present?
         error!({ error: response[:error] }, 403)
@@ -409,7 +416,7 @@ module Submission
         error!({ error: 'A submission for this task definition have never been created' }, 401)
       end
 
-      history = task.submission_histories.find_by(submission_timestamp: params[:timestamp])
+      history = task.related_submission_histories.find_by(submission_timestamp: params[:timestamp])
       unless history
         error!({ error: "No submission history found for timestamp '#{params[:timestamp]}'" }, 404)
       end

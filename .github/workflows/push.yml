@@ -44,6 +44,7 @@ env:
   LATEX_BUILD_PATH: /texlive/shell/latex_build.sh
   LTI_SHARED_API_SECRET: "abc123"
   LTI_ENABLED: true
+  DF_INITIAL_ADMIN_PASSWORD: "password"
 
 jobs:
   unit_test_shards:

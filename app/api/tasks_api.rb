@@ -132,16 +132,15 @@ class TasksApi < Grape::API
       task.extensions = params[:extensions]
       task.save!
 
-      comment = TaskComment.create(
+      TaskComment.create(
         task: task,
         user: current_user,
         comment: "Planned date adjusted to #{task.due_date.strftime('%d %b')}.",
         content_type: :plan,
+        attention_audience: :none,
         recipient: project.student,
         extension_weeks: params[:extensions]
       )
-
-      comment.mark_as_read(project.tutor_for(task_definition))
 
       present task, with: Entities::TaskEntity, include_other_projects: true, update_only: true
     else
@@ -175,20 +174,19 @@ class TasksApi < Grape::API
       end
 
       task = project.task_for_task_definition(task_definition)
+      mark_as_discussed = params[:discussed] == true && authorise?(current_user, project, :assess)
+      needs_discussed_comment = mark_as_discussed && !task.has_discussed_in_class_comment?
 
       # A tutor can both mark and unmark a task as discussed in class. Sending
       # discussed:false used to still add a "Discussed in class" comment, the
       # opposite of what it asks, and that comment type cannot be removed through
       # the UI. So false now removes all discussed markers instead.
-      # The mark is added here so a same-request complete trigger below can see it;
-      # a removal is deferred to the end so a later refused trigger or grade does
+      # The removal is deferred to the end so a later refused trigger or grade does
       # not leave the comment destroyed and the request still failing.
       remove_discussed = false
-      if !params[:discussed].nil? && authorise?(current_user, project, :assess)
-        if params[:discussed]
-          task.add_discussed_comment(current_user)
-        elsif task.task_definition.requires_discussion &&
-              (task.task_status == TaskStatus.complete || params[:trigger] == 'complete')
+      if params[:discussed] == false && authorise?(current_user, project, :assess)
+        if task.task_definition.requires_discussion &&
+           (task.task_status == TaskStatus.complete || params[:trigger] == 'complete')
           # Removing the mark would leave a discussion-required task complete
           # without the evidence the model demands. Refuse before deleting
           # anything.
@@ -223,18 +221,25 @@ class TasksApi < Grape::API
           error!({ error: 'This task can only be assessed in portfolio.' }, 403)
         end
 
-        if task.task_definition.requires_discussion && params[:trigger] == 'complete' && !task.has_discussed_in_class_comment?
+        if task.task_definition.requires_discussion && params[:trigger] == 'complete' &&
+           !task.has_discussed_in_class_comment? && !mark_as_discussed
           error!({ error: 'This task must be discussed in class before it can be marked complete.' }, 403)
         end
 
         logger.info "#{current_user.username} assessing task #{task.id} to #{params[:trigger]}"
-        result = task.trigger_transition(
-          trigger: params[:trigger],
-          by_user: current_user,
-          quality: params[:quality_pts],
-          recursive_fix: params[:trigger_recursive_fix],
-          check_feedback: true
-        )
+        begin
+          task.discussion_confirmed_for_transition = mark_as_discussed
+          result = task.trigger_transition(
+            trigger: params[:trigger],
+            by_user: current_user,
+            quality: params[:quality_pts],
+            recursive_fix: params[:trigger_recursive_fix],
+            check_feedback: true
+          )
+        ensure
+          task.discussion_confirmed_for_transition = false
+        end
+
         # trigger_transition returns nil for every refusal, and most of its early
         # returns leave errors empty. Both guards below used to need something
         # extra on top of that, so a refused change fell through to the 200 at the
@@ -248,6 +253,8 @@ class TasksApi < Grape::API
             error!({ error: 'This status change is not allowed for this task.' }, 403)
           end
         end
+        task.add_discussed_comment(current_user) if result && needs_discussed_comment
+
         SessionTracker.record_assessment_activity(
           action: "assessing",
           user: current_user,
@@ -256,6 +263,8 @@ class TasksApi < Grape::API
           task: task
         )
       end
+
+      task.add_discussed_comment(current_user) if params[:trigger].nil? && needs_discussed_comment
 
       # if grade was supplied
       unless grade.nil?
@@ -428,15 +437,14 @@ class TasksApi < Grape::API
                        "Planned date reset: #{task_definition.start_date.strftime('%d %b')} - #{task_definition.target_date.strftime('%d %b')}."
                      end
 
-      comment = TaskComment.create(
+      TaskComment.create(
         task: task,
         user: current_user,
         comment: comment_text,
         content_type: :plan,
+        attention_audience: :none,
         recipient: project.student
       )
-
-      comment.mark_as_read(project.tutor_for(task_definition))
 
       present task, with: Entities::TaskEntity, include_other_projects: true, update_only: true
     else
@@ -467,15 +475,14 @@ class TasksApi < Grape::API
         )
 
         comment_text = "Planned date reset: #{task.task_definition.start_date.strftime('%d %b')} - #{task.task_definition.target_date.strftime('%d %b')}."
-        comment = TaskComment.create(
+        TaskComment.create(
           task: task,
           user: current_user,
           comment: comment_text,
           content_type: :plan,
+          attention_audience: :none,
           recipient: project.student
         )
-
-        comment.mark_as_read(project.tutor_for(task.task_definition))
       end
 
       present project, with: Entities::ProjectEntity, user: current_user, for_student: true, in_project: true

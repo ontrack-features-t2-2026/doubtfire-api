@@ -62,7 +62,7 @@ class ImportStudentsLtiJob
         unless unit_role.nil?
           staff = unit.employ_staff(user, unit_role)
           if staff&.valid?
-            result[:success] << { row: member, message: "Successfully added staff (#{unit_role.name})" }
+            result[:success] << { row: member, message: "Added staff (#{unit_role.name})" }
           end
         end
 
@@ -73,7 +73,7 @@ class ImportStudentsLtiJob
 
         project = unit.enrol_student(user, nil)
         if project.valid?
-          result[:success] << { row: member, message: "Successfully enrolled user" }
+          result[:success] << { row: member, message: "Enrolled student" }
         else
           result[:errors] << { row: member, message: "Failed to enrol student" }
         end
