@@ -11,7 +11,7 @@ class UnitsTest < ActiveSupport::TestCase
 
   def assert_users_model_response(response_data, user_model, keys = nil)
     if keys.nil?
-      keys = %w[id student_id email first_name last_name username nickname receive_task_notifications
+      keys = %w[id student_id email first_name last_name username nickname display_name receive_task_notifications
                 receive_portfolio_notifications receive_feedback_notifications display_peer_progress
                 opt_in_to_research has_run_first_time_setup]
       assert_not response_data.key?('theme_preference')
@@ -53,7 +53,7 @@ class UnitsTest < ActiveSupport::TestCase
     assert_equal expected_data.count, last_response_body.count
 
     # What are the keys we expect in the data that match the model - so we can check these
-    response_keys = %w[first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup]
+    response_keys = %w[first_name last_name email student_id nickname display_name receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup]
 
     # Loop through all of the responses
     last_response_body.each do | data |
@@ -81,7 +81,7 @@ class UnitsTest < ActiveSupport::TestCase
     assert_equal 200, last_response.status
 
     # Check the returned details match as expected
-    response_keys = %w(first_name last_name email student_id nickname receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup)
+    response_keys = %w[first_name last_name email student_id nickname display_name receive_task_notifications receive_portfolio_notifications receive_feedback_notifications display_peer_progress opt_in_to_research has_run_first_time_setup]
     assert_json_matches_model(expected_user, returned_user, response_keys)
     assert_not returned_user.key?('theme_preference')
     assert_not returned_user.key?('theme_preference_updated_at')

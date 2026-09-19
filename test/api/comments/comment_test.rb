@@ -70,6 +70,18 @@ class CommentTest < ActiveSupport::TestCase
     task_definition = unit.task_definitions.first
     tutor = project.tutor_for(task_definition)
 
+    user.update!(
+      first_name: 'Elizabeth',
+      last_name: 'Smith',
+      nickname: 'Liz'
+    )
+
+    tutor.update!(
+      first_name: 'Thomas',
+      last_name: 'Brown',
+      nickname: nil
+    )
+
     pre_count = TaskComment.count
 
     comment_data = { comment: 'Hello World' }
@@ -89,14 +101,20 @@ class CommentTest < ActiveSupport::TestCase
       'has_attachment' => false,
       'type' => 'text',
       'is_new' => false,
-      author: { 'id' => user.id },
-      recipient: { 'id' => tutor.id }
+      author: {
+        'id' => user.id,
+        'display_name' => 'Liz Smith'
+      },
+      recipient: {
+        'id' => tutor.id,
+        'display_name' => 'Thomas Brown'
+      }
     }
 
     # check each is the same
     assert_json_matches_model expected_response, last_response_body, %w(comment has_attachment type is_new)
-    assert_json_matches_model expected_response[:author], last_response_body['author'], ['id']
-    assert_json_matches_model expected_response[:recipient], last_response_body['recipient'], ['id']
+    assert_json_matches_model expected_response[:author], last_response_body['author'], %w[id display_name]
+    assert_json_matches_model expected_response[:recipient], last_response_body['recipient'], %w[id display_name]
   end
 
   def test_replying_to_comments
