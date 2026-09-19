@@ -659,6 +659,46 @@ class UnitsTest < ActiveSupport::TestCase
     end
   end
 
+  # MISC-PN03: a blank preferred name falls back to the legal name
+  def test_preferred_name_can_be_blank_and_falls_back_safely
+    user = FactoryBot.create(:user, first_name: 'Shaashwat', last_name: 'Sharma', nickname: 'Preferred')
+    add_auth_header_for(user: user)
+
+    put_json "/api/users/#{user.id}", {
+      user: {
+        email: user.email,
+        student_id: user.student_id,
+        nickname: ''
+      }
+    }
+
+    assert_equal 200, last_response.status
+    assert_equal '', user.reload.nickname
+    assert_equal 'Shaashwat', user.first_name
+    assert_equal 'Sharma', user.last_name
+    assert_equal 'Shaashwat Sharma', last_response_body['display_name']
+  end
+
+  # MISC-PN03: two users sharing a preferred name keep their own legal identity
+  def test_duplicate_preferred_names_do_not_change_legal_identity
+    first_user = FactoryBot.create(:user, first_name: 'Shaashwat', last_name: 'Sharma', nickname: 'Sam')
+    second_user = FactoryBot.create(:user, first_name: 'Different', last_name: 'Student', nickname: 'Sam')
+    add_auth_header_for(user: FactoryBot.create(:user, :admin))
+
+    get "/api/users/#{first_user.id}"
+    assert_equal 200, last_response.status
+    first_body = last_response_body
+
+    get "/api/users/#{second_user.id}"
+    assert_equal 200, last_response.status
+    second_body = last_response_body
+
+    assert_equal ['Sam', 'Shaashwat', 'Sharma', 'Sam Sharma'],
+                 first_body.values_at('nickname', 'first_name', 'last_name', 'display_name')
+    assert_equal ['Sam', 'Different', 'Student', 'Sam Student'],
+                 second_body.values_at('nickname', 'first_name', 'last_name', 'display_name')
+  end
+
   private
 
   def with_auth_method(method)
