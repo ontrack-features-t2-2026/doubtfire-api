@@ -160,6 +160,7 @@ for `DF_SECRET_KEY_BASE`, `DF_SECRET_KEY_ATTR`, `DF_SECRET_KEY_DEVISE`,
 | `DF_SMTP_PASSWORD`           | SMTP password.                           | Unset               |
 | `DF_SMTP_AUTHENTICATION`     | SMTP authentication method.              | Unset               |
 | `DF_EMAIL_ERRORS_TO`         | Address receiving PDF-generation errors. | Unset               |
+| `DF_INSTITUTION_EMAIL_SENDER` | SMTP-authorised From address for notification email. May include a display name. | `noreply@doubtfire.local` |
 
 ### Integrations and background services
 

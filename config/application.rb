@@ -165,6 +165,7 @@ module Doubtfire
     config.institution = YAML.load_file(Rails.root.join('config/institution.yml').to_s).with_indifferent_access
     config.institution[:name] = ENV['DF_INSTITUTION_NAME'] if ENV['DF_INSTITUTION_NAME']
     config.institution[:email_domain] = ENV['DF_INSTITUTION_EMAIL_DOMAIN'] if ENV['DF_INSTITUTION_EMAIL_DOMAIN']
+    config.institution[:email_sender] = ENV['DF_INSTITUTION_EMAIL_SENDER'] if ENV['DF_INSTITUTION_EMAIL_SENDER']
     config.institution[:host] = ENV['DF_INSTITUTION_HOST'] if ENV['DF_INSTITUTION_HOST']
     # Blank means host-only cookies, scoped to whichever origin set them.
     config.institution[:cookie_domain] =

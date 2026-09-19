@@ -8,6 +8,44 @@ class NotificationsMailer < ApplicationMailer
     @unsubscribe_url = "#{@doubtfire_host}/edit_profile"
   end
 
+  # Subject lines for events that have their own. Anything else gets the
+  # generic subject.
+  SUBJECTS = {}.freeze
+
+  # Sends a single in-system notification as an email. Called by
+  # NotificationEmailJob, which lets delivery failures reach Sidekiq so they can
+  # be retried without blocking the request that created the notification.
+  def single_notification(notification)
+    add_general
+
+    @notification = notification
+    @user = notification.user
+
+    # The deployment's SMTP-authorised sender, with a development-safe fallback
+    # for an installation that has not configured one yet.
+    from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
+    subject = "#{@doubtfire_product_name}: #{SUBJECTS.fetch(notification.event, 'New notification')}"
+
+    # An event may ship its own pair of templates named after it, for example
+    # task_comment_created.html.erb and task_comment_created.text.erb. Events
+    # without them fall back to the generic single_notification pair, so a new
+    # event only adds files and never edits this method.
+    mail(
+      to: address_with_name(@user),
+      from: from_address,
+      subject: subject,
+      template_name: event_template_name(notification.event)
+    )
+  end
+
+  # The event's own template if it exists, otherwise the generic one.
+  def event_template_name(event)
+    return 'single_notification' if event.blank?
+    return 'single_notification' unless lookup_context.exists?(event, [self.class.mailer_name], false)
+
+    event
+  end
+
   def weekly_staff_summary(unit_role, summary_stats)
     return nil if unit_role.nil?
 
@@ -138,6 +176,17 @@ class NotificationsMailer < ApplicationMailer
   helper_method :this_these
 
   private
+
+  # Build the recipient address through Mail so a display name that contains a
+  # quote or a comma cannot break out of the name and inject a second address,
+  # and strip control characters so a name cannot fold an extra header into the
+  # message. User#name comes from first_name/last_name, which are user-editable.
+  def address_with_name(user)
+    safe_name = user.name.to_s.gsub(/[[:cntrl:]]/, ' ').strip
+    address = Mail::Address.new(user.email.to_s)
+    address.display_name = safe_name
+    address.format
+  end
 
   def add_discussion_deadline_details(task, sender)
     add_general

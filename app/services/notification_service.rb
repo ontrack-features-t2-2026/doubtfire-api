@@ -1,9 +1,9 @@
 # Central entry point for raising a notification.
 #
-# Creates the in-app record. A single category toggle (the user's
-# receive_*_notifications preference) gates the notification: if the category
-# is off, it is suppressed entirely. Email and push delivery are added as
-# separate channels on top of this record.
+# Creates the in-app record, and Notification queues the email once that record
+# is committed. A single category toggle (the user's receive_*_notifications
+# preference) gates every channel: if the category is off, the notification is
+# suppressed entirely.
 #
 # Usage:
 #   NotificationService.notify(
@@ -66,4 +66,20 @@ class NotificationService
     )
   end
   private_class_method :create_notification
+
+  # Email channel. Called from Notification's after_commit hook, never directly
+  # from notify, so the notification is committed before the job exists.
+  #
+  # Queue only the stable Notification id. Message content, recipient details
+  # and other student data stay in the database. Queue connection errors are
+  # best effort so the in-app record is not blocked. Delivery failures are
+  # raised by the job for Sidekiq to retry.
+  def self.queue_email(notification)
+    NotificationEmailJob.perform_async(notification.id)
+  rescue StandardError => e
+    Rails.logger.error(
+      "Failed to queue notification email for Notification #{notification.id}: #{e.class}"
+    )
+    false
+  end
 end

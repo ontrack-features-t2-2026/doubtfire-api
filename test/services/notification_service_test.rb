@@ -1,6 +1,11 @@
 require 'test_helper'
+require 'minitest/mock'
 
 class NotificationServiceTest < ActiveSupport::TestCase
+  setup do
+    ActionMailer::Base.deliveries.clear
+    NotificationEmailJob.clear
+  end
   def test_notify_creates_a_notification
     user = FactoryBot.create(:user)
 
@@ -179,5 +184,91 @@ class NotificationServiceTest < ActiveSupport::TestCase
       NotificationService.notify(user: FactoryBot.create(:user), **attributes)
       NotificationService.notify(user: FactoryBot.create(:user), **attributes)
     end
+  end
+
+  def test_notify_queues_an_id_only_email_job
+    user = FactoryBot.create(:user)
+    notification = nil
+
+    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
+      notification = NotificationService.notify(
+        user: user, type: 'general', event: 'general_notice', message: 'Queued email.'
+      )
+    end
+
+    job = NotificationEmailJob.jobs.last
+    assert_equal 'mailers', job['queue']
+    assert_equal [notification.id], job['args']
+    assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_email_is_not_queued_until_the_creating_transaction_commits
+    user = FactoryBot.create(:user)
+    notification = nil
+
+    ActiveRecord::Base.transaction do
+      notification = NotificationService.notify(
+        user: user, type: 'general', event: 'group_membership_changed', message: 'In a transaction.'
+      )
+
+      assert notification.persisted?
+      # A worker picking the job up here could not see the row yet, so nothing
+      # may be queued before the transaction commits.
+      assert_empty NotificationEmailJob.jobs
+    end
+
+    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
+  end
+
+  def test_a_rolled_back_transaction_queues_no_email
+    user = FactoryBot.create(:user)
+
+    ActiveRecord::Base.transaction do
+      NotificationService.notify(
+        user: user, type: 'general', event: 'rolled_back_event', message: 'Never happened.'
+      )
+      raise ActiveRecord::Rollback
+    end
+
+    assert_equal 0, Notification.where(event: 'rolled_back_event').count
+    assert_empty NotificationEmailJob.jobs
+  end
+
+  def test_a_suppressed_notification_queues_no_email
+    user = FactoryBot.create(:user, receive_feedback_notifications: false)
+
+    NotificationService.notify(user: user, type: 'feedback', event: 'task_comment_created', message: 'Suppressed.')
+
+    assert_empty NotificationEmailJob.jobs
+  end
+
+  def test_a_queue_failure_does_not_block_the_in_app_notification
+    user = FactoryBot.create(:user)
+
+    NotificationEmailJob.stub(:perform_async, ->(_id) { raise 'redis unavailable' }) do
+      notification = NotificationService.notify(
+        user: user, type: 'general', event: 'queue_failure_check', message: 'Still saved.'
+      )
+
+      assert notification.persisted?
+    end
+
+    assert_empty NotificationEmailJob.jobs
+  end
+
+  def test_a_dedupe_key_queues_the_email_only_once
+    user = FactoryBot.create(:user)
+    attributes = {
+      user: user,
+      type: 'task',
+      event: 'new_task_available',
+      message: 'A task is available.',
+      dedupe_key: 'new_task_available:task-definition:321'
+    }
+
+    NotificationService.notify(**attributes)
+    NotificationService.notify(**attributes)
+
+    assert_equal 1, NotificationEmailJob.jobs.size
   end
 end
