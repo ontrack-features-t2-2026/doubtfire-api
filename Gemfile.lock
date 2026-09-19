@@ -292,6 +292,7 @@ GEM
       snaky_hash (~> 2.0)
       version_gem (~> 1.1)
     observer (0.1.2)
+    openssl (3.3.3)
     orm_adapter (0.5.0)
     ostruct (0.6.1)
     parallel (1.26.3)
@@ -551,6 +552,9 @@ GEM
     version_gem (1.1.6)
     warden (1.2.9)
       rack (>= 2.0.9)
+    web-push (3.0.1)
+      jwt (~> 2.0)
+      openssl (~> 3.0)
     webmock (3.25.1)
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
@@ -634,6 +638,7 @@ DEPENDENCIES
   sys-filesystem
   tca_client
   uri (>= 1.1.1)
+  web-push (= 3.0.1)
   webmock
 
 RUBY VERSION

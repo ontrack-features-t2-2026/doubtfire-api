@@ -1,9 +1,9 @@
 # Central entry point for raising a notification.
 #
 # Creates the in-app record, and Notification queues the email once that record
-# is committed. A single category toggle (the user's receive_*_notifications
-# preference) gates every channel: if the category is off, the notification is
-# suppressed entirely.
+# is committed. The push is handed off to Sidekiq here. A single category toggle
+# (the user's receive_*_notifications preference) gates every channel: if the
+# category is off, the notification is suppressed entirely.
 #
 # Usage:
 #   NotificationService.notify(
@@ -28,6 +28,23 @@ class NotificationService
   # dedupe_key - optional identity for one event, so a retried caller cannot
   #         raise it twice for the same user.
   def self.notify(user:, type:, event:, message:, link: nil, dedupe_key: nil, notifiable: nil)
+    notification = reserve(
+      user: user,
+      type: type,
+      event: event,
+      message: message,
+      link: link,
+      dedupe_key: dedupe_key,
+      notifiable: notifiable
+    )
+
+    deliver(notification)
+  end
+
+  # Persist a notification without running its push channel. Callers that need
+  # a short eligibility lock can commit this reservation, release the lock, and
+  # then call `deliver` without holding a row lock across network I/O.
+  def self.reserve(user:, type:, event:, message:, link: nil, dedupe_key: nil, notifiable: nil)
     type = type.to_s
     return nil unless deliver_to?(user, type)
 
@@ -40,6 +57,24 @@ class NotificationService
       dedupe_key: dedupe_key,
       notifiable: notifiable
     )
+  end
+
+  def self.deliver(notification)
+    return nil if notification.nil?
+
+    # Concurrent or retried callers can reserve the same immutable event. A lock
+    # on that notification serializes only its push hand-off. Email is queued
+    # once by Notification's after_commit hook, so a dedupe retry cannot queue
+    # it twice. delivered_at tracks the push hand-off, and a failed hand-off
+    # stays retryable.
+    notification.with_lock do
+      unless notification.delivered_at?
+        push_queued = queue_push(notification)
+        notification.update!(delivered_at: Time.current) if push_queued
+      end
+    end
+
+    notification
   end
 
   # Whether the user's category preference allows this notification type.
@@ -82,4 +117,18 @@ class NotificationService
     )
     false
   end
+
+  # Push channel. Queue only the stable Notification id so no student or
+  # notification content is copied into Redis. A failed hand-off leaves
+  # delivered_at unset, so a retry of the same dedupe key can try again without
+  # queueing a second email.
+  def self.queue_push(notification)
+    PushNotificationDeliveryJob.perform_async(notification.id)
+  rescue StandardError => e
+    Rails.logger.error(
+      "Failed to queue notification push for Notification #{notification.id}: #{e.class}"
+    )
+    false
+  end
+  private_class_method :queue_push
 end

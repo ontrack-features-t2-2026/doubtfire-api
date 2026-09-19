@@ -5,6 +5,7 @@ class NotificationServiceTest < ActiveSupport::TestCase
   setup do
     ActionMailer::Base.deliveries.clear
     NotificationEmailJob.clear
+    PushNotificationDeliveryJob.clear
   end
   def test_notify_creates_a_notification
     user = FactoryBot.create(:user)
@@ -270,5 +271,90 @@ class NotificationServiceTest < ActiveSupport::TestCase
     NotificationService.notify(**attributes)
 
     assert_equal 1, NotificationEmailJob.jobs.size
+  end
+
+  def test_notify_queues_an_id_only_push_job
+    user = FactoryBot.create(:user)
+    notification = nil
+
+    assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
+      notification = NotificationService.notify(
+        user: user, type: 'general', event: 'general_notice', message: 'Queued push.'
+      )
+    end
+
+    job = PushNotificationDeliveryJob.jobs.last
+    assert_equal 'notifications', job['queue']
+    assert_equal [notification.id], job['args']
+    assert_not_nil notification.reload.delivered_at
+  end
+
+  def test_a_suppressed_notification_queues_no_push
+    user = FactoryBot.create(:user, receive_feedback_notifications: false)
+
+    NotificationService.notify(user: user, type: 'feedback', event: 'task_comment_created', message: 'Suppressed.')
+
+    assert_empty PushNotificationDeliveryJob.jobs
+  end
+
+  def test_an_email_queue_failure_still_hands_off_the_push
+    user = FactoryBot.create(:user)
+    notification = nil
+
+    NotificationEmailJob.stub(:perform_async, ->(_id) { raise 'redis unavailable' }) do
+      notification = NotificationService.notify(
+        user: user, type: 'general', event: 'queue_failure_check', message: 'Still pushed.'
+      )
+    end
+
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
+    assert_not_nil notification.reload.delivered_at
+  end
+
+  def test_a_dedupe_key_hands_off_the_push_only_once
+    user = FactoryBot.create(:user)
+    attributes = {
+      user: user,
+      type: 'task',
+      event: 'new_task_available',
+      message: 'A task is available.',
+      dedupe_key: 'new_task_available:task-definition:654'
+    }
+
+    NotificationService.notify(**attributes)
+    NotificationService.notify(**attributes)
+
+    assert_equal 1, PushNotificationDeliveryJob.jobs.size
+  end
+
+  def test_a_failed_push_handoff_is_retried_without_a_second_email
+    user = FactoryBot.create(:user)
+    attributes = {
+      user: user,
+      type: 'task',
+      event: 'new_task_available',
+      message: 'A task is available.',
+      dedupe_key: 'new_task_available:task-definition:456'
+    }
+    failure = ->(_notification_id) { raise StandardError, 'redis unavailable' }
+
+    PushNotificationDeliveryJob.stub(:perform_async, failure) do
+      NotificationService.notify(**attributes)
+    end
+
+    notification = Notification.find_by!(dedupe_key: attributes[:dedupe_key])
+    assert_nil notification.delivered_at
+    assert_equal 1, NotificationEmailJob.jobs.size
+    assert_empty PushNotificationDeliveryJob.jobs
+
+    assert_no_difference 'Notification.count' do
+      NotificationService.notify(**attributes)
+    end
+
+    assert_not_nil notification.reload.delivered_at
+    # The after-commit email belongs to the one created row. Retrying the failed
+    # push hand-off must not queue a second email.
+    assert_equal 1, NotificationEmailJob.jobs.size
+    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
   end
 end

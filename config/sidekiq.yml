@@ -1,14 +1,15 @@
 :concurrency: 1
 
-# Strict priority, highest first. Notification email runs on `mailers` so it
-# does not wait behind AcceptSubmissionJob or a CSV export on `default` at
-# concurrency 1.
+# Strict priority, highest first. Notification email and Web Push run on
+# `mailers` and `notifications` so they do not wait behind AcceptSubmissionJob
+# or a CSV export on `default` at concurrency 1.
 #
-# This list is what makes the notification email job run in production. The
+# This list is what makes both notification channel jobs run in production. The
 # worker is started with a bare `bundle exec sidekiq` and no -q, so with no
-# :queues: here Sidekiq listens on `default` alone and the email jobs would sit
-# in Redis unread. perform_async succeeds and nothing logs, so that failure is
-# silent.
+# :queues: here Sidekiq listens on `default` alone and the channel jobs would
+# sit in Redis unread. perform_async succeeds and nothing logs, so that failure
+# is silent.
 :queues:
   - mailers
+  - notifications
   - default
