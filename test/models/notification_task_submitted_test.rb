@@ -72,7 +72,7 @@ class NotificationTaskSubmittedTest < ActiveSupport::TestCase
       "#{@student.name} submitted #{@task_definition.name} for marking in #{product_name}."
 
     assert_equal expected_message, notification.message
-    assert_equal "#{product_name}: New notification", ActionMailer::Base.deliveries.last.subject
+    assert_equal "#{product_name}: Task submitted", ActionMailer::Base.deliveries.last.subject
 
     parts.each_value do |body|
       assert_not_empty body
