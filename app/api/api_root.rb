@@ -163,6 +163,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to UsersApi
   AuthenticationHelpers.add_auth_to AdditionalNotificationEmailsApi
   AuthenticationHelpers.add_auth_to UnitRolesApi
+  AuthenticationHelpers.add_auth_to UnitContentsApi
   AuthenticationHelpers.add_auth_to UnitsApi
   AuthenticationHelpers.add_auth_to WebcalApi
   AuthenticationHelpers.add_auth_to ScormApi

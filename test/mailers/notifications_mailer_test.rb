@@ -134,7 +134,10 @@ class NotificationsMailerTest < ActionMailer::TestCase
   # add a second recipient. The address is now built through Mail, which escapes
   # the display name, so it can never inject another address.
   def test_a_malicious_display_name_cannot_inject_a_second_recipient
-    user = FactoryBot.create(:user, :student, first_name: 'a",x@evil.com', last_name: 'Test')
+    user = FactoryBot.create(:user, :student, last_name: 'Test')
+    # User validation now refuses these characters, so write past it the way an
+    # older row or a direct import could hold them.
+    user.update_column(:first_name, 'a",x@evil.com') # rubocop:disable Rails/SkipsModelValidations
     notification = FactoryBot.create(
       :notification,
       user: user,

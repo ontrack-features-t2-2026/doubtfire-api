@@ -888,10 +888,10 @@ class CommentTest < ActiveSupport::TestCase
     td.destroy!
   end
 
-  # Marking a comment as unread must delete the caller's read receipt and succeed.
+  # Marking a comment as unread must move the caller's read cursor back and succeed.
   # remove_comment_read_entry used to call delete_all with a conditions hash, which raises
   # ArgumentError on Rails 8 and turned every mark-as-unread into a 500.
-  def test_mark_comment_as_unread_removes_the_read_receipt
+  def test_mark_comment_as_unread_rewinds_the_read_cursor
     project = FactoryBot.create(:project)
     unit = project.unit
     user = project.student
@@ -902,13 +902,14 @@ class CommentTest < ActiveSupport::TestCase
     comment = task.add_text_comment(convenor, 'Please look at this')
     comment.mark_as_read(user)
     assert comment.read_by?(user), 'Comment should be read before it is marked unread'
-    assert_equal 1, CommentsReadReceipts.where(user: user, task_comment: comment).count
+    assert_equal comment.id, CommentReadCursor.find_by!(task: task, user: user).last_read_comment_id
 
     add_auth_header_for user: user
     post "/api/projects/#{project.id}/task_def_id/#{task_definition.id}/comments/#{comment.id}"
 
     assert_equal 201, last_response.status, last_response_body
-    assert_equal 0, CommentsReadReceipts.where(user: user, task_comment: comment).count, 'Read receipt should be gone'
+    cursor = CommentReadCursor.find_by(task: task, user: user)
+    assert cursor.nil? || cursor.last_read_comment_id < comment.id, 'Read cursor should be before the comment'
     assert_not comment.reload.read_by?(user), 'Comment should be unread after the request'
   end
 

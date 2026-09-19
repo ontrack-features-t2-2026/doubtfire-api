@@ -216,6 +216,7 @@ rails test
 rails test test/api/settings_test:14 # test_get_config_details
 ```
 
+The tests use Minitest, and `rake test` runs the same suite as `rails test`.
 Code coverage is off by default. Run `COVERAGE=true rails test` to generate the SimpleCov report.
 
 Tests are grouped under `test/models`, `test/api`, and `test/helpers`. Shared

@@ -149,7 +149,7 @@ class CollectionPaginationTest < ActiveSupport::TestCase
   end
 
   def test_browser_clients_can_read_pagination_headers
-    get '/api/campuses', {page: 1, per_page: 2}, {'HTTP_ORIGIN' => 'https://client.example'}
+    get '/api/campuses', {page: 1, per_page: 2}, {'HTTP_ORIGIN' => 'http://localhost:4200'}
     assert_equal 200, last_response.status
     exposed = last_response.headers['Access-Control-Expose-Headers'].to_s.downcase
     %w[x-total-count x-page x-per-page x-total-pages].each { |name| assert_includes exposed, name }

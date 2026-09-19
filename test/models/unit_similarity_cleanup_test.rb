@@ -100,7 +100,9 @@ class UnitSimilarityCleanupTest < ActiveSupport::TestCase
     token = SecureRandom.hex(6)
     shell_marker = Rails.root.join("jplag-shell-marker-#{token}")
     hostile_code = "../escaped-#{token};touch #{shell_marker.basename};#"
-    unit.update!(code: hostile_code)
+    # Unit validation now refuses these characters, so write past it the way an
+    # older row could hold them.
+    unit.update_column(:code, hostile_code) # rubocop:disable Rails/SkipsModelValidations
 
     task_definition = hostile_jplag_task_definition(unit.id + 9_000_000)
     current_root = Rails.root.join('tmp', 'jplag', "unit-#{unit.id}")
@@ -124,7 +126,11 @@ class UnitSimilarityCleanupTest < ActiveSupport::TestCase
       unit.stub(:tasks_for_definition, tasks) do
         unit.stub(:process_jplag_plagiarism_report, true) do
           unit.stub(:system, capture_system) do
-            unit.check_jplag_similarity(force: true)
+            # The scan saves the unit when it finishes. Validation would refuse
+            # the hostile code that update_column wrote above.
+            unit.stub(:save!, true) do
+              unit.check_jplag_similarity(force: true)
+            end
           end
         end
       end

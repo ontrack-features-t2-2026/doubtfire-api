@@ -563,9 +563,14 @@ class UploadSecurityTest < ActiveSupport::TestCase
     assert_match(/encrypt/i, result[:msg])
   end
 
-  test 'rejects unsupported Word document extension' do
-    # Production accepts PDF only for document uploads. DOCX is not a known
-    # extension and no conversion path runs from FileHelper.accept_file.
+  test 'rejects a Word document upload when conversion is not configured' do
+    # A DOCX document upload is only accepted when the Gotenberg conversion
+    # service is configured to turn it into a PDF. Without it, it is refused
+    # before anything else looks at the file.
+    config = Doubtfire::Application.config
+    original_image = config.gotenberg_image
+    config.gotenberg_image = nil
+
     with_tempfile('.docx', "PK\x03\x04fake docx content", binary: true) do |f|
       result = FileHelper.accept_file(
         { filename: 'report.docx', 'tempfile' => f },
@@ -574,8 +579,10 @@ class UploadSecurityTest < ActiveSupport::TestCase
       )
 
       assert_not result[:accepted], 'Expected DOCX to be rejected for document uploads'
-      assert_equal 'invalid file extension.', result[:msg]
+      assert_equal 'Word documents are currently not supported. Please export your document to PDF.', result[:msg]
     end
+  ensure
+    config.gotenberg_image = original_image
   end
 
   test 'rejects zip containing nested archive' do

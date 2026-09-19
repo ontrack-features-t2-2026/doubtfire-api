@@ -886,16 +886,13 @@ class TasksApiTest < ActiveSupport::TestCase
       recipient: project.student,
       comment: 'Discussed in class'
     )
-    duplicate_receipt_ids = duplicate.comments_read_receipts.ids
     assert_equal 2, task.comments.where(content_type: 'discussed_in_class').count
-    assert_not_empty duplicate_receipt_ids
 
     put "/api/projects/#{project.id}/task_def_id/#{td.id}", { discussed: false }
     assert_equal 200, last_response.status
     task.reload
     assert_not task.has_discussed_in_class_comment?, 'discussed:false should unmark the task, not add another comment'
     assert_equal 0, task.comments.where(content_type: 'discussed_in_class').count
-    assert_empty CommentsReadReceipts.where(id: duplicate_receipt_ids), 'destroy callbacks must remove marker read receipts'
 
     unit.destroy
   end
