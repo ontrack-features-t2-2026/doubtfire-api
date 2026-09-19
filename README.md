@@ -164,8 +164,8 @@ generate the SimpleCov report explicitly, run:
 $ COVERAGE=true rake test
 ```
 
-Unit tests are located in the `test` directory, where **model** tests are under
-the `model` subdirectory and **API** tests are under the `api` subdirectory.
+Doubtfire API uses Minitest for testing, with model tests under `test/models` and API tests under `test/api`.
+Run the test suite with `rake test`.
 
 Any **helpers** should be included in the `helpers` subdirectory and helper
 modules should be written under the `TestHelpers` module.
