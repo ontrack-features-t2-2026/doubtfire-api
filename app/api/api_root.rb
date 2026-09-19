@@ -111,6 +111,7 @@ class ApiRoot < Grape::API
 
   # Notifications feature
   mount NotificationsApi
+  mount PushSubscriptionsApi
 
   #
   # Add auth details to all end points
@@ -165,6 +166,7 @@ class ApiRoot < Grape::API
 
   # Notifications feature
   AuthenticationHelpers.add_auth_to NotificationsApi
+  AuthenticationHelpers.add_auth_to PushSubscriptionsApi
 
   add_swagger_documentation \
     base_path: nil,

@@ -186,6 +186,7 @@ class User < ApplicationRecord
 
   # Notifications feature
   has_many    :notifications, dependent: :destroy, inverse_of: :user
+  has_many    :push_subscriptions, dependent: :destroy, inverse_of: :user
 
   # Model validations/constraints
   validates :first_name,  presence: true, allowed_characters: { type: :first_name }
