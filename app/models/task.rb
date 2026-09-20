@@ -1363,7 +1363,7 @@ class Task < ApplicationRecord
                                   .pick(:created_at)
 
     feedback_comments = comments
-                        .where(content_type: %w[text audio image pdf discussion])
+                        .where(content_type: %w[text audio image pdf discussion document spreadsheet])
                         .where(user_id: unit.staff.select(:user_id))
 
     feedback_comments = feedback_comments.where('created_at >= ?', first_ready_for_feedback_at) if first_ready_for_feedback_at
@@ -1373,7 +1373,7 @@ class Task < ApplicationRecord
 
   def has_recent_manual_feedback_from_tutor?(tutor)
     comments
-      .where(content_type: %w[text audio image pdf discussion])
+      .where(content_type: %w[text audio image pdf discussion document spreadsheet])
       .where(user: tutor)
       .where('created_at >= ?', 10.minutes.ago)
       .where.not("COALESCE(comment, '') LIKE ?", '**Automated Message:%')

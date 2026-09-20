@@ -125,4 +125,18 @@ class SafeAttachmentPolicyTest < ActiveSupport::TestCase
     FileUtils.rm_rf(@task.student_work_dir(:new, false)) if @task
   end
 
+  test 'staff document and spreadsheet comments count as manual feedback but student attachments do not' do
+    tutor = @project.unit.staff.first.user
+    %w[document spreadsheet].each do |type|
+      comment = TaskComment.create!(task: @task, user: tutor, recipient: @project.student,
+                                    content_type: type, comment: 'Attached feedback')
+      assert @task.has_manual_feedback_since_first_ready_for_feedback?
+      assert @task.has_recent_manual_feedback_from_tutor?(tutor)
+      comment.update!(user: @project.student)
+      assert_not @task.has_manual_feedback_since_first_ready_for_feedback?
+      assert_not @task.has_recent_manual_feedback_from_tutor?(tutor)
+      comment.destroy!
+    end
+  end
+
 end
