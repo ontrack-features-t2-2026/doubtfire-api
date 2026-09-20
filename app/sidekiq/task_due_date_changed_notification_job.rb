@@ -12,7 +12,7 @@ class TaskDueDateChangedNotificationJob
                   on_conflict: :reject,
                   retry: 3
 
-  def perform(task_definition_id, _previous_due_date, new_due_date, change_id = nil)
+  def perform(task_definition_id, _previous_due_date, new_due_date, change_id = nil, allow_large_fanout = false) # rubocop:disable Style/OptionalBooleanParameter
     task_definition = TaskDefinition.find_by(id: task_definition_id)
     return if task_definition.nil?
     return unless task_definition.unit.active
@@ -23,6 +23,11 @@ class TaskDueDateChangedNotificationJob
     # fallback supports direct invocations without a Sidekiq job envelope.
     occurrence = change_id.presence || jid.presence ||
                  "#{new_due_date}:#{task_definition.updated_at.utc.iso8601(6)}"
+
+    return unless NotificationDeliveryPolicy.fanout_allowed?(
+      event: EVENT, trigger: "task-definition:#{task_definition.id}",
+      recipient_count: eligible_projects(task_definition).count, allow_large_fanout: allow_large_fanout
+    )
 
     failed_project_ids = []
 

@@ -37,14 +37,76 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     assert_includes body, notification.message
   end
 
-  def test_missing_notification_is_raised_so_a_pre_commit_race_is_retried
+  def test_deleted_notification_is_skipped_after_commit_enqueue
     assert_no_difference(
       -> { ActionMailer::Base.deliveries.count }
     ) do
-      assert_raises(ActiveRecord::RecordNotFound) do
-        NotificationEmailJob.new.perform(-1)
+      assert_nil NotificationEmailJob.new.perform(-1)
+    end
+  end
+
+  def test_disabled_mail_transport_is_suppressed_without_a_false_delivery_marker
+    notification = FactoryBot.create(:notification)
+    NotificationsMailer.stub(:perform_deliveries, false) do
+      assert_no_difference(-> { ActionMailer::Base.deliveries.size }) do
+        NotificationEmailJob.new.perform(notification.id)
       end
     end
+    assert_equal 'suppressed', notification.reload.email_delivery_state
+    assert_nil notification.email_delivered_at
+    assert_equal 0, notification.email_delivery_attempts
+  end
+
+  def test_notification_mail_does_not_swallow_transport_errors
+    notification = FactoryBot.create(:notification)
+    ActionMailer::Base.stub(:raise_delivery_errors, false) do
+      assert NotificationsMailer.single_notification(notification).message.raise_delivery_errors
+    end
+  end
+
+  def test_delivery_state_survives_transient_failure_and_records_success
+    notification = FactoryBot.create(:notification)
+    failing = Object.new
+    def failing.deliver_now
+      raise Net::ReadTimeout
+    end
+    NotificationsMailer.stub(:single_notification, failing) do
+      assert_raises(Net::ReadTimeout) { NotificationEmailJob.new.perform(notification.id) }
+    end
+    assert_equal 'retrying', notification.reload.email_delivery_state
+    assert_equal 1, notification.email_delivery_attempts
+    NotificationEmailJob.new.perform(notification.id)
+    assert_equal 'delivered', notification.reload.email_delivery_state
+    assert_equal 2, notification.email_delivery_attempts
+    assert_not_nil notification.email_delivered_at
+    assert_nil notification.email_delivery_error_class
+    assert_no_difference(-> { ActionMailer::Base.deliveries.size }) do
+      NotificationEmailJob.new.perform(notification.id)
+    end
+  end
+
+  def test_permanent_failure_is_recorded_and_dead_lettered_without_retry
+    notification = FactoryBot.create(:notification)
+    failing = Object.new
+    def failing.deliver_now
+      raise Net::SMTPFatalError, '550 rejected'
+    end
+    error = NotificationsMailer.stub(:single_notification, failing) do
+      assert_raises(Net::SMTPFatalError) { NotificationEmailJob.new.perform(notification.id) }
+    end
+    assert_equal 'failed', notification.reload.email_delivery_state
+    assert_equal 'Net::SMTPFatalError', notification.email_delivery_error_class
+    assert_equal :kill, NotificationEmailJob.sidekiq_retry_in_block.call(0, error)
+    healthy = FactoryBot.create(:notification)
+    NotificationEmailJob.new.perform(healthy.id)
+    assert_equal 'delivered', healthy.reload.email_delivery_state
+  end
+
+  def test_exhausted_retries_are_persisted_after_the_dead_set_is_cleared
+    notification = FactoryBot.create(:notification)
+    NotificationEmailJob.sidekiq_retries_exhausted_block.call({ 'args' => [notification.id] }, Net::ReadTimeout.new)
+    assert_equal 'failed', notification.reload.email_delivery_state
+    assert_equal 'Net::ReadTimeout', notification.email_delivery_error_class
   end
 
   def test_the_job_runs_on_the_mailers_queue

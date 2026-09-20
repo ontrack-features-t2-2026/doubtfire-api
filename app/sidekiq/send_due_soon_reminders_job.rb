@@ -51,7 +51,7 @@ class SendDueSoonRemindersJob
                   on_conflict: :reject,
                   retry: 1
 
-  def perform
+  def perform(allow_large_fanout = false) # rubocop:disable Style/OptionalBooleanParameter
     today = Time.zone.today
     horizon = today + WINDOW_DAYS.days
     failed_project_ids = []
@@ -60,6 +60,10 @@ class SendDueSoonRemindersJob
     # NewTaskAvailableNotificationJob, so the unit and its task definitions are
     # loaded once per cohort rather than once per student.
     Unit.where(active: true).find_each(batch_size: BATCH_SIZE) do |unit|
+      next unless NotificationDeliveryPolicy.fanout_allowed?(
+        event: EVENT, trigger: "unit:#{unit.id}",
+        recipient_count: unit.active_projects.count, allow_large_fanout: allow_large_fanout
+      )
       remind_unit(unit, today, horizon, failed_project_ids)
     end
 

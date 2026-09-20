@@ -24,6 +24,19 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
     ActionMailer::Base.deliveries.clear
   end
 
+  def test_cohort_above_the_limit_needs_explicit_override
+    old_limit = ENV.fetch('DOUBTFIRE_NOTIFICATION_FANOUT_LIMIT', nil)
+    ENV['DOUBTFIRE_NOTIFICATION_FANOUT_LIMIT'] = '1'
+    assert_no_difference 'Notification.count' do
+      TaskDueDateChangedNotificationJob.new.perform(@task_def.id, @previous_due_date, @new_due_date, 'bounded')
+    end
+    assert_difference 'Notification.count', eligible_projects.count do
+      TaskDueDateChangedNotificationJob.new.perform(@task_def.id, @previous_due_date, @new_due_date, 'bounded', true)
+    end
+  ensure
+    old_limit.nil? ? ENV.delete('DOUBTFIRE_NOTIFICATION_FANOUT_LIMIT') : ENV['DOUBTFIRE_NOTIFICATION_FANOUT_LIMIT'] = old_limit
+  end
+
   def test_notifies_every_eligible_student_without_creating_tasks
     expected = eligible_projects.count
 

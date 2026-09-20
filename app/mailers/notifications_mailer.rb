@@ -1,4 +1,8 @@
 class NotificationsMailer < ApplicationMailer
+  # Jobs persist failure state; a swallowed SMTP exception would become a false
+  # delivered marker. Keep this local to notification mailers, including development.
+  self.raise_delivery_errors = true
+
   def add_general
     @doubtfire_host = Doubtfire::Application.config.institution[:host]
     @doubtfire_product_name = Doubtfire::Application.config.institution[:product_name]

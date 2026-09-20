@@ -39,6 +39,10 @@ class Notification < ApplicationRecord
   # see the row yet.
   after_commit :queue_email_delivery, on: :create
 
+  before_create do
+    self.email_delivery_state = 'pending' if email_delivery_state == 'untracked'
+  end
+
   scope :unread, -> { where(read_at: nil) }
   scope :recent_first, -> { order(created_at: :desc) }
 
