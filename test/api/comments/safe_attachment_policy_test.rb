@@ -120,7 +120,7 @@ class SafeAttachmentPolicyTest < ActiveSupport::TestCase
     stored = File.join(@task.student_work_dir(:new, false), '000-csv.csv')
     assert File.exist?(stored)
     assert_equal "name,score\nExample,7\n", File.read(stored)
-    assert AcceptSubmissionJob.jobs.any? { |job| job['args'].first == @task.id }
+    assert(AcceptSubmissionJob.jobs.any? { |job| job['args'].first == @task.id })
   ensure
     FileUtils.rm_rf(@task.student_work_dir(:new, false)) if @task
   end
