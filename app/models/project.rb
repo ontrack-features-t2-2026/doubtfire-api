@@ -326,7 +326,7 @@ class Project < ApplicationRecord
     # a Task.find (plus project/unit/task-definition lookups) for every task.
     tasks_by_id = Task
       .where(id: task_rows.map(&:id))
-      .preload(:task_definition, project: %i[unit user])
+      .preload(:task_definition, :granted_extension_comments, project: %i[unit user campus])
       .index_by(&:id)
 
     task_ids = task_rows.map(&:id)
@@ -371,6 +371,10 @@ class Project < ApplicationRecord
         extensions: t.extensions,
         scorm_extensions: t.scorm_extensions,
         due_date: t.due_date,
+        effective_deadline: t.effective_deadline,
+        effective_deadline_date: t.effective_deadline_date,
+        effective_deadline_reason: t.effective_deadline_reason,
+        effective_deadline_source_id: t.effective_deadline_source_id,
         submission_date: t.submission_date,
         completion_date: t.completion_date,
         target_start_date: t.target_start_date,

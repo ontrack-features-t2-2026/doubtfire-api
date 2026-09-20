@@ -44,4 +44,29 @@ class ResubmissionSettingTest < ActiveSupport::TestCase
       assert_nil @definition.resubmission_extensions_changed_by_id
     end
   end
+
+  test 'project load and task refresh expose the same canonical deadline metadata' do
+    @unit.update!(allow_flexible_dates: false, extension_weeks_on_resubmit_request: 1)
+    @definition.update!(start_date: Time.current - 2.weeks, target_date: Time.current - 2.days,
+                        due_date: Time.current + 4.weeks, target_grade: 0)
+    project = @unit.active_projects.first
+    task = project.task_for_task_definition(@definition)
+    task.assess(TaskStatus.fix_and_resubmit, @unit.main_convenor_user)
+    task.reload
+    add_auth_header_for(user: project.student)
+
+    get "/api/projects/#{project.id}"
+    assert_equal 200, last_response.status, last_response.body
+    row = last_response_body.fetch('tasks').find { |item| item['id'] == task.id }
+    assert_equal task.effective_deadline_date.iso8601, row['effective_deadline_date']
+    assert_equal 'post_feedback_extension', row['effective_deadline_reason']
+    assert_equal task.resubmission_extension_comment.id, row['effective_deadline_source_id']
+
+    get "/api/projects/#{project.id}/refresh_tasks/#{@definition.id}"
+    assert_equal 200, last_response.status, last_response.body
+    assert_equal row['effective_deadline_date'], last_response_body['effective_deadline_date']
+    assert_equal row['effective_deadline_reason'], last_response_body['effective_deadline_reason']
+    assert_equal row['effective_deadline_source_id'], last_response_body['effective_deadline_source_id']
+  end
+
 end

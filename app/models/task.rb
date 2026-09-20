@@ -132,6 +132,11 @@ class Task < ApplicationRecord
   has_one :overflow_task_claim, dependent: :destroy
 
   has_many :comments, class_name: 'TaskComment', dependent: :destroy, inverse_of: :task
+  # The general comments association above owns deletion for this read-only subset.
+  has_many :granted_extension_comments, lambda {
+    where(extension_granted: true).where.not(date_extension_assessed: nil)
+                                  .order(date_extension_assessed: :desc, id: :desc)
+  }, class_name: 'ExtensionComment', inverse_of: :task, dependent: nil
   has_many :task_similarities, class_name: 'TaskSimilarity', dependent: :destroy, inverse_of: :task
   has_many :reverse_jplag_similarities, class_name: 'JplagTaskSimilarity', dependent: :destroy, inverse_of: :other_task, foreign_key: 'other_task_id'
   has_many :reverse_moss_similarities, class_name: 'MossTaskSimilarity', dependent: :destroy, inverse_of: :other_task, foreign_key: 'other_task_id'
@@ -830,6 +835,7 @@ class Task < ApplicationRecord
     return false unless weeks_to_extend > 0
 
     if update(extensions: self.extensions + weeks_to_extend)
+      association(:granted_extension_comments).reset
       # Was the task previously assessed as time exceeded? ... with the extension should this change?
       if self.task_status == TaskStatus.time_exceeded && submitted_before_due?
         update(task_status: TaskStatus.ready_for_feedback)
@@ -884,9 +890,7 @@ class Task < ApplicationRecord
   end
 
   def effective_deadline_source
-    comments.where(type: 'ExtensionComment', extension_granted: true)
-            .where.not(date_extension_assessed: nil)
-            .order(date_extension_assessed: :desc, id: :desc).first
+    granted_extension_comments.first
   end
 
   def effective_deadline_source_id
