@@ -28,7 +28,8 @@ class NotificationDeliveryPolicy
     window = positive_integer('DOUBTFIRE_NOTIFICATION_RECIPIENT_WINDOW_SECONDS', 3600)
     # A locking read sees current rows even inside an older REPEATABLE READ
     # transaction snapshot (some producers already hold a project transaction).
-    Notification.where(user_id: user.id).where('created_at >= ?', Time.current - window)
-                .where.not(email_delivery_state: 'throttled').limit(limit).lock.pluck(:id).length >= limit
+    candidates = Notification.where(user_id: user.id).where('created_at >= ?', Time.current - window)
+                             .where.not(email_delivery_state: 'throttled').select(:id).limit(limit)
+    Notification.current_rows(candidates).length >= limit
   end
 end

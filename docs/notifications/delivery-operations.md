@@ -43,7 +43,12 @@ project counts before detailed eligibility/preferences; they may overcount but
 cannot undercount the candidate cohort. `notifications.fanout_limit` records
 event, trigger id, candidate count, limit and admission decision. No names,
 addresses or message bodies are logged. The recipient row lock serializes
-quota reservations across concurrent event producers. In-app records remain
+quota reservations across concurrent event producers. Quota/deduplication reads
+use current locking reads even within an older caller transaction. On MariaDB
+versions that expose `innodb_snapshot_isolation`, only those read statements
+opt out of snapshot-visibility rejection; the session and outer transaction
+settings remain unchanged. An existing event's pending push handoff is retried
+after the caller commits, preventing a retry from updating an unseen row. In-app records remain
 available for throttled events, with no push/email queued.
 
 An operator can deliberately rerun a verified cohort from Rails console, for

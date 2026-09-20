@@ -52,9 +52,18 @@ class NotificationDeliveryPolicyConcurrencyTest < ActiveSupport::TestCase
     assert_equal([[first.id]], PushNotificationDeliveryJob.jobs.map { |job| job['args'] })
   end
 
+  def test_duplicate_with_a_failed_push_handoff_retries_after_outer_commit
+    first, second = reserve_after_older_snapshot(dedupe_key: 'retry-push', fail_first_push: true)
+
+    assert_equal first.id, second.id
+    assert_not_nil second.reload.delivered_at
+    assert_equal [[first.id]], (NotificationEmailJob.jobs.map { |job| job['args'] })
+    assert_equal [[first.id]], (PushNotificationDeliveryJob.jobs.map { |job| job['args'] })
+  end
+
   private
 
-  def reserve_after_older_snapshot(dedupe_key: nil)
+  def reserve_after_older_snapshot(dedupe_key: nil, fail_first_push: false)
     snapshot_established = Queue.new
     first_reservation_committed = Queue.new
     producers = []
@@ -62,7 +71,13 @@ class NotificationDeliveryPolicyConcurrencyTest < ActiveSupport::TestCase
     producers << Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
         Timeout.timeout(15) { snapshot_established.pop }
-        notification = raise_notification('first_reservation', dedupe_key)
+        notification = if fail_first_push
+                         PushNotificationDeliveryJob.stub(:perform_async, false) do
+                           raise_notification('first_reservation', dedupe_key)
+                         end
+                       else
+                         raise_notification('first_reservation', dedupe_key)
+                       end
         # notify has returned from its transaction, so the first row and both
         # channel hand-offs exist before the older transaction resumes.
         first_reservation_committed << true

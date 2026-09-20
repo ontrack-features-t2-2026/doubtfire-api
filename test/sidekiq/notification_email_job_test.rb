@@ -235,6 +235,7 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     assert_empty AdditionalNotificationEmailDeliveryJob.jobs
 
     AdditionalNotificationEmailService.remove(user: user)
+    notification = FactoryBot.create(:notification, user: user, event: 'general')
     assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
       NotificationEmailJob.new.perform(notification.id)
     end
@@ -356,7 +357,7 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
 
     user.stub(:additional_notification_email, failing_lookup) do
       notification.stub(:user, user) do
-        Notification.stub(:find, notification) do
+        Notification.stub(:find_by, notification) do
           assert_difference -> { ActionMailer::Base.deliveries.count }, 1 do
             NotificationEmailJob.new.perform(notification.id)
           end

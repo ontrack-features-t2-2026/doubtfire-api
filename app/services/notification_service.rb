@@ -64,7 +64,14 @@ class NotificationService
 
   def self.deliver(notification)
     return nil if notification.nil?
-    return notification if notification.email_delivery_state == 'throttled'
+    return notification if notification.delivered_at? || notification.email_delivery_state == 'throttled'
+
+    if notification.reserved_from_existing_event
+      ActiveRecord.after_all_transactions_commit do
+        deliver(Notification.find_by(id: notification.id))
+      end
+      return notification
+    end
 
     # Concurrent or retried fan-outs can reserve the same immutable event. A
     # lock on that notification (not on the student's project) serializes only
@@ -100,10 +107,13 @@ class NotificationService
   rescue ActiveRecord::RecordNotUnique
     raise if attributes[:dedupe_key].blank?
 
-    Notification.lock.find_by!(
-      user: attributes.fetch(:user),
-      dedupe_key: attributes.fetch(:dedupe_key)
-    )
+    winner = Notification.current_rows(Notification.where(
+      user: attributes.fetch(:user), dedupe_key: attributes.fetch(:dedupe_key)
+    ).limit(1)).first
+    raise ActiveRecord::RecordNotFound, 'Reserved notification no longer exists' if winner.nil?
+
+    winner.reserved_from_existing_event = true
+    winner
   end
   private_class_method :create_notification
 

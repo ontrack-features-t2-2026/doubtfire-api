@@ -1,8 +1,4 @@
 class NotificationsMailer < ApplicationMailer
-  # Jobs persist failure state; a swallowed SMTP exception would become a false
-  # delivered marker. Keep this local to notification mailers, including development.
-  self.raise_delivery_errors = true
-
   def add_general
     @doubtfire_host = Doubtfire::Application.config.institution[:host]
     @doubtfire_product_name = Doubtfire::Application.config.institution[:product_name]
@@ -37,7 +33,7 @@ class NotificationsMailer < ApplicationMailer
       subject: subject,
       template_name: event_template_name(notification.event),
       **outbound_sender_headers(development_from: from_address)
-    )
+    ).tap { |message| message.raise_delivery_errors = true }
   end
 
   # Delivers a second, independent message to a verified additional address.
@@ -57,7 +53,7 @@ class NotificationsMailer < ApplicationMailer
       subject: subject,
       template_name: event_template_name(notification.event),
       **outbound_sender_headers(development_from: from_address)
-    )
+    ).tap { |message| message.raise_delivery_errors = true }
   end
   SUBJECTS = {
     'task_comment_created' => 'New task comment',
