@@ -259,8 +259,8 @@ module Doubtfire
       raise "Required keys are not set, check the following environment variables: \n  " \
             "key                          => variable set?\n  " \
             "DF_SECRET_KEY_BASE           => #{!credentials.secret_key_base.nil?}\n  " \
-            "DF_SECRET_KEY_ATTR           => #{!credentials.secret_key_base.nil?}\n  " \
-            "DF_SECRET_KEY_DEVISE         => #{!credentials.secret_key_base.nil?}"
+            "DF_SECRET_KEY_ATTR           => #{!credentials.secret_key_attr.nil?}\n  " \
+            "DF_SECRET_KEY_DEVISE         => #{!credentials.secret_key_devise.nil?}"
     end
 
     # Localization
