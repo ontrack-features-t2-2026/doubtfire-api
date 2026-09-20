@@ -51,9 +51,13 @@ class UnitsCsvAuditTest < ActiveSupport::TestCase
            file: Rack::Test::UploadedFile.new(csv.path, 'text/csv')
     end
 
-    refute_equal 403, last_response.status, last_response.body
-    audit_line = log.lines.grep(/bulk withdraw by/).first
-    assert_match(/bulk withdraw by user #{convenor.id} on unit #{unit.id}: 1 withdrawn/, audit_line)
+    assert_not_equal 403, last_response.status, last_response.body
+    audit_line = log.lines.find { |line| line.include?('units.bulk_withdraw') }
+    audit = JSON.parse(audit_line[audit_line.index('{')..])
+    assert_equal convenor.id, audit.fetch('user_id')
+    assert_equal unit.id, audit.fetch('unit_id')
+    assert_equal 1, audit.fetch('withdrawn_count')
+    assert_equal [unit.projects.find_by!(user: student).id], audit.fetch('project_ids')
     assert_not_includes audit_line, convenor.username
   ensure
     csv&.close!
@@ -70,8 +74,19 @@ class UnitsCsvAuditTest < ActiveSupport::TestCase
     end
 
     assert_equal 200, last_response.status, last_response.body
-    audit_line = log.lines.grep(/class CSV export by/).first
-    assert_match(/class CSV export by user #{convenor.id} on unit #{unit.id}/, audit_line)
+    audit_line = log.lines.find { |line| line.include?('units.csv_export') }
+    audit = JSON.parse(audit_line[audit_line.index('{')..])
+    assert_equal convenor.id, audit.fetch('user_id')
+    assert_equal unit.id, audit.fetch('unit_id')
     assert_not_includes audit_line, convenor.username
   end
+
+  def test_denied_export_writes_no_success_audit
+    unit = FactoryBot.create(:unit)
+    add_auth_header_for(user: FactoryBot.create(:user, :student))
+    log = with_captured_rails_log { get "/api/csv/units/#{unit.id}" }
+    assert_equal 403, last_response.status
+    assert_not_includes log, 'units.csv_export'
+  end
+
 end
