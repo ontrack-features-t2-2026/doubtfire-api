@@ -875,7 +875,29 @@ class Task < ApplicationRecord
   # deadline" the ticket is named after and it is the one value the window, the
   # late check and the interface should all agree on.
   def effective_deadline
-    to_same_day_anywhere_on_earth(due_date)
+    to_same_day_anywhere_on_earth(effective_deadline_date)
+  end
+
+  # Share the same calendar day with the task API and existing subscription feed.
+  def effective_deadline_date
+    deadline_date(local_due_date)
+  end
+
+  def effective_deadline_source
+    comments.where(type: 'ExtensionComment', extension_granted: true)
+            .where.not(date_extension_assessed: nil)
+            .order(date_extension_assessed: :desc, id: :desc).first
+  end
+
+  def effective_deadline_source_id
+    effective_deadline_source&.id if extensions.positive? && !unit.allow_flexible_dates
+  end
+
+  def effective_deadline_reason
+    return 'flexible_date' if unit.allow_flexible_dates
+    return 'standard_due_date' unless extensions.positive?
+
+    effective_deadline_source&.resubmission_extension? ? 'post_feedback_extension' : 'approved_extension'
   end
 
   # The far edge of the window: seven calendar days after this assessment, in
@@ -924,19 +946,54 @@ class Task < ApplicationRecord
   # recording the extension, or nil when no extension was applied.
   def grant_resubmission_extension(status, by_user, assess_date = Time.zone.now)
     return nil unless resubmission_extension_statuses.include?(status)
-    return nil unless resubmission_extension_weeks > 0
-    return nil unless can_apply_for_extension?
-    return nil unless resubmission_extension_window_open?(assess_date)
 
-    # One resubmission extension per round of feedback - reprocessing must not move
-    # the deadline a second time
-    return nil if resubmission_extension_comment.present?
+    extension = nil
+    notification = nil
+    self.class.transaction do
+      # Assess sets unsaved status fields before calling this method. Lock a
+      # separate instance so those fields are preserved, and refresh the value
+      # that a concurrent assessment may already have changed.
+      persisted_task = self.class.lock.find(id)
+      self.extensions = persisted_task.extensions
+      self.submission_date = persisted_task.submission_date if persisted_task.submission_date.present?
+      task_definition.reload
+      next unless task_definition.resubmission_extensions_enabled
+      next unless resubmission_extension_weeks.positive? && !unit.allow_flexible_dates
+      next unless can_apply_for_extension? && resubmission_extension_window_open?(assess_date)
+      next if resubmission_extension_comment.present?
 
-    weeks = [resubmission_extension_weeks, weeks_can_extend].min
-    return nil unless grant_extension(by_user, weeks)
+      previous_deadline = effective_deadline
+      weeks = [resubmission_extension_weeks, weeks_can_extend].min
+      next unless grant_extension(by_user, weeks)
 
-    record_resubmission_extension(status, by_user, assess_date, weeks)
+      # The extension and its replay marker must either both commit or neither.
+      extension = record_resubmission_extension(status, by_user, assess_date, weeks)
+      if effective_deadline > previous_deadline
+        notification = NotificationService.reserve(
+          user: project.student,
+          type: 'extension',
+          event: 'resubmission_deadline_changed',
+          message: "Your task deadline is now #{effective_deadline_date.iso8601} (end of day anywhere on earth) after feedback requiring further action. Open OnTrack for details.",
+          link: "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}",
+          dedupe_key: "resubmission-deadline:#{extension.id}",
+          notifiable: extension
+        )
+      end
+    end
+    if notification
+      ActiveRecord.after_all_transactions_commit do
+        deliver_resubmission_deadline_notification(notification)
+      end
+    end
+    extension
   end
+
+  def deliver_resubmission_deadline_notification(notification)
+    NotificationService.deliver(notification)
+  rescue StandardError => e
+    Rails.logger.error "Failed to deliver resubmission deadline notification for task #{id}: #{e.class}"
+  end
+  private :deliver_resubmission_deadline_notification
 
   # Record why the deadline moved and which assessment moved it, so the
   # interface and the notifications can explain the change, and so a repeat of
@@ -1453,12 +1510,11 @@ class Task < ApplicationRecord
       self.completion_date = assess_date if completion_date.nil?
     else
       self.completion_date = nil
-
-      # Grant an extension on fix if the deadline is close - see
-      # #grant_resubmission_extension for the rule and for why this only
-      # happens once per round of feedback
-      grant_resubmission_extension(task_status, assessor, assess_date)
     end
+
+    # All declared feedback outcomes must reach the eligibility check, including
+    # Discuss/Demonstrate, which also mark the work ready for completion.
+    grant_resubmission_extension(task_status, assessor, assess_date)
 
     # Save the task
     if save!

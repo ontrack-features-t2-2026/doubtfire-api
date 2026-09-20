@@ -197,7 +197,7 @@ class Webcal < ApplicationRecord
   # Returns the target/extended date for the specified task definition.
   #
   def self.end_date_for_task_definition(task_def, task = nil, project = nil)
-    return task.local_due_date if task.present?
+    return task.effective_deadline_date if task.present?
 
     flexible_grade_date_for_task_definition(task_def, project, :target_date) || task_def.target_date
   end
