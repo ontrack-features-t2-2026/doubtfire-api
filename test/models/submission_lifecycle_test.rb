@@ -83,6 +83,19 @@ class SubmissionLifecycleTest < ActiveSupport::TestCase
     assert_not_equal before.dtstart, after.dtstart
   end
 
+  test 'task api omits an effective deadline date when shallow task data has no date' do
+    task_data = {
+      id: @task.id,
+      task_definition_id: @definition.id,
+      due_date: @task.due_date,
+      effective_deadline_date: nil
+    }
+
+    response = Entities::TaskEntity.represent(task_data).as_json
+
+    assert_not response.key?(:effective_deadline_date)
+  end
+
   test 'unit disable and flexible dates do not raise automatic notifications' do
     @unit.update!(extension_weeks_on_resubmit_request: 0)
     @task.reload

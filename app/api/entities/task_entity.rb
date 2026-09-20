@@ -21,7 +21,7 @@ module Entities
     expose :effective_deadline
     expose :effective_deadline_reason
     expose :effective_deadline_source_id
-    expose :effective_deadline_date, format_with: :date_only
+    expose :effective_deadline_date, format_with: :date_only, expose_nil: false
 
     expose :extensions
     expose :scorm_extensions
