@@ -13,6 +13,7 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     @project = FactoryBot.create(:project)
     @unit = @project.unit
     @task_definition = @unit.task_definitions.first
+    @task_definition.update!(resubmission_extensions_enabled: false)
     @task = @project.task_for_task_definition(@task_definition)
     @student = @project.student
     @tutor = @unit.main_convenor_user
