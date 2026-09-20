@@ -13,7 +13,7 @@ module Submission
 
     desc "Upload documents for inclusion in a project's portfolio"
     params do
-      requires :name,  type: String,                        desc: 'Name of the part being uploaded'
+      requires :name, type: String, desc: 'Name of the part being uploaded'
       requires :kind,  type: String, values: %w[document code image], desc: 'The kind of file being uploaded: document, code, or image'
       requires :file0, type: File, desc: 'file 0.'
     end
