@@ -40,7 +40,7 @@ class ApiRootTest < ActiveSupport::TestCase
   end
 
   def mount_lines
-    source.lines.select { |line| line.match?(MOUNT_LINE) }
+    source.lines.grep(MOUNT_LINE)
   end
 
   def mounted_apis
@@ -79,7 +79,7 @@ class ApiRootTest < ActiveSupport::TestCase
   # otherwise be dropped silently and reported as authenticated. Fail loudly so
   # the scanner is widened instead of quietly giving a false all-clear.
   def test_every_mount_line_is_parseable
-    unparsed = mount_lines.reject { |line| line.match?(MOUNT_CALL) }
+    unparsed = mount_lines.grep_v(MOUNT_CALL)
 
     assert_empty unparsed.map(&:strip),
                  "These mount lines in api_root.rb could not be parsed, so the auth-coverage " \
