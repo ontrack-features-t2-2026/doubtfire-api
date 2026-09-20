@@ -31,6 +31,30 @@ class FileHelperTest < ActiveSupport::TestCase
     end
   end
 
+  def test_unknown_upload_kind_fails_closed_without_logging_caller_controlled_values
+    Tempfile.create(['private-student-name', '.txt']) do |file|
+      file.write('private file content')
+      file.flush
+
+      logs = capture_upload_logs do
+        result = FileHelper.accept_file(
+          { 'filename' => 'private-student-name.txt', 'tempfile' => file },
+          'private requirement label',
+          "private-kind\nforged-log-entry"
+        )
+
+        assert_not result[:accepted]
+        assert_equal 'unsupported file type.', result[:msg]
+      end
+
+      assert_includes logs, 'Unknown file type'
+      assert_includes logs, '"kind":"unknown"'
+      assert_not_includes logs, 'private'
+      assert_not_includes logs, 'forged-log-entry'
+      assert_not_includes logs, file.path
+    end
+  end
+
   def test_mime_rejection_is_visible_at_info_with_detected_type_and_policy
     Tempfile.create(['private-report', '.pdf']) do |file|
       file.write('private plain text pretending to be a PDF')

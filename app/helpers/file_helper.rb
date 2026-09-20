@@ -17,6 +17,7 @@ module FileHelper
   DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   DOCX_MAIN_DOCUMENT_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'
   OOXML_CONTENT_TYPES_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/content-types'
+  ACCEPTED_FILE_KINDS = %w[image code document word_document zip archive audio comment_attachment video].freeze
 
   ZIP_NESTED_ARCHIVE_EXTENSIONS = %w[
     .7z .bz2 .ear .gz .jar .rar .tar .tar.bz2 .tar.gz .tar.xz .tbz .tbz2 .tgz .txz .war .xz .zip
@@ -33,7 +34,7 @@ module FileHelper
   # Test if a file should be accepted based on an expected kind
   # - file is passed the file uploaded to Doubtfire (a hash with all relevant data about the file)
   #
-  def accept_file(file, name, kind)
+  def accept_file(file, _name, kind)
     case kind
     when 'image'
       mime_allow_list = ['image/png', 'image/gif', 'image/bmp', 'image/tiff', 'image/jpeg', 'image/x-ms-bmp']
@@ -71,7 +72,11 @@ module FileHelper
     when 'video'
       mime_allow_list = ['video/mp4']
     else
-      logger.error "Unknown type '#{kind}' provided for '#{name}'"
+      log_file_rejection('Unknown file type', 'unknown', file)
+      return {
+        accepted: false,
+        msg: 'unsupported file type.'
+      }
     end
 
     uploaded_filename = file['filename'] || file[:filename] || file['tempfile'].path
@@ -163,7 +168,8 @@ module FileHelper
       suffix = File.extname(value.to_s).downcase
       suffix.match?(/\A\.[a-z0-9]{1,12}\z/) ? suffix : '[none or invalid]'
     end
-    details = details.merge(kind: kind,
+    safe_kind = ACCEPTED_FILE_KINDS.include?(kind) ? kind : 'unknown'
+    details = details.merge(kind: safe_kind,
                             uploaded_extension: extension.call(file['filename'] || file[:filename]),
                             temporary_extension: extension.call(file['tempfile'].path))
     logger.info("#{reason} #{details.to_json}")
