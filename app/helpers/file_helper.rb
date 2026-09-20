@@ -81,7 +81,7 @@ module FileHelper
     extension_check &&= uploaded_extension == 'docx' if kind == 'word_document'
     unless extension_check
       msg = 'invalid file extension.'
-      logger.debug 'File extension check failed'
+      log_file_rejection('File extension check failed', kind, file)
       return {
         accepted: false,
         msg: msg
@@ -91,7 +91,8 @@ module FileHelper
     mime_check = mime_in_list?(file['tempfile'].path, mime_allow_list)
     unless mime_check
       msg = 'invalid file MIME type, file is likely corrupted.'
-      logger.debug 'File MIME check failed'
+      log_file_rejection('File MIME check failed', kind, file,
+                         detected_mime: mime_type(file['tempfile'].path), allowed_mime: mime_allow_list)
       return {
         accepted: false,
         msg: msg
@@ -102,7 +103,7 @@ module FileHelper
       docx_validation_result = validate_docx(file['tempfile'].path)
 
       unless docx_validation_result[:valid]
-        logger.debug "Word document is invalid: #{docx_validation_result[:msg]}"
+        log_file_rejection('Word document is invalid', kind, file)
         return {
           accepted: false,
           msg: docx_validation_result[:msg]
@@ -116,7 +117,7 @@ module FileHelper
 
       if pdf_validation_result[:encrypted]
         msg = 'PDF file is encrypted, encrypted files are not supported.'
-        logger.debug 'PDF file is encrypted'
+        log_file_rejection('PDF file is encrypted', kind, file)
         return {
           accepted: false,
           msg: msg
@@ -125,7 +126,7 @@ module FileHelper
 
       unless pdf_validation_result[:valid]
         msg = 'PDF file is corrupted.'
-        logger.debug 'PDF file is corrupted'
+        log_file_rejection('PDF file is corrupted', kind, file)
         return {
           accepted: false,
           msg: msg
@@ -137,7 +138,7 @@ module FileHelper
       zip_validation_result = validate_zip_upload(file['tempfile'].path, File.basename(file[:filename].to_s))
 
       unless zip_validation_result[:valid]
-        logger.debug "Zip file is invalid: #{zip_validation_result[:msg]}"
+        log_file_rejection('Zip file is invalid', kind, file)
         return {
           accepted: false,
           msg: zip_validation_result[:msg]
@@ -152,6 +153,20 @@ module FileHelper
       accepted: true,
       msg: 'success'
     }
+  end
+
+  # Upload names and requirement labels can contain student information. Log
+  # only bounded extensions and validation metadata, never content or paths.
+  # JSON escaping also prevents client-controlled extensions forging log lines.
+  def log_file_rejection(reason, kind, file, **details)
+    extension = lambda do |value|
+      suffix = File.extname(value.to_s).downcase
+      suffix.match?(/\A\.[a-z0-9]{1,12}\z/) ? suffix : '[none or invalid]'
+    end
+    details = details.merge(kind: kind,
+                            uploaded_extension: extension.call(file['filename'] || file[:filename]),
+                            temporary_extension: extension.call(file['tempfile'].path))
+    logger.info("#{reason} #{details.to_json}")
   end
 
   #
@@ -1142,6 +1157,7 @@ module FileHelper
   end
   # Export functions as module functions
   module_function :accept_file
+  module_function :log_file_rejection
   module_function :sanitized_path
   module_function :sanitized_filename
   module_function :safe_upload_filename

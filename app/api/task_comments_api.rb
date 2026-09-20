@@ -78,8 +78,6 @@ class TaskCommentsApi < Grape::API
       error!(error: 'Original comment is not in this task.') if task.all_comments.find(reply_to_id).blank?
     end
 
-    logger.info("user_id=#{current_user.id} added comment for task #{task.id} (#{task_definition.abbreviation})")
-
     if existing_result.present?
       result = existing_result
     elsif attached_file.blank?
@@ -119,6 +117,8 @@ class TaskCommentsApi < Grape::API
     if result.nil?
       error!({ error: 'No comment added. Comment duplicates last comment, so ignored.' }, 403)
     else
+
+      logger.info("user_id=#{current_user.id} added comment for task #{task.id} (#{task_definition.abbreviation})") if existing_result.blank?
 
       SessionTracker.record_assessment_activity(
         action: 'add-comment',
