@@ -13,6 +13,7 @@ class SettingsApi < Grape::API
       overseerEnabled: Doubtfire::Application.config.overseer_enabled,
       tiiEnabled: TurnItIn.enabled?,
       d2lEnabled: D2lIntegration.enabled?,
+      tutorialEnabled: Doubtfire::Application.config.tutorial_enabled,
 
       # Web push. The VAPID *public* key is not a secret — the browser has to
       # send it to the push service to subscribe at all. Serving it here means it

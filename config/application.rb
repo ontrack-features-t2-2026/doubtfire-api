@@ -327,6 +327,10 @@ module Doubtfire
     end
 
     config.sm_instance = nil
+
+    # Runtime rollout gate for the first-time tutorial; use 1 to enable.
+    config.tutorial_enabled = ENV['TUTORIAL_ENABLED'].present? && ENV['TUTORIAL_ENABLED'].to_s.downcase != "false" && ENV['TUTORIAL_ENABLED'].to_i != 0
+
     config.overseer_enabled = ENV['OVERSEER_ENABLED'].present? && ENV['OVERSEER_ENABLED'].to_s.downcase != "false" && ENV['OVERSEER_ENABLED'].to_i != 0
 
     config.docker_config = {
