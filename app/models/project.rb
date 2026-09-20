@@ -326,7 +326,7 @@ class Project < ApplicationRecord
     # a Task.find (plus project/unit/task-definition lookups) for every task.
     tasks_by_id = Task
       .where(id: task_rows.map(&:id))
-      .preload(:task_definition, :granted_extension_comments, project: %i[unit user campus])
+      .preload(:granted_extension_comments, task_definition: :grade_due_dates, project: %i[unit user campus])
       .index_by(&:id)
 
     task_ids = task_rows.map(&:id)

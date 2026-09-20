@@ -67,7 +67,7 @@ class TasksApi < Grape::API
     end
 
     result = base
-             .preload(:task_definition, :granted_extension_comments, project: %i[unit user campus])
+             .preload(:granted_extension_comments, task_definition: :grade_due_dates, project: %i[unit user campus])
              .map do |task|
       {
         task_definition_id: task.task_definition_id,
