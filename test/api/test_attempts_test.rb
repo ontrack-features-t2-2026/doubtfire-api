@@ -5,6 +5,21 @@ class TestAttemptsTest < ActiveSupport::TestCase
   include TestHelpers::AuthHelper
   include TestHelpers::JsonHelper
 
+  def test_legacy_attempt_with_null_score_can_create_and_update_a_scorm_comment
+    project = FactoryBot.create(:project)
+    task = project.task_for_task_definition(project.unit.task_definitions.first)
+    attempt = TestAttempt.create!(task_id: task.id, success_status: true, score_scaled: nil)
+    attempt.add_scorm_comment
+    comment = ScormComment.find_by!(commentable_id: attempt.id)
+    assert_equal 'Passed', comment.comment
+    attempt.update_scorm_comment
+    assert_equal 'Passed', comment.reload.comment
+    attempt.update!(score_scaled: 0)
+    assert_equal 'Passed', attempt.success_status_description
+    attempt.update!(success_status: false)
+    assert_equal 'Unsuccessful', attempt.success_status_description
+  end
+
   def app
     Rails.application
   end
