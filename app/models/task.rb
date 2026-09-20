@@ -1760,18 +1760,10 @@ class Task < ApplicationRecord
   def add_comment_with_attachment(user, tempfile, reply_to_id = nil, text = nil, client_request_id = nil)
     ensured_group_submission if group_task? && group
 
-    attachment_type =
-      if FileHelper.accept_file(tempfile, 'comment attachment audio test', 'audio')[:accepted]
-        :audio
-      elsif FileHelper.accept_file(tempfile, 'comment attachment image test', 'image')[:accepted]
-        :image
-      elsif FileHelper.accept_file(tempfile, 'comment attachment PDF', 'document')[:accepted]
-        :pdf
-      elsif FileHelper.accept_file(tempfile, 'comment attachment DOCX', 'word_document')[:accepted]
-        :document
-      end
+    validation = FileHelper.accept_file(tempfile, 'comment attachment', 'comment_attachment')
+    return nil unless validation[:accepted]
 
-    return nil if attachment_type.nil?
+    attachment_type = validation[:category]
 
     comment = TaskComment.new(
       task: self,
@@ -1936,7 +1928,7 @@ class Task < ApplicationRecord
         FileUtils.rm("#{task_dir}#{img}") unless dest_file == "#{task_dir}#{img}"
       end
 
-      input_files = Dir.entries(task_dir).select { |f| (f =~ /^\d{3}.(cover|document|code|image|zip|archive)/) == 0 }
+      input_files = Dir.entries(task_dir).select { |f| (f =~ /^\d{3}.(cover|document|code|image|zip|archive|csv)/) == 0 }
 
       if input_files.length != task_definition.number_of_uploaded_files
         logger.error "Error processing task #{log_details} - missing files expected #{task_definition.number_of_uploaded_files} got #{input_files.length}"

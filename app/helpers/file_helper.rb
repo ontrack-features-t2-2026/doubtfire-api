@@ -17,7 +17,9 @@ module FileHelper
   DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   DOCX_MAIN_DOCUMENT_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'
   OOXML_CONTENT_TYPES_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/content-types'
-  ACCEPTED_FILE_KINDS = %w[image code document word_document zip archive audio comment_attachment video].freeze
+  ACCEPTED_FILE_KINDS = %w[image code document word_document zip archive audio comment_attachment video csv].freeze
+
+  CODE_UPLOAD_EXTENSIONS = %w[pas cpp c cs csv h hpp java py js html coffee rb css scss yaml yml xml json ts r rmd rnw rhtml rpres tex vb sql txt md jack hack asm hdl tst out cmp vm sh bat dat ipynb pml vue].freeze
 
   ZIP_NESTED_ARCHIVE_EXTENSIONS = %w[
     .7z .bz2 .ear .gz .jar .rar .tar .tar.bz2 .tar.gz .tar.xz .tbz .tbz2 .tgz .txz .war .xz .zip
@@ -35,6 +37,9 @@ module FileHelper
   # - file is passed the file uploaded to Doubtfire (a hash with all relevant data about the file)
   #
   def accept_file(file, _name, kind)
+    return CommentAttachmentPolicy.validate(file) if kind == 'comment_attachment'
+    return SpreadsheetUploadPolicy.validate(file) if kind == 'csv'
+
     case kind
     when 'image'
       mime_allow_list = ['image/png', 'image/gif', 'image/bmp', 'image/tiff', 'image/jpeg', 'image/x-ms-bmp']
@@ -84,6 +89,7 @@ module FileHelper
     extension_check = FileHelper.known_extension?(uploaded_extension)
     extension_check ||= uploaded_extension == 'docx' && %w[comment_attachment word_document].include?(kind)
     extension_check &&= uploaded_extension == 'docx' if kind == 'word_document'
+    extension_check &&= CODE_UPLOAD_EXTENSIONS.include?(uploaded_extension) if kind == 'code'
     unless extension_check
       msg = 'invalid file extension.'
       log_file_rejection('File extension check failed', kind, file)
@@ -635,13 +641,14 @@ module FileHelper
   # A DOCX file is an OOXML zip package. libmagic can identify an arbitrary zip
   # as a Word document from its filename or a small subset of entries, so check
   # the package itself before accepting it as a comment attachment.
-  def validate_docx(path)
+  def validate_docx(path, format: 'docx', max_file_size: nil)
+    main_part = format == 'xlsx' ? 'xl/workbook.xml' : 'word/document.xml'
     required_entries = [
       '[Content_Types].xml',
       '_rels/.rels',
-      'word/document.xml'
+      main_part
     ].freeze
-    max_file_size = Doubtfire::Application.config.max_file_size.to_i
+    max_file_size ||= Doubtfire::Application.config.max_file_size.to_i
     max_file_size = 10_000_000 if max_file_size <= 0
     max_uncompressed_size = max_file_size * zip_uncompressed_size_multiplier
 
@@ -650,6 +657,7 @@ module FileHelper
     stats = { entries: 0, total_uncompressed_size: 0 }
     entry_names = []
     content_types = nil
+    main_xml = nil
 
     Zip::File.open(path) do |zip_file|
       zip_file.each do |entry|
@@ -660,8 +668,21 @@ module FileHelper
         next if entry.directory?
 
         validate_zip_upload_entry!(entry.name, entry.size, stats, max_file_size, max_uncompressed_size)
+        raise 'Office document contains unsupported active or embedded content.' if entry.name.match?(%r{(?:vba|activex|embeddings|macrosheets|dialogsheets|externallinks|connections|querytables)|\.bin$}i)
+        raise 'Office document contains duplicate entries.' if entry_names.include?(entry.name)
         entry_names << entry.name
         content_types = entry.get_input_stream.read(1_000_000) if entry.name == '[Content_Types].xml'
+        main_xml = entry.get_input_stream.read(5_000_000) if entry.name == main_part
+        next unless entry.name.end_with?('.rels')
+
+        relationships = Nokogiri::XML(entry.get_input_stream.read(1_000_000)) { |config| config.strict.nonet }
+        raise 'Office document contains unsafe XML declarations.' if relationships.internal_subset
+        relationships.xpath('//*[local-name()="Relationship"]').each do |relationship|
+          next unless relationship['TargetMode'].to_s.casecmp?('External')
+          # Ordinary hyperlinks do not fetch content automatically; external
+          # templates, workbooks, images and objects are not accepted.
+          raise 'Office document contains external content.' unless relationship['Type'].to_s.end_with?('/hyperlink')
+        end
       end
     end
 
@@ -670,8 +691,15 @@ module FileHelper
       return { valid: false, msg: "Word document package is missing #{missing_entries.join(', ')}." }
     end
 
-    unless docx_main_document_declared?(content_types)
+    unless docx_main_document_declared?(content_types, format: format)
       return { valid: false, msg: 'Word document package has an invalid main document content type.' }
+    end
+
+    main_document = Nokogiri::XML(main_xml) { |config| config.strict.nonet }
+    expected_root = format == 'xlsx' ? 'workbook' : 'document'
+    expected_namespace = format == 'xlsx' ? 'http://schemas.openxmlformats.org/spreadsheetml/2006/main' : 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    unless main_document.root&.name == expected_root && main_document.root&.namespace&.href == expected_namespace && main_document.internal_subset.nil?
+      return { valid: false, msg: 'Office document contains an invalid main XML part.' }
     end
 
     compressed_size = [File.size(path), 1].max
@@ -689,15 +717,19 @@ module FileHelper
   # The main part must be declared by the Override for /word/document.xml.
   # Matching the type as a substring would also accept it inside a comment or
   # on some other part.
-  def docx_main_document_declared?(content_types)
+  def docx_main_document_declared?(content_types, format: 'docx')
     return false if content_types.blank?
 
     document = Nokogiri::XML(content_types) { |config| config.strict.nonet }
+    return false if document.internal_subset || content_types.match?(/macroEnabled|vbaProject|activeX/i)
+
+    part = format == 'xlsx' ? '/xl/workbook.xml' : '/word/document.xml'
+    expected_type = format == 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' : DOCX_MAIN_DOCUMENT_CONTENT_TYPE
     override = document.at_xpath(
-      "/ct:Types/ct:Override[@PartName='/word/document.xml']",
+      "/ct:Types/ct:Override[@PartName='#{part}']",
       'ct' => OOXML_CONTENT_TYPES_NAMESPACE
     )
-    override.present? && override['ContentType'] == DOCX_MAIN_DOCUMENT_CONTENT_TYPE
+    override.present? && override['ContentType'] == expected_type
   rescue Nokogiri::XML::SyntaxError
     false
   end

@@ -108,13 +108,14 @@ class TaskComment < ApplicationRecord
     return 'image comment' if content_type == 'image'
     return 'pdf document' if content_type == 'pdf'
     return 'document attachment' if content_type == 'document'
+    return 'spreadsheet attachment' if content_type == 'spreadsheet'
     return 'discussion comment' if content_type == 'discussion'
 
     stored_comment
   end
 
   def attachment?
-    %w[audio image pdf document].include?(content_type) && attachment_extension.present?
+    %w[audio image pdf document spreadsheet].include?(content_type) && attachment_extension.present?
   end
 
   def attachment_path
@@ -153,8 +154,8 @@ class TaskComment < ApplicationRecord
       save
       FileHelper.compress_pdf(file_upload["tempfile"].path)
       FileUtils.mv file_upload["tempfile"].path, attachment_path
-    elsif content_type == 'document'
-      self.attachment_extension = '.docx'
+    elsif %w[document spreadsheet].include?(content_type)
+      self.attachment_extension = File.extname(file_upload['filename'] || file_upload[:filename]).downcase
       save
       FileUtils.mv file_upload["tempfile"].path, attachment_path
     else

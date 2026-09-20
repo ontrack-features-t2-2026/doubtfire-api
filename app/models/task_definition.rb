@@ -366,7 +366,7 @@ class TaskDefinition < ApplicationRecord
       end
 
       # Check the type is either document, image, code, or zip
-      unless %w(document image code zip).include? req['type']
+      unless %w(document image code zip archive csv).include? req['type']
         errors.add(:upload_requirements, "the type for item #{i + 1} is not valid --> #{req['type']}.")
       end
 
