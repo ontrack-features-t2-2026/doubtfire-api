@@ -36,6 +36,14 @@ Image publication is coordinated from the exact API/web revisions pinned by
 legacy API image workflow is intentionally build-only and cannot publish a
 tagged image independently of the cross-repository handover checks.
 
+The first-time tutorial reads the authenticated `GET /api/settings` rollout flag
+and `GET /api/projects/history`. The history endpoint returns only
+`{"hasProjects": true}` or `{"hasProjects": false}` for the authenticated user,
+including projects in inactive units and withdrawn enrolments. It accepts no owner
+selection and does not return project details. The ordinary `/api/projects` list
+continues to exclude withdrawn enrolments, so it must not be used to establish
+that an account has no prior project history.
+
 ## Environment variables
 
 Doubtfire requires multiple environment variables that help define settings about the Doubtfire instance running. Whilst these will default to other values, you may want to override them in production.
