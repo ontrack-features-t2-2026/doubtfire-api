@@ -105,4 +105,24 @@ class SafeAttachmentPolicyTest < ActiveSupport::TestCase
     Rails.logger = original
   end
 
+  test 'task Spreadsheet requirement accepts CSV through the submission API and retains the original' do
+    @task_definition.update!(
+      start_date: Time.zone.now - 1.week,
+      target_date: Time.zone.now + 1.week,
+      upload_requirements: [{ 'key' => 'file0', 'name' => 'Results', 'type' => 'csv' }]
+    )
+    with_csv do |file|
+      post "/api/projects/#{@project.id}/task_def_id/#{@task_definition.id}/submission",
+           trigger: 'ready_for_feedback', file0: file
+    end
+    assert_equal 201, last_response.status, last_response.body
+    @task.reload
+    stored = File.join(@task.student_work_dir(:new, false), '000-csv.csv')
+    assert File.exist?(stored)
+    assert_equal "name,score\nExample,7\n", File.read(stored)
+    assert AcceptSubmissionJob.jobs.any? { |job| job['args'].first == @task.id }
+  ensure
+    FileUtils.rm_rf(@task.student_work_dir(:new, false)) if @task
+  end
+
 end
