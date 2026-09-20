@@ -1,3 +1,7 @@
+> Production startup now requires a valid matching VAPID pair. Both keys may be
+> unset only in development/test. See [delivery operations](delivery-operations.md)
+> for secret injection, key rotation and required client resubscription.
+
 # Web push setup
 
 How the push channel works, how to turn it on, and how to check it is working.

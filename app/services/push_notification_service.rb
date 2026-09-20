@@ -3,8 +3,8 @@
 # PushNotificationDeliveryJob calls this for every notification handed off by
 # NotificationService. Two properties make that safe:
 #
-#   * without VAPID keys it is a no-op, so the app behaves exactly as it did
-#     before push existed for anyone who has not configured them
+#   * without VAPID keys it is a development no-op; production boot validates
+#     the matching key pair before any requests or jobs are accepted
 #   * one browser failing never stops attempts to the others; transient failures
 #     are raised only after fan-out so Sidekiq can retry the delivery job
 #
