@@ -7,7 +7,7 @@ abort 'Run only in test with an isolated database' unless Rails.env.test?
 require 'sidekiq/api'
 require 'factory_bot_rails'
 require 'faker'
-FactoryBot.find_definitions if FactoryBot.factories.empty?
+FactoryBot.find_definitions unless FactoryBot.factories.registered?(:user)
 
 size = Integer(ENV.fetch('COHORT_SIZE'), 10)
 abort 'COHORT_SIZE must be between 1 and 20000' unless size.between?(1, 20_000)

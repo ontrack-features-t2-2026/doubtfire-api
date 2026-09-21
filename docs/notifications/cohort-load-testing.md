@@ -30,3 +30,27 @@ one local worker and provider latency is synthetic. Production acceptance still
 requires HTTP timing, the actual largest enrolment, representative worker
 concurrency, transport latency, delivery-rate constraints and a measured
 saturation point. Those institutional measurements are not fabricated here.
+
+## Local harness validation — 21 September 2026
+
+A single smoke run completed with 40 synthetic recipients, 20% opted out, a
+dedicated MariaDB 12.3 test database and Redis database 9. The API image was
+`ontrack-unit-hub-release-preview-api:20260914` (Ruby 3.4.10, Rails 8.0.5.1).
+The Docker VM exposed 10 CPUs and 7.75 GiB memory; the API container had no
+additional CPU or memory limit. Other local test containers shared that VM.
+
+| Mode | Simultaneous events | Trigger service (s) | Queue drain (s) | Total (s) | Sampled queue peak | Sampled RSS (KiB) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Inline baseline | 1 | 2.2752 | 0.0003 | 2.2755 | 2 | 317024 |
+| Queued | 1 | 0.1893 | 0.3195 | 0.5088 | 64 | 317096 |
+| Concurrent queued | 2 | 0.2697 | 0.5048 | 0.7745 | 128 | 322320 |
+
+Both delivery queues were empty afterward and all synthetic users were removed.
+This verifies that the harness runs through opt-outs, two external channels and
+concurrent events. These are single samples in the displayed order without a
+warm-up, so cold-start and cache effects differ between modes. The inline mode
+drains after each recipient through the same queue adapters; it is a synchronous
+comparison within this harness, not a measurement of a historical application
+version. No email or push message left the test process. The institution's
+largest enrolment was unavailable, and this run establishes neither a supported
+cohort limit nor production latency, throughput or saturation.
