@@ -1,0 +1,83 @@
+{
+  "transport": "synthetic mail and push; no external delivery",
+  "source_revision": "97592abc",
+  "ruby_version": "3.4.10",
+  "rails_version": "8.0.5.1",
+  "database_version": "12.3.2",
+  "recipient_limit_for_benchmark": 100,
+  "configured_fanout_limit": 500,
+  "actual_largest_enrolment": null,
+  "note": "Direct service timing, including sampling; bypasses cohort admission. One drain worker; sampled peaks; fixed mode order without warm-up.",
+  "results": [
+    {
+      "mode": "inline_baseline",
+      "cohort_size": 1000,
+      "simultaneous_events": 1,
+      "opt_out_percent": 20,
+      "eligible_recipients": 800,
+      "suppressed_recipients": 200,
+      "trigger_seconds": 192.4294,
+      "drain_seconds": 0.0018,
+      "total_seconds": 192.4313,
+      "peak_observed_queue_depth": 2,
+      "peak_observed_rss_kib": 338608,
+      "verified_delivery_counts": {
+        "notifications": 800,
+        "email_states": {
+          "delivered": 800
+        },
+        "email_attempts": 800,
+        "synthetic_emails": 800,
+        "synthetic_pushes": 800,
+        "remaining_queue_depth": 0
+      }
+    },
+    {
+      "mode": "queued",
+      "cohort_size": 1000,
+      "simultaneous_events": 1,
+      "opt_out_percent": 20,
+      "eligible_recipients": 800,
+      "suppressed_recipients": 200,
+      "trigger_seconds": 41.6023,
+      "drain_seconds": 27.7178,
+      "total_seconds": 69.3201,
+      "peak_observed_queue_depth": 1600,
+      "peak_observed_rss_kib": 339112,
+      "verified_delivery_counts": {
+        "notifications": 800,
+        "email_states": {
+          "delivered": 800
+        },
+        "email_attempts": 800,
+        "synthetic_emails": 800,
+        "synthetic_pushes": 800,
+        "remaining_queue_depth": 0
+      }
+    },
+    {
+      "mode": "concurrent_queued",
+      "cohort_size": 1000,
+      "simultaneous_events": 2,
+      "opt_out_percent": 20,
+      "eligible_recipients": 800,
+      "suppressed_recipients": 200,
+      "trigger_seconds": 52.5015,
+      "drain_seconds": 51.7298,
+      "total_seconds": 104.2313,
+      "peak_observed_queue_depth": 3200,
+      "peak_observed_rss_kib": 361544,
+      "verified_delivery_counts": {
+        "notifications": 1600,
+        "email_states": {
+          "delivered": 1600
+        },
+        "email_attempts": 1600,
+        "synthetic_emails": 1600,
+        "synthetic_pushes": 1600,
+        "remaining_queue_depth": 0
+      }
+    }
+  ],
+  "cleanup_verified": true
+}
