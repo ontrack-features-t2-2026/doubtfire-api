@@ -18,7 +18,6 @@ gem 'rails', '~> 8.0.0', '>= 8.0.5.1'
 group :development, :test do
   gem 'better_errors'
   gem 'byebug'
-  gem 'database_cleaner-active_record'
   gem 'listen'
   gem 'rails_best_practices'
   gem 'rubocop'
@@ -60,6 +59,7 @@ gem 'hirb'
 gem 'devise'
 gem 'devise_ldap_authenticatable'
 gem 'json-jwt'
+gem 'rack-attack', '~> 6.8'
 gem 'ruby-saml'
 
 # Student submission
@@ -124,3 +124,11 @@ gem "sys-filesystem"
 
 gem "sentry-rails"
 gem "sentry-ruby"
+
+# Web push notifications. Signs and encrypts payloads for the browser push
+# services (VAPID). See docs/notifications/push-setup.md.
+#
+# Pinned exactly so a future dependency update cannot unexpectedly move JWT to
+# a new major version. web-push 3.0.1 still supports jwt ~> 2.0 and replaces the
+# retired hkdf dependency with OpenSSL::KDF; JWT 3 is introduced by 3.0.2.
+gem 'web-push', '3.0.1'
