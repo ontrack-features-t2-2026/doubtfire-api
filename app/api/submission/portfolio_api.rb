@@ -13,8 +13,8 @@ module Submission
 
     desc "Upload documents for inclusion in a project's portfolio"
     params do
-      requires :name,  type: String,                        desc: 'Name of the part being uploaded'
-      requires :kind,  type: String,                        desc: 'The kind of file being uploaded: document, code, or image'
+      requires :name, type: String, desc: 'Name of the part being uploaded'
+      requires :kind,  type: String, values: %w[document code image], desc: 'The kind of file being uploaded: document, code, or image'
       requires :file0, type: File, desc: 'file 0.'
     end
     post '/submission/project/:id/portfolio' do
@@ -51,7 +51,7 @@ module Submission
     desc 'Remove a file from the portfolio files for a unit'
     params do
       optional :idx,   type: Integer, desc: 'The index of the file'
-      optional :kind,  type: String, desc: 'The kind of file being removed: document, code, or image'
+      optional :kind,  type: String, values: %w[document code image], desc: 'The kind of file being removed: document, code, or image'
       optional :name,  type: String, desc: 'Name of file to remove'
     end
     delete '/submission/project/:id/portfolio' do
