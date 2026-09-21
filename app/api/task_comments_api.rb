@@ -30,10 +30,15 @@ class TaskCommentsApi < Grape::API
     end
   end
 
+  desc 'Get the server-owned task chat attachment policy'
+  get '/task_comments/upload_policy' do
+    present CommentAttachmentPolicy.public_policy
+  end
+
   desc 'Add a new comment to a task'
   params do
     optional :comment, type: String, desc: 'The comment text to add to the task'
-    optional :attachment, type: File, desc: 'Image, sound, PDF or video comment file'
+    optional :attachment, type: File, desc: 'Approved image, sound, PDF, Word or spreadsheet attachment'
     optional :reply_to_id, type: Integer, desc: 'The comment to which this comment is replying'
     optional :client_request_id, type: String, regexp: /\A[0-9a-f-]{1,64}\z/i,
                                  desc: 'Stable client-generated identifier used to make attachment retries idempotent'
@@ -64,9 +69,13 @@ class TaskCommentsApi < Grape::API
                       end
 
     if attached_file.present? && existing_result.blank?
-      error!({ error: 'Attachment is empty.' }, 400) if File.size?(attached_file['tempfile'].path).blank?
-      unless File.size?(attached_file['tempfile'].path) < 30_000_000
-        error!({ error: 'Attachment exceeds the maximum attachment size of 30MB.' }, 413)
+      if File.size?(attached_file['tempfile'].path).blank?
+        FileHelper.log_file_rejection('Attachment is empty', 'comment_attachment', attached_file)
+        error!({ error: 'Attachment is empty.', code: 'UPLOAD_EMPTY' }, 400)
+      end
+      unless File.size?(attached_file['tempfile'].path) < CommentAttachmentPolicy::MAX_BYTES
+        FileHelper.log_file_rejection('Attachment size limit exceeded', 'comment_attachment', attached_file)
+        error!({ error: 'Attachment exceeds the maximum attachment size of 30MB.', code: 'UPLOAD_TOO_LARGE' }, 413)
       end
     end
 
@@ -94,7 +103,7 @@ class TaskCommentsApi < Grape::API
     else
       file_result = FileHelper.accept_file(attached_file, 'comment attachment - TaskComment', 'comment_attachment')
       unless file_result[:accepted]
-        error!({ error: "File is not an acceptable format: #{file_result[:msg]}" }, 403)
+        error!({ error: "File is not an acceptable format: #{file_result[:msg]}", code: file_result[:code] }, 403)
       end
 
       begin
@@ -159,10 +168,11 @@ class TaskCommentsApi < Grape::API
       # Set return content type
       content_type comment.attachment_mime_type
 
+      header['X-Content-Type-Options'] = 'nosniff'
       env['api.format'] = :binary
 
       # mark as attachment
-      if params[:as_attachment] || comment.content_type == 'document'
+      if params[:as_attachment] || %w[document spreadsheet].include?(comment.content_type)
         header['Content-Disposition'] = ActionDispatch::Http::ContentDisposition.format(
           disposition: 'attachment',
           filename: comment.attachment_file_name
@@ -178,6 +188,8 @@ class TaskCommentsApi < Grape::API
       )
 
       stream_file comment.attachment_path
+    else
+      error!({ error: 'No attachment for this comment.' }, 404)
     end
   end
 
