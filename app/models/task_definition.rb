@@ -70,6 +70,8 @@ class TaskDefinition < ApplicationRecord
   after_update :reset_overdue_tasks, if: :saved_change_to_due_date?
 
   # Model associations
+  validates :resubmission_extensions_enabled, inclusion: { in: [true, false] }
+
   belongs_to :unit, optional: false # Foreign key
   belongs_to :group_set, optional: true
   belongs_to :tutorial_stream, optional: true

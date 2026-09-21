@@ -67,11 +67,16 @@ class TasksApi < Grape::API
     end
 
     result = base
+             .preload(:granted_extension_comments, task_definition: :grade_due_dates, project: %i[unit user campus])
              .map do |task|
       {
         task_definition_id: task.task_definition_id,
         status: TaskStatus.id_to_key(task.task_status_id),
         due_date: task.due_date,
+        effective_deadline: task.effective_deadline,
+        effective_deadline_date: task.effective_deadline_date,
+        effective_deadline_reason: task.effective_deadline_reason,
+        effective_deadline_source_id: task.effective_deadline_source_id,
         extensions: task.extensions,
         scorm_extensions: task.scorm_extensions
       }

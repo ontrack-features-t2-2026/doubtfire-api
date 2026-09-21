@@ -283,21 +283,25 @@ class ProjectsApiTest < ActiveSupport::TestCase
       query_count += 1
     end
 
-    ActiveSupport::Notifications.subscribed(count_query, 'sql.active_record') do
-      get '/api/projects?include_inactive=true&include_task_definitions=true'
-    end
+    [false, true].each do |flexible_dates|
+      units.each { |unit| unit.update!(allow_flexible_dates: flexible_dates) }
+      query_count = 0
+      ActiveSupport::Notifications.subscribed(count_query, 'sql.active_record') do
+        get '/api/projects?include_inactive=true&include_task_definitions=true'
+      end
 
-    assert_equal 200, last_response.status, last_response_body
-    assert_equal 2, last_response_body.length
-    active_states = last_response_body.pluck('unit').pluck('active')
-    assert_equal [false, true], (active_states.sort_by { |active| active ? 1 : 0 })
-    assert_equal 8, (last_response_body.sum { |project| project.fetch('tasks').length })
-    task_definition_count = last_response_body.sum do |project|
-      project.fetch('unit').fetch('task_definitions').length
+      assert_equal 200, last_response.status, last_response_body
+      assert_equal 2, last_response_body.length
+      active_states = last_response_body.pluck('unit').pluck('active')
+      assert_equal [false, true], (active_states.sort_by { |active| active ? 1 : 0 })
+      assert_equal 8, (last_response_body.sum { |project| project.fetch('tasks').length })
+      task_definition_count = last_response_body.sum do |project|
+        project.fetch('unit').fetch('task_definitions').length
+      end
+      assert_equal 8, task_definition_count
+      assert_operator query_count, :<=, 45,
+                      "Expected a bounded project query graph, got #{query_count} SQL queries (flexible: #{flexible_dates})"
     end
-    assert_equal 8, task_definition_count
-    assert_operator query_count, :<=, 45,
-                    "Expected a bounded project query graph, got #{query_count} SQL queries"
   end
 
   def test_get_project_response_is_correct

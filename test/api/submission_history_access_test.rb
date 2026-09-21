@@ -16,7 +16,7 @@ class SubmissionHistoryAccessTest < ActiveSupport::TestCase
   def setup
     @unit = FactoryBot.create(
       :unit,
-      perform_submissions: true,
+      task_count: 1,
       student_count: 3,
       staff_count: 1
     )
@@ -45,7 +45,7 @@ class SubmissionHistoryAccessTest < ActiveSupport::TestCase
 
     @other_unit = FactoryBot.create(
       :unit,
-      perform_submissions: true,
+      task_count: 1,
       student_count: 1,
       staff_count: 1
     )
@@ -79,7 +79,7 @@ class SubmissionHistoryAccessTest < ActiveSupport::TestCase
     assert_equal 'available', newest['status']
 
     assert_equal(
-      %w[id status submission_timestamp version_order],
+      %w[current id status submission_timestamp version_order],
       newest.keys.sort
     )
 
@@ -290,6 +290,58 @@ class SubmissionHistoryAccessTest < ActiveSupport::TestCase
     )
 
     assert_safe_not_found
+  end
+
+  test 'current version is distinguished from older retained and processing versions' do
+    @owning_task.update_columns(submission_processing_started_at: Time.at(@history.submission_timestamp.to_i - 1))
+    add_auth_header_for(user: @owning_project.student)
+    get metadata_endpoint
+    assert_equal true, last_response_body.first['current']
+    assert_equal false, last_response_body.second['current']
+    SubmissionHistory.mark_pending(@owning_task)
+    get metadata_endpoint
+    assert_equal 202, last_response.status
+    assert last_response_body.none? { |version| version['current'] }
+  end
+
+  test 'corrupt retained archive is unavailable and cannot be downloaded' do
+    File.binwrite(@history.archive_file_name, 'not a zip archive')
+    add_auth_header_for(user: @owning_project.student)
+    get metadata_endpoint
+    assert_equal 'unavailable', last_response_body.first['status']
+    get files_endpoint
+    assert_equal 404, last_response.status
+  end
+
+  test 'removed records and no history return an empty list without a fake version' do
+    @owning_task.submission_histories.destroy_all
+    add_auth_header_for(user: @owning_project.student)
+    get metadata_endpoint
+    assert_equal 200, last_response.status
+    assert_equal [], last_response_body
+  end
+
+  test 'leaving a group preserves access only to archives retained on the students own task' do
+    group_set = FactoryBot.create(:group_set, unit: @unit)
+    group = FactoryBot.create(:group, group_set: group_set, tutorial: @unit.tutorials.first)
+    group.add_member(@owning_project, notify: false)
+    group.add_member(@other_project, notify: false)
+    group_submission = GroupSubmission.create!(group: group, task_definition: @task_definition,
+                                                submitted_by_project: @owning_project)
+    @owning_task.update!(group_submission: group_submission)
+    group.remove_member(@owning_project, notify: false)
+    add_auth_header_for(user: @owning_project.student)
+    get files_endpoint
+    assert_equal 200, last_response.status
+    get metadata_endpoint(project: @other_project)
+    assert_safe_not_found
+  end
+
+  test 'numeric timestamps order legacy and modern versions deterministically' do
+    legacy = FactoryBot.create(:submission_history, task: @owning_task, submission_timestamp: '999999999')
+    add_auth_header_for(user: @owning_project.student)
+    get metadata_endpoint
+    assert_equal [@history.id, @older_history.id, legacy.id], last_response_body.map { |version| version['id'] }
   end
 
   private

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_14_000002) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_20_071000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -693,11 +693,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_14_000002) do
     t.boolean "lock_assessments_to_tutorial_stream", default: false, null: false
     t.boolean "requires_discussion", default: false, null: false
     t.datetime "new_task_notifications_from", default: -> { "utc_timestamp()" }
+    t.boolean "resubmission_extensions_enabled", default: true, null: false
+    t.datetime "resubmission_extensions_changed_at"
+    t.bigint "resubmission_extensions_changed_by_id"
     t.index ["abbreviation", "unit_id"], name: "index_task_definitions_on_abbreviation_and_unit_id", unique: true
     t.index ["group_set_id"], name: "index_task_definitions_on_group_set_id"
     t.index ["name", "unit_id"], name: "index_task_definitions_on_name_and_unit_id", unique: true
     t.index ["new_task_notifications_from"], name: "index_task_definitions_on_new_task_notifications_from"
     t.index ["overseer_image_id"], name: "index_task_definitions_on_overseer_image_id"
+    t.index ["resubmission_extensions_changed_by_id"], name: "idx_on_resubmission_extensions_changed_by_id_fd949ce601"
     t.index ["tutorial_stream_id"], name: "index_task_definitions_on_tutorial_stream_id"
     t.index ["unit_id"], name: "index_task_definitions_on_unit_id"
   end
@@ -1161,6 +1165,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_14_000002) do
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "target_id"
   add_foreign_key "notifications", "users"
   add_foreign_key "push_subscriptions", "users"
+  add_foreign_key "task_definitions", "users", column: "resubmission_extensions_changed_by_id", on_delete: :nullify
   add_foreign_key "teams_announcement_sync_states", "units"
   add_foreign_key "unit_announcements", "units"
   add_foreign_key "unit_announcements", "users", column: "author_id", on_delete: :nullify

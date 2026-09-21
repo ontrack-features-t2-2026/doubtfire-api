@@ -250,19 +250,23 @@ module Submission
         error!({ error: 'Submission history is not available' }, 404)
       end
 
-      histories = task.submission_histories.order(submission_timestamp: :desc)
+      histories = task.submission_histories.sort_by { |history| [-history.submission_timestamp.to_i, -history.id] }
 
       if student_request
+        archive_pending = SubmissionHistory.pending?(task)
+        latest_submission_at = task.submission_processing_started_at || task.submission_date
         student_histories = histories.each_with_index.map do |history, index|
           {
             id: history.id,
             version_order: index + 1,
+            current: index.zero? && !archive_pending && latest_submission_at.present? &&
+              history.submission_timestamp.to_i >= latest_submission_at.to_i,
             submission_timestamp: history.submission_timestamp,
             status: history.has_submission_files? ? 'available' : 'unavailable'
           }
         end
 
-        status 202 if SubmissionHistory.pending?(task)
+        status 202 if archive_pending
         present student_histories
       else
         present histories, with: Entities::SubmissionHistoryEntity
@@ -305,7 +309,11 @@ module Submission
 
       content_type 'application/octet-stream'
       header['Content-Disposition'] = "attachment; filename=#{filename}"
-      submission_zip_data = history.submission_zip_data
+      begin
+        submission_zip_data = history.submission_zip_data
+      rescue Zip::Error, Errno::ENOENT, Errno::EACCES
+        error!({ error: 'Submission history files are not available' }, 404)
+      end
       header['Content-Length'] = submission_zip_data.bytesize.to_s
       env['api.format'] = :binary
       body submission_zip_data
@@ -423,7 +431,11 @@ module Submission
       content_type 'application/octet-stream'
       header['Content-Disposition'] = "attachment; filename=#{filename}"
 
-      submission_zip_data = history.submission_zip_data
+      begin
+        submission_zip_data = history.submission_zip_data
+      rescue Zip::Error, Errno::ENOENT, Errno::EACCES
+        error!({ error: 'Submission history files are not available' }, 404)
+      end
       header['Content-Length'] = submission_zip_data.bytesize.to_s
       env['api.format'] = :binary
       body submission_zip_data

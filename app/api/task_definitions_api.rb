@@ -40,7 +40,8 @@ class TaskDefinitionsApi < Grape::API
       optional :scorm_time_delay_enabled, type: Boolean,  desc: 'Whether there is an incremental time delay between SCORM test attempts'
       optional :scorm_attempt_limit,      type: Integer,  desc: 'The number of times a SCORM test can be attempted'
       optional :assess_in_portfolio_only, type: Boolean,  desc: 'Whether a task can only be signed off during portfolio assessment'
-      optional :requires_discussion,      type: Boolean,  desc: 'Whether task must be discussed in class before it can be signed off as complete'
+      optional :resubmission_extensions_enabled, type: Boolean, desc: 'Allow the unit resubmission extension for future feedback on this task'
+      optional :requires_discussion, type: Boolean, desc: 'Whether task must be discussed in class before it can be signed off as complete'
       optional :use_resources_for_jplag_base_code, type: Boolean, desc: 'Include the common base code from task resources for JPlag comparisons'
       optional :lock_assessments_to_tutorial_stream, type: Boolean, desc: 'Only allow tutors in this tutorial stream to assess this task'
     end
@@ -77,6 +78,7 @@ class TaskDefinitionsApi < Grape::API
                                                 :similarity_language,
                                                 :assess_in_portfolio_only,
                                                 :requires_discussion,
+                                                :resubmission_extensions_enabled,
                                                 :upload_requirements,
                                                 :unit_id,
                                                 :use_resources_for_jplag_base_code,
@@ -91,6 +93,10 @@ class TaskDefinitionsApi < Grape::API
     end
 
     task_def = TaskDefinition.new(task_params)
+    if task_params.key?(:resubmission_extensions_enabled)
+      task_def.resubmission_extensions_changed_by_id = current_user.id
+      task_def.resubmission_extensions_changed_at = Time.current
+    end
 
     # Set the tutorial stream
     tutorial_stream_abbr = params[:task_def][:tutorial_stream_abbr]
@@ -143,7 +149,8 @@ class TaskDefinitionsApi < Grape::API
       optional :overseer_image_id,        type: Integer,  desc: 'The id of the Docker image name for overseer'
       optional :similarity_language,      type: String,   desc: 'The language to use for code similarity checks'
       optional :assess_in_portfolio_only, type: Boolean,  desc: 'Whether a task can only be signed off during portfolio assessment'
-      optional :requires_discussion,      type: Boolean,  desc: 'Whether task must be discussed in class before it can be signed off as complete'
+      optional :resubmission_extensions_enabled, type: Boolean, desc: 'Allow the unit resubmission extension for future feedback on this task'
+      optional :requires_discussion, type: Boolean, desc: 'Whether task must be discussed in class before it can be signed off as complete'
       optional :use_resources_for_jplag_base_code, type: Boolean, desc: 'Include the common base code from task resources for JPlag comparisons'
       optional :lock_assessments_to_tutorial_stream, type: Boolean, desc: 'Only allow tutors in this tutorial stream to assess this task'
       optional :grade_due_dates, type: Array do
@@ -189,6 +196,7 @@ class TaskDefinitionsApi < Grape::API
                                                 :similarity_language,
                                                 :assess_in_portfolio_only,
                                                 :requires_discussion,
+                                                :resubmission_extensions_enabled,
                                                 :upload_requirements,
                                                 :use_resources_for_jplag_base_code,
                                                 :lock_assessments_to_tutorial_stream
@@ -212,6 +220,12 @@ class TaskDefinitionsApi < Grape::API
 
     if task_params.key?(:target_grade) && !unit.grade_value?(task_params[:target_grade])
       error!({ error: 'Target grade is not enabled for this unit' }, 422)
+    end
+
+    if task_params.key?(:resubmission_extensions_enabled) &&
+       task_params[:resubmission_extensions_enabled] != task_def.resubmission_extensions_enabled
+      task_params[:resubmission_extensions_changed_by_id] = current_user.id
+      task_params[:resubmission_extensions_changed_at] = Time.current
     end
 
     # Bulk update task definition with permitted parameters

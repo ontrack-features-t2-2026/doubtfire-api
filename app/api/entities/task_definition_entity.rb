@@ -12,6 +12,7 @@ module Entities
     expose :abbreviation
     expose :name
     expose :description
+    expose :resubmission_extensions_enabled
     expose :weighting
     expose :target_grade
 
