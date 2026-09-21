@@ -36,12 +36,21 @@ Image publication is coordinated from the exact API/web revisions pinned by
 legacy API image workflow is intentionally build-only and cannot publish a
 tagged image independently of the cross-repository handover checks.
 
+The first-time tutorial reads the authenticated `GET /api/settings` rollout flag
+and `GET /api/projects/history`. The history endpoint returns only
+`{"hasProjects": true}` or `{"hasProjects": false}` for the authenticated user,
+including projects in inactive units and withdrawn enrolments. It accepts no owner
+selection and does not return project details. The ordinary `/api/projects` list
+continues to exclude withdrawn enrolments, so it must not be used to establish
+that an account has no prior project history.
+
 ## Environment variables
 
 Doubtfire requires multiple environment variables that help define settings about the Doubtfire instance running. Whilst these will default to other values, you may want to override them in production.
 
 | Key                            | Description                                                                                                                                                                                                                                                                 | Default                        |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `TUTORIAL_ENABLED`            | Enable the first-time tutorial in authenticated web settings. Set `1` to enable; unset, blank, `0`, `false` and non-numeric values (including `true`) disable it, matching the existing numeric feature flag parser. Restart API processes after changing the environment; recreate containers to load new environment values. No image rebuild is needed. | false |
 | `DF_AUTH_METHOD`               | The authentication method you would like Doubtfire to use. Possible values are `database` for standard authentication with the database, `ldap`                                                                                                                             | `database`                     |
 |                                |   for [LDAP](https://www.freebsd.org/doc/en/articles/ldap-auth/), `aaf` for [AAF Rapid Connect](https://rapid.aaf.edu.au/), or `SAML2` for [SAML2.0 auth](https://en.wikipedia.org/wiki/SAML_2.0).                                                                          |                                |
 | `DF_STUDENT_WORK_DIR`          | The directory to store uploaded student work for processing.                                                                                                                                                                                                                | `student_work`                 |

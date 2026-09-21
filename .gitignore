@@ -46,3 +46,6 @@ _history
 # Institution specific config
 config/*_setting.rb
 !config/no_institution_setting.rb
+
+# Git fetch metadata belongs in .git, not the working tree.
+/FETCH_HEAD

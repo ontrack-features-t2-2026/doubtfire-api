@@ -60,6 +60,14 @@ class ProjectsApi < Grape::API
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, include_task_definitions: include_task_definitions, user: current_user
   end
 
+  desc "Reports whether the current user has any project history, including withdrawn enrolments"
+  get '/projects/history' do
+    # Project.for_user deliberately hides withdrawn enrolments. Onboarding must
+    # count those as prior history without exposing project details or accepting
+    # a client-supplied owner. Keep the ordinary project listing unchanged.
+    present({ hasProjects: Project.where(user_id: current_user.id).exists? })
+  end
+
   desc 'Get project'
   params do
     requires :id, type: Integer, desc: 'The id of the project to get'

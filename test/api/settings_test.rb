@@ -63,11 +63,38 @@ class SettingsTest < ActiveSupport::TestCase
     )
     assert_equal TurnItIn.enabled?, last_response_body['tiiEnabled']
     assert_equal D2lIntegration.enabled?, last_response_body['d2lEnabled']
+    assert_equal Doubtfire::Application.config.tutorial_enabled, last_response_body['tutorialEnabled']
 
     assert_equal(
-      %w[d2lEnabled overseerEnabled pushEnabled tiiEnabled vapidPublicKey].sort,
+      %w[d2lEnabled overseerEnabled pushEnabled tiiEnabled tutorialEnabled vapidPublicKey].sort,
       last_response_body.keys.sort
     )
+  end
+
+  def test_tutorial_flag_uses_the_existing_environment_parser
+    original_env = ENV.fetch('TUTORIAL_ENABLED', nil)
+    original_config = Doubtfire::Application.config.tutorial_enabled
+    # Re-evaluate the boot assignment so this checks the real parser without
+    # restarting Rails (and its database connections) for each value.
+    assignment = Rails.root.join('config/application.rb').read.lines.find do |line|
+      line.strip.start_with?('config.tutorial_enabled =')
+    end
+    assert assignment, 'tutorial rollout gate must be configured at boot'
+    add_auth_header_for
+
+    { nil => false, '' => false, '0' => false, 'false' => false,
+      'FALSE' => false, 'true' => false, '1' => true, '2' => true }.each do |value, expected|
+      ENV['TUTORIAL_ENABLED'] = value
+      Doubtfire::Application.class_eval(assignment)
+
+      get '/api/settings'
+
+      assert_equal 200, last_response.status
+      assert_equal expected, last_response_body['tutorialEnabled'], "TUTORIAL_ENABLED=#{value.inspect}"
+    end
+  ensure
+    ENV['TUTORIAL_ENABLED'] = original_env
+    Doubtfire::Application.config.tutorial_enabled = original_config
   end
 
   def test_privacy_policy_is_available_without_authentication
