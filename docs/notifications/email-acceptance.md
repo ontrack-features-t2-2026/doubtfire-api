@@ -3,7 +3,9 @@
 The repository verifies queuing, preferences, retries and persisted SMTP outcomes.
 Closing production deliverability acceptance additionally requires an authorized
 operator, the deployed mail provider and an institution-controlled test inbox.
-No real email was sent for the local synthetic benchmark or this procedure.
+Prior Mailpit capture proves rendering and local SMTP hand-off, not delivery to
+a real provider. The current benchmark uses Rails' test transport, which also
+cannot establish deliverability. No real email was sent for this procedure.
 
 ## Find the deployment and owners
 
@@ -16,10 +18,11 @@ people, a staging URL or an approved inbox; a student contributor need not guess
 them. The provider administrator can identify the authenticated SMTP service,
 verified sender/domain, DKIM selectors, rate limits and delivery-report access.
 
-Have the institution provision an ordinary test user whose **primary** email is
-the controlled inbox. The operator records its numeric user ID privately. Keep
-its feedback preference enabled and give it no verified additional email, so
-the trial has exactly one destination. Do not repoint an actual student's email.
+Have the institution provision ordinary test users with controlled **primary**
+inboxes at Outlook, Gmail and the university's own mail service. Record their
+numeric user IDs privately. Keep feedback enabled and give each no verified
+additional email, so each trial has one destination. Do not repoint an actual
+student's email. Repeat the single-recipient procedure below for all three.
 
 Run commands below inside the chosen API release container, with its existing
 runtime secrets injected. Do not paste credentials or complete environment dumps
@@ -128,8 +131,13 @@ bundle exec rake notifications:retry_email
 ```
 
 It uses the `NOTIFICATION_ID` already set above. Do not replay a delivered row or
-an entire cohort. A provider's approved test-recipient/sandbox facility may be
-used for a controlled rejection/bounce trial; do not send to a guessed address.
+an entire cohort. Use a provider-approved controlled recipient/sandbox for the
+rejection/bounce trial; do not send to a guessed address. Record who receives
+the bounce, the provider status and the current operational response. If no
+bounce-handling workflow exists, state that explicitly and raise a separate
+follow-up issue with an owner and acceptance criteria; do not implement a new
+bounce system as part of this verification ticket. A `failed` SMTP audit state
+alone is not evidence of handling a later asynchronous bounce.
 
 ## Check domain authentication and record acceptance
 
@@ -151,6 +159,25 @@ Use the provider's [sender authentication guidance](https://learn.microsoft.com/
 when Azure Communication Services is the configured provider. DNS changes belong
 to the institution's DNS owner and its change process.
 
+Inspect the received From and Reply-To headers on every trial. The visible
+identity must be recognizable to students. Record whether Reply-To (or From
+when Reply-To is absent) is monitored; an unmonitored destination must be clearly
+identified to recipients. Record the mail/service owner's decision rather than
+assuming a configured sender is recognizable or monitored.
+
+Required provider matrix; fill every row from a real controlled trial:
+
+| Provider | UTC trial / notification ID | Provider status | Landing zone: inbox / promotions / spam / absent | SPF / DKIM / DMARC and alignment | From / Reply-To identity and monitoring |
+| --- | --- | --- | --- | --- | --- |
+| Outlook | Pending operator trial | Pending | Pending | Pending | Pending |
+| Gmail | Pending operator trial | Pending | Pending | Pending | Pending |
+| University mail | Pending operator trial | Pending | Pending | Pending | Pending |
+
+The ticket's acceptance target is inbox placement across all three providers
+with authentication checks passing. Record promotions/spam honestly as a
+different landing zone and resolve or obtain the institutional acceptance
+decision; do not label a provider's SMTP acceptance as inbox placement.
+
 Keep this evidence table in the private acceptance record; publish only a
 redacted result and its approved evidence reference with the ticket:
 
@@ -164,5 +191,7 @@ redacted result and its approved evidence reference with the ticket:
 | Failure handling | Controlled rejection/bounce result, or explicit unexercised case and owner |
 | Acceptance | Defects/actions, evidence location, operator and institutional reviewer sign-off |
 
-NPR-Q01 remains awaiting institutional acceptance until this evidence exists.
+NPR-Q01 remains awaiting institutional acceptance until all three provider rows,
+sender identity/monitoring and bounce handling (or its separate follow-up issue)
+are evidenced.
 A green unit test, synthetic transport or SMTP acceptance alone cannot close it.
