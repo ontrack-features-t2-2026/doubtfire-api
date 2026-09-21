@@ -167,6 +167,19 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
+  def test_reservation_rechecks_the_preference_from_the_current_recipient_row
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    User.find(user.id).update!(receive_feedback_notifications: false)
+
+    assert_no_difference 'Notification.count' do
+      assert_nil NotificationService.notify(
+        user: user, type: 'feedback', event: 'task_comment_created', message: 'Suppressed.'
+      )
+    end
+    assert_empty NotificationEmailJob.jobs
+    assert_empty PushNotificationDeliveryJob.jobs
+  end
+
   def test_task_preference_gates_notifications_in_both_directions
     user = FactoryBot.create(:user, receive_task_notifications: true)
     notification = nil

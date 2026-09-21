@@ -61,6 +61,81 @@ class NotificationDeliveryPolicyConcurrencyTest < ActiveSupport::TestCase
     assert_equal [[first.id]], (PushNotificationDeliveryJob.jobs.map { |job| job['args'] })
   end
 
+  def test_recipient_update_does_not_abort_a_reservation_in_an_older_snapshot
+    snapshot_established = Queue.new
+    recipient_update_committed = Queue.new
+    producers = []
+    original_first_name = @recipient.first_name
+    snapshot_first_name = nil
+
+    producers << Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Timeout.timeout(15) { snapshot_established.pop }
+        User.find(@recipient.id).update!(first_name: 'Changed while reserving')
+        recipient_update_committed << true
+      end
+    end
+
+    producers << Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        ActiveRecord::Base.transaction(isolation: :repeatable_read) do
+          # A surrounding assessment can already have a snapshot when a
+          # student changes their profile before the notification is reserved.
+          recipient = User.find(@recipient.id)
+          snapshot_first_name = recipient.first_name
+          snapshot_established << true
+          Timeout.timeout(15) { recipient_update_committed.pop }
+          NotificationService.reserve(user: recipient, type: 'extension',
+                                      event: 'resubmission_deadline_changed',
+                                      message: 'Concurrent recipient update regression')
+        end
+      end
+    end
+
+    notification = Timeout.timeout(20) { producers.map(&:value).last }
+    assert_equal original_first_name, snapshot_first_name
+    assert_equal 'Changed while reserving', @recipient.reload.first_name
+    assert_equal 'pending', notification.reload.email_delivery_state
+    assert_equal 1, Notification.where(user_id: @recipient.id).count
+    assert_equal [[notification.id]], (NotificationEmailJob.jobs.map { |job| job['args'] })
+    assert_empty PushNotificationDeliveryJob.jobs
+  ensure
+    producers&.each { |producer| producer.kill if producer.alive? }
+    producers&.each(&:join)
+  end
+
+  def test_reservation_restores_mariadb_snapshot_setting_after_success_and_failure
+    connection = ActiveRecord::Base.connection
+    skip 'Requires MariaDB snapshot isolation setting' unless connection.mariadb? &&
+                                                              connection.select_rows("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'").any?
+
+    original = connection.select_value('SELECT @@SESSION.innodb_snapshot_isolation').to_i
+    [0, 1].each do |setting|
+      connection.execute("SET SESSION innodb_snapshot_isolation = #{setting}")
+      NotificationService.reserve(user: @recipient, type: 'general', event: 'setting_restoration', message: 'Reserved')
+      assert_equal setting, connection.select_value('SELECT @@SESSION.innodb_snapshot_isolation').to_i
+
+      assert_raises(ActiveRecord::RecordInvalid) do
+        NotificationService.reserve(user: @recipient, type: 'general', event: 'invalid_reservation', message: nil)
+      end
+      assert_equal setting, connection.select_value('SELECT @@SESSION.innodb_snapshot_isolation').to_i
+    end
+  ensure
+    connection.execute("SET SESSION innodb_snapshot_isolation = #{original}") unless original.nil?
+  end
+
+  def test_outer_rollback_removes_reservation_without_queuing_a_channel
+    assert_no_difference 'Notification.count' do
+      User.transaction do
+        notification = NotificationService.reserve(user: @recipient, type: 'general', event: 'rolled_back', message: 'Reserved')
+        assert notification.persisted?
+        raise ActiveRecord::Rollback
+      end
+    end
+    assert_empty NotificationEmailJob.jobs
+    assert_empty PushNotificationDeliveryJob.jobs
+  end
+
   private
 
   def reserve_after_older_snapshot(dedupe_key: nil, fail_first_push: false)

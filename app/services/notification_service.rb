@@ -45,20 +45,27 @@ class NotificationService
   # lock, and then call `deliver` without holding a row lock across network I/O.
   def self.reserve(user:, type:, event:, message:, link: nil, dedupe_key: nil, notifiable: nil)
     type = type.to_s
-    return nil unless deliver_to?(user, type)
+    User.transaction do
+      User.with_current_row_access do
+        # An assessment may already hold an older repeatable-read snapshot.
+        # Lock the current recipient row and recheck its current preference, so a
+        # concurrent profile update cannot abort that surrounding assessment.
+        user = User.current_rows(User.where(id: user.id).limit(1)).first
+        raise ActiveRecord::RecordNotFound, 'Notification recipient no longer exists' if user.nil?
+        return nil unless deliver_to?(user, type)
 
-    user.with_lock do
-      throttled = NotificationDeliveryPolicy.throttled?(user)
-      create_notification(
-        user: user,
-        notification_type: type,
-        event: event.to_s,
-        message: message,
-        link: link,
-        dedupe_key: dedupe_key,
-        notifiable: notifiable,
-        email_delivery_state: throttled ? 'throttled' : 'pending'
-      )
+        throttled = NotificationDeliveryPolicy.throttled?(user)
+        create_notification(
+          user: user,
+          notification_type: type,
+          event: event.to_s,
+          message: message,
+          link: link,
+          dedupe_key: dedupe_key,
+          notifiable: notifiable,
+          email_delivery_state: throttled ? 'throttled' : 'pending'
+        )
+      end
     end
   end
 

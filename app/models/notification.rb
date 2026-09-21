@@ -5,23 +5,6 @@ class Notification < ApplicationRecord
   # older transaction snapshot before reading/updating the winning row again.
   attr_accessor :reserved_from_existing_event
 
-  def self.current_rows(relation)
-    connection = self.connection
-    @current_read_prefixes ||= {}
-    key = [connection.adapter_name, connection.database_version.to_s]
-    unless @current_read_prefixes.key?(key)
-      supported = connection.respond_to?(:mariadb?) && connection.mariadb? &&
-                  connection.select_rows("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'").any?
-      @current_read_prefixes[key] = supported ? 'SET STATEMENT innodb_snapshot_isolation=OFF FOR ' : ''
-    end
-    # MariaDB snapshot isolation rejects a locking read of newer committed rows.
-    # These two notification reads explicitly need current rows. The statement
-    # override leaves the surrounding transaction/session configuration intact;
-    # older MariaDB and MySQL use their ordinary locking-read behavior.
-    sql = "#{@current_read_prefixes.fetch(key)}#{relation.lock.to_sql}"
-    uncached { find_by_sql(sql) }
-  end
-
   # What the notification is about: the comment, the task, or whatever record
   # the event happened to. Optional, because a `general` notification points at
   # nothing and because every row raised before this column existed has no

@@ -36,6 +36,9 @@ saturation point. Those institutional measurements are not fabricated here.
 A single smoke run completed with 40 synthetic recipients, 20% opted out, a
 dedicated MariaDB 12.3 test database and Redis database 9. The API image was
 `ontrack-unit-hub-release-preview-api:20260914` (Ruby 3.4.10, Rails 8.0.5.1).
+These measurements used API source `e95bd592`, before the later rebase and
+recipient-update compatibility fix; they are harness evidence, not a timing
+claim for every subsequent API revision.
 The Docker VM exposed 10 CPUs and 7.75 GiB memory; the API container had no
 additional CPU or memory limit. Other local test containers shared that VM.
 

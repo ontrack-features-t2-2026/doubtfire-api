@@ -43,13 +43,24 @@ project counts before detailed eligibility/preferences; they may overcount but
 cannot undercount the candidate cohort. `notifications.fanout_limit` records
 event, trigger id, candidate count, limit and admission decision. No names,
 addresses or message bodies are logged. The recipient row lock serializes
-quota reservations across concurrent event producers. Quota/deduplication reads
-use current locking reads even within an older caller transaction. On MariaDB
-versions that expose `innodb_snapshot_isolation`, only those read statements
-opt out of snapshot-visibility rejection; the session and outer transaction
-settings remain unchanged. An existing event's pending push handoff is retried
-after the caller commits, preventing a retry from updating an unseen row. In-app records remain
-available for throttled events, with no push/email queued.
+quota reservations across concurrent event producers. Recipient, quota and
+deduplication lookups use current locking reads even within an older caller
+transaction. MariaDB versions that expose `innodb_snapshot_isolation` can reject
+both those reads and the notification insert's foreign-key locks when a
+recipient was updated after the caller's snapshot. During reservation only,
+the connection temporarily disables that snapshot-conflict check and restores
+its previous value before the surrounding workflow resumes, including on
+exceptions. Row locks, foreign-key constraints and outer rollback remain in
+force; ordinary MySQL is unchanged. Outside that reservation block, explicit
+current reads use a statement-only override. An existing event's pending push
+handoff is retried after the caller commits, preventing a retry from updating
+an unseen row. In-app records remain available for throttled events, with no
+push/email queued.
+
+The compatibility setting follows MariaDB's documented dynamic session scope:
+[InnoDB snapshot isolation](https://mariadb.com/docs/server/server-usage/storage-engines/innodb/innodb-system-variables#innodb_snapshot_isolation).
+It is not a global database setting or a change to the deployment's default
+transaction isolation.
 
 An operator can deliberately rerun a verified cohort from Rails console, for
 example `NewTaskAvailableNotificationJob.perform_async(task_definition_id, true)`.
