@@ -4,6 +4,9 @@
 # or operating system, you probably want to add a global ignore instead:
 #   git config --global core.excludesfile ~/.gitignore_global
 
+# Ignore Git's own internal plumbing file
+FETCH_HEAD
+
 # Ignore bundler config
 /.bundle
 
@@ -46,6 +49,3 @@ _history
 # Institution specific config
 config/*_setting.rb
 !config/no_institution_setting.rb
-
-# Git fetch metadata belongs in .git, not the working tree.
-/FETCH_HEAD
