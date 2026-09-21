@@ -127,8 +127,8 @@ whether a replacement notification is required in the incident record. Check
 it is not currently executing. Select the exact entry from `RetrySet`,
 `DeadSet`, `ScheduledSet` or its named `Queue`, then call `job.delete` only on
 that entry. Deletion permanently loses that pending attempt. Do not delete the
-`Notification` database record to clear a queue: a job that references a missing
-record raises and retries. Redis iteration races with workers, so pause the
+`Notification` database record to clear a queue: email jobs skip missing records,
+while push jobs raise and retry a missing record. Redis iteration races with workers, so pause the
 affected worker before selecting/deleting and confirm the JID is absent after.
 
 ## Mail deliverability and ownership
@@ -152,6 +152,9 @@ repositories. Before handover, the deployment owner must record that contact
 in the private operations directory, together with the SMTP provider contact
 and incident escalation route. This runbook cannot establish ownership from a
 repository alone. Do not invent a person or edit DNS during routine diagnosis.
+Follow the [email acceptance procedure](email-acceptance.md) for exact
+configuration checks, a controlled single-recipient trial and evidence required
+to close NPR-Q01. Repository tests do not prove mailbox placement.
 
 ## Push and VAPID rotation
 
@@ -171,10 +174,13 @@ other provider errors are retained and raised for retry. Check
 
 ## Fan-out and deliberate cohort messages
 
-**No numeric recipient ceiling or operator override exists in this revision.**
-The NPR-S02 limit requested by the production-readiness work must land before
-this runbook can state enforceable thresholds. Do not mistake Sidekiq
-concurrency, retry count or message-body length for a recipient limit.
+The default cohort ceiling is 500 candidate recipients; the default per-recipient
+quota is 30 external notification hand-offs per rolling 3,600 seconds. The
+[delivery operations guide](delivery-operations.md#cohort-and-recipient-limits)
+defines the three environment settings, protected event producers, current-row
+locking and deliberate operator overrides. A rejected cohort logs
+`notifications.fanout_limit`; a recipient over quota retains a `throttled`
+in-app record and receives no external channel hand-off.
 
 Current mitigations are explicit background fan-out jobs, recipient eligibility,
 category preferences, duplicate keys and suppression of internal group moves.
@@ -185,9 +191,12 @@ and event docs take precedence.
 
 For a genuine all-cohort communication, agree the recipient scope and expected
 count with the unit owner, review the communication rule, run a small test in
-staging, and monitor channel backlogs/provider quotas while executing. There is
-no safe “override” command to document until the limit feature is implemented.
-Do not edit individual users' preferences or disable duplicate protection.
+staging, and monitor channel backlogs/provider quotas while executing. Use only
+the documented producer-specific override after reviewing the count; keep the
+same event/change identity for deduplication. Do not edit individual users'
+preferences or disable duplicate protection. The
+[cohort benchmark](cohort-load-testing.md) exercises the delivery service
+directly and does not authorize a larger production ceiling.
 
 ## Failure modes recorded in this repository
 
