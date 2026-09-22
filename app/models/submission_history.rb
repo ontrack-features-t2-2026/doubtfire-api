@@ -41,7 +41,7 @@ class SubmissionHistory < ApplicationRecord
             next if entry.name_is_directory?
 
             file_name = entry.name.split('/').last
-            next unless file_name&.match?(/^\d{3}-(?:document|code|image|zip|archive)/)
+            next unless file_name&.match?(/^\d{3}-(?:document|code|image|zip|archive|csv)/)
             next unless enabled_indexes.include?(file_name.to_i)
 
             destination.get_output_stream(File.join(history.entry_prefix, entry.name)) do |output|
