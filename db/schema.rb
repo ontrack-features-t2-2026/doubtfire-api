@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_20_071000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_22_010000) do
   create_table "activity_types", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.string "name", null: false
     t.string "abbreviation", null: false
@@ -189,6 +189,33 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_20_071000) do
     t.index ["expires_at"], name: "index_consumed_lti_tokens_on_expires_at"
     t.index ["jti"], name: "index_consumed_lti_tokens_on_jti", unique: true
     t.index ["user_id"], name: "index_consumed_lti_tokens_on_user_id"
+  end
+
+  create_table "courseflow_courses", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.string "code", limit: 40, null: false
+    t.string "name", limit: 200, null: false
+    t.string "version", limit: 40, null: false
+    t.integer "elective_count", null: false
+    t.text "units", size: :long, null: false, collation: "utf8mb4_bin"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["code", "version"], name: "index_courseflow_courses_on_code_and_version", unique: true
+    t.check_constraint "json_valid(`units`)", name: "units"
+  end
+
+  create_table "courseflow_maps", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "course_id", null: false
+    t.string "name", limit: 200, null: false
+    t.text "periods", size: :long, null: false, collation: "utf8mb4_bin"
+    t.text "slots", size: :long, null: false, collation: "utf8mb4_bin"
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["course_id"], name: "index_courseflow_maps_on_course_id"
+    t.index ["user_id"], name: "index_courseflow_maps_on_user_id"
+    t.check_constraint "json_valid(`periods`)", name: "periods"
+    t.check_constraint "json_valid(`slots`)", name: "slots"
   end
 
   create_table "d2l_assessment_mappings", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -1159,6 +1186,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_20_071000) do
   add_foreign_key "chip_usages", "feedback_chips"
   add_foreign_key "chip_usages", "users", column: "tutor_id"
   add_foreign_key "consumed_lti_tokens", "users"
+  add_foreign_key "courseflow_maps", "courseflow_courses", column: "course_id"
+  add_foreign_key "courseflow_maps", "users", on_delete: :cascade
   add_foreign_key "feedback_chips", "feedback_chips", column: "parent_chip_id"
   add_foreign_key "feedback_chips", "learning_outcomes"
   add_foreign_key "learning_outcome_links", "learning_outcomes", column: "source_id"
