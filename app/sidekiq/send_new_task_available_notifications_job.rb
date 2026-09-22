@@ -14,11 +14,15 @@ class SendNewTaskAvailableNotificationsJob
                   on_conflict: :reject,
                   retry: 3
 
-  def perform
+  def perform(allow_large_fanout = false) # rubocop:disable Style/OptionalBooleanParameter
     today = Time.zone.today
     failed_project_ids = []
 
     Unit.where(active: true).find_each(batch_size: BATCH_SIZE) do |unit|
+      next unless NotificationDeliveryPolicy.fanout_allowed?(
+        event: NewTaskAvailableNotificationJob::EVENT, trigger: "unit:#{unit.id}",
+        recipient_count: unit.active_projects.count, allow_large_fanout: allow_large_fanout
+      )
       notify_unit(unit, today, failed_project_ids)
     end
 

@@ -82,7 +82,7 @@ class NewTaskAvailableNotificationJob
     NotificationService.deliver(notification)
   end
 
-  def perform(task_definition_id)
+  def perform(task_definition_id, allow_large_fanout = false) # rubocop:disable Style/OptionalBooleanParameter
     task_definition = TaskDefinition.find_by(id: task_definition_id)
     return if task_definition.nil?
 
@@ -93,6 +93,11 @@ class NewTaskAvailableNotificationJob
 
     unit = task_definition.unit
     return unless unit.active
+
+    return unless NotificationDeliveryPolicy.fanout_allowed?(
+      event: EVENT, trigger: "task-definition:#{task_definition.id}",
+      recipient_count: unit.projects.where(enrolled: true).count, allow_large_fanout: allow_large_fanout
+    )
 
     failed_project_ids = []
 

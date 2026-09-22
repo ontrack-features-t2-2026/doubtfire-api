@@ -58,6 +58,10 @@ class ProjectsApi < Grape::API
     projects = paginate_collection(projects)
 
     present projects, with: Entities::ProjectEntity, for_student: true, summary_only: true, include_task_definitions: include_task_definitions, user: current_user
+    Rails.logger.info({ event: 'projects.index', user_id: current_user.id,
+                        include_task_definitions: include_task_definitions, include_inactive: include_inactive,
+                        project_count: projects.size,
+                        task_definition_count: include_task_definitions ? projects.sum { |project| project.unit.task_definitions.size } : 0 }.to_json)
   end
 
   desc "Reports whether the current user has any project history, including withdrawn enrolments"

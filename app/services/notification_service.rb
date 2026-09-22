@@ -45,21 +45,40 @@ class NotificationService
   # lock, and then call `deliver` without holding a row lock across network I/O.
   def self.reserve(user:, type:, event:, message:, link: nil, dedupe_key: nil, notifiable: nil)
     type = type.to_s
-    return nil unless deliver_to?(user, type)
+    User.transaction do
+      User.with_current_row_access do
+        # An assessment may already hold an older repeatable-read snapshot.
+        # Lock the current recipient row and recheck its current preference, so a
+        # concurrent profile update cannot abort that surrounding assessment.
+        user = User.current_rows(User.where(id: user.id).limit(1)).first
+        raise ActiveRecord::RecordNotFound, 'Notification recipient no longer exists' if user.nil?
+        return nil unless deliver_to?(user, type)
 
-    create_notification(
-      user: user,
-      notification_type: type,
-      event: event.to_s,
-      message: message,
-      link: link,
-      dedupe_key: dedupe_key,
-      notifiable: notifiable
-    )
+        throttled = NotificationDeliveryPolicy.throttled?(user)
+        create_notification(
+          user: user,
+          notification_type: type,
+          event: event.to_s,
+          message: message,
+          link: link,
+          dedupe_key: dedupe_key,
+          notifiable: notifiable,
+          email_delivery_state: throttled ? 'throttled' : 'pending'
+        )
+      end
+    end
   end
 
   def self.deliver(notification)
     return nil if notification.nil?
+    return notification if notification.delivered_at? || notification.email_delivery_state == 'throttled'
+
+    if notification.reserved_from_existing_event
+      ActiveRecord.after_all_transactions_commit do
+        deliver(Notification.find_by(id: notification.id))
+      end
+      return notification
+    end
 
     # Concurrent or retried fan-outs can reserve the same immutable event. A
     # lock on that notification (not on the student's project) serializes only
@@ -95,10 +114,13 @@ class NotificationService
   rescue ActiveRecord::RecordNotUnique
     raise if attributes[:dedupe_key].blank?
 
-    Notification.find_by!(
-      user: attributes.fetch(:user),
-      dedupe_key: attributes.fetch(:dedupe_key)
-    )
+    winner = Notification.current_rows(Notification.where(
+      user: attributes.fetch(:user), dedupe_key: attributes.fetch(:dedupe_key)
+    ).limit(1)).first
+    raise ActiveRecord::RecordNotFound, 'Reserved notification no longer exists' if winner.nil?
+
+    winner.reserved_from_existing_event = true
+    winner
   end
   private_class_method :create_notification
 
@@ -110,8 +132,19 @@ class NotificationService
   # best-effort so the in-app record and push delivery are not blocked. Delivery
   # failures are raised by the job for Sidekiq to retry.
   def self.queue_email(notification)
-    NotificationEmailJob.perform_async(notification.id)
+    return if notification.email_delivery_state == 'throttled'
+
+    if Rails.env.development? && ENV['DOUBTFIRE_NOTIFICATION_EMAIL_INLINE'] == 'true'
+      NotificationEmailJob.new.perform(notification.id)
+    else
+      NotificationEmailJob.perform_async(notification.id)
+    end
   rescue StandardError => e
+    # A lost Redis reply can race a worker that already accepted the job.
+    # Preserve its durable outcome rather than overwriting it from this stale object.
+    Notification.where(id: notification.id, email_delivery_state: 'pending').update_all( # rubocop:disable Rails/SkipsModelValidations
+      email_delivery_state: 'queue_failed', email_delivery_error_class: e.class.name
+    )
     Rails.logger.error(
       "Failed to queue notification email for Notification #{notification.id}: #{e.class}"
     )

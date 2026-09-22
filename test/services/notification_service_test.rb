@@ -8,6 +8,18 @@ class NotificationServiceTest < ActiveSupport::TestCase
     PushNotificationDeliveryJob.clear
   end
 
+  def test_ambiguous_queue_failure_does_not_overwrite_completed_worker_delivery
+    notification = FactoryBot.create(:notification)
+    ambiguous_enqueue = lambda do |_id|
+      Notification.find(notification.id).update!(email_delivery_state: 'delivered', email_delivered_at: Time.current)
+      raise IOError, 'Queue reply was lost'
+    end
+    NotificationEmailJob.stub(:perform_async, ambiguous_enqueue) do
+      assert_equal false, NotificationService.queue_email(notification)
+    end
+    assert_equal 'delivered', notification.reload.email_delivery_state
+  end
+
   def test_notify_creates_a_notification_and_queues_id_only_channel_jobs
     user = FactoryBot.create(:user)
     notification = nil
@@ -153,6 +165,19 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
     assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
     assert_equal 0, ActionMailer::Base.deliveries.count
+  end
+
+  def test_reservation_rechecks_the_preference_from_the_current_recipient_row
+    user = FactoryBot.create(:user, receive_feedback_notifications: true)
+    User.find(user.id).update!(receive_feedback_notifications: false)
+
+    assert_no_difference 'Notification.count' do
+      assert_nil NotificationService.notify(
+        user: user, type: 'feedback', event: 'task_comment_created', message: 'Suppressed.'
+      )
+    end
+    assert_empty NotificationEmailJob.jobs
+    assert_empty PushNotificationDeliveryJob.jobs
   end
 
   def test_task_preference_gates_notifications_in_both_directions

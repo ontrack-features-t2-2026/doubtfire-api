@@ -1392,7 +1392,7 @@ class Unit < ApplicationRecord
         if user_project.enrolled
           user_project.enrolled = false
           user_project.save
-          success << { row: row, message: "User #{username} withdrawn from unit" }
+          success << { row: row, project_id: user_project.id, message: "User #{username} withdrawn from unit" }
         else
           ignored << { row: row, message: "User #{username} not enrolled in unit" }
         end

@@ -385,7 +385,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_20_071000) do
     t.datetime "delivered_at"
     t.string "notifiable_type"
     t.bigint "notifiable_id"
+    t.string "email_delivery_state", default: "untracked", null: false
+    t.integer "email_delivery_attempts", default: 0, null: false
+    t.datetime "email_delivered_at"
+    t.string "email_delivery_error_class"
+    t.index ["email_delivery_state"], name: "index_notifications_on_email_delivery_state"
     t.index ["notifiable_type", "notifiable_id"], name: "index_notifications_on_notifiable_type_and_notifiable_id"
+    t.index ["user_id", "created_at"], name: "index_notifications_on_recipient_rate_window"
     t.index ["user_id", "dedupe_key"], name: "index_notifications_on_user_and_dedupe_key", unique: true
     t.index ["user_id", "event"], name: "index_notifications_on_user_id_and_event"
     t.index ["user_id", "read_at"], name: "index_notifications_on_user_id_and_read_at"

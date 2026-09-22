@@ -162,7 +162,7 @@ class TestAttempt < ApplicationRecord
   def success_status_description
     if self.success_status && self.score_scaled == 1
       "Passed without mistakes"
-    elsif self.success_status && self.score_scaled < 1
+    elsif self.success_status && self.score_scaled.to_f < 1
       "Passed"
     else
       "Unsuccessful"

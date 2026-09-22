@@ -166,6 +166,39 @@ class ProjectsApiTest < ActiveSupport::TestCase
                  Date.parse(grade_due_dates.first.fetch('start_date'))
   end
 
+  def test_projects_payload_audit_distinguishes_summary_and_dashboard_without_content
+    project = FactoryBot.create(:project)
+    add_auth_header_for(user: project.student)
+    lines = []
+    Rails.logger.stub(:info, ->(line = nil, *) { lines << line }) do
+      get '/api/projects'
+      assert_equal 200, last_response.status
+      get '/api/projects?include_task_definitions=true&include_inactive=true'
+      assert_equal 200, last_response.status
+    end
+    events = lines.filter_map do |line|
+      JSON.parse(line) if line.is_a?(String) && line.start_with?('{')
+    end
+    events.select! { |line| line['event'] == 'projects.index' }
+    assert_equal 2, events.size
+    assert_equal false, events.first['include_task_definitions']
+    assert_equal 0, events.first['task_definition_count']
+    assert_equal true, events.last['include_task_definitions']
+    assert_equal true, events.last['include_inactive']
+    assert_equal project.student.id, events.last['user_id']
+    assert events.last['task_definition_count'].positive?
+    assert_not_includes events.to_json, project.student.email
+  end
+
+  def test_unauthenticated_projects_request_has_no_payload_success_audit
+    lines = []
+    Rails.logger.stub(:info, ->(line = nil, *) { lines << line }) do
+      get '/api/projects?include_task_definitions=true'
+      assert_equal 419, last_response.status
+    end
+    assert_not(lines.any? { |line| line.to_s.include?('projects.index') })
+  end
+
   def test_projects_with_task_definitions_exposes_privacy_safe_feedback_state
     project = FactoryBot.create(:project)
     unit = project.unit

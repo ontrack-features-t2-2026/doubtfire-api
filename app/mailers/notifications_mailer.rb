@@ -33,7 +33,7 @@ class NotificationsMailer < ApplicationMailer
       subject: subject,
       template_name: event_template_name(notification.event),
       **outbound_sender_headers(development_from: from_address)
-    )
+    ).tap { |message| message.raise_delivery_errors = true }
   end
 
   # Delivers a second, independent message to a verified additional address.
@@ -53,7 +53,7 @@ class NotificationsMailer < ApplicationMailer
       subject: subject,
       template_name: event_template_name(notification.event),
       **outbound_sender_headers(development_from: from_address)
-    )
+    ).tap { |message| message.raise_delivery_errors = true }
   end
   SUBJECTS = {
     'task_comment_created' => 'New task comment',

@@ -1,6 +1,10 @@
 class Notification < ApplicationRecord
   belongs_to :user
 
+  # Only set on a unique-event conflict. Its push retry must leave the caller's
+  # older transaction snapshot before reading/updating the winning row again.
+  attr_accessor :reserved_from_existing_event
+
   # What the notification is about: the comment, the task, or whatever record
   # the event happened to. Optional, because a `general` notification points at
   # nothing and because every row raised before this column existed has no
@@ -38,6 +42,10 @@ class Notification < ApplicationRecord
   # their group, and a worker that picked the job up before the commit could not
   # see the row yet.
   after_commit :queue_email_delivery, on: :create
+
+  before_create do
+    self.email_delivery_state = 'pending' if email_delivery_state == 'untracked'
+  end
 
   scope :unread, -> { where(read_at: nil) }
   scope :recent_first, -> { order(created_at: :desc) }
