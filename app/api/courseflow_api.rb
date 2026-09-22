@@ -28,7 +28,7 @@ class CourseflowApi < Grape::API
 
     def courseflow_document(update: false)
       request.body.rewind
-      raw = request.body.read(Courseflow::CatalogImporter::MAX_BYTES + 1)
+      raw = request.body.read(Courseflow::CatalogImporter::MAX_BYTES + 1).to_s
       error!({ error: 'Plan exceeds 1 MiB' }, 422) if raw.bytesize > Courseflow::CatalogImporter::MAX_BYTES
       document = JSON.parse(raw)
       keys = %w[course_id name periods slots]

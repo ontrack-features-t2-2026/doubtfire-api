@@ -204,4 +204,12 @@ class CourseflowApiTest < ActiveSupport::TestCase
     post '/api/courseflow/maps', '{', { 'CONTENT_TYPE' => 'application/json' }
     assert_equal 422, last_response.status, last_response.body
   end
+
+  def test_empty_body_is_a_client_error
+    ['application/json', 'text/plain'].each do |content_type|
+      post '/api/courseflow/maps', '', { 'CONTENT_TYPE' => content_type }
+      assert_equal 422, last_response.status, "#{content_type}: #{last_response.body}"
+    end
+    assert_equal 1, Courseflow::CourseMap.count
+  end
 end
