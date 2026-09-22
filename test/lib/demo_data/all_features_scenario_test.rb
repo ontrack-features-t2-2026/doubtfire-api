@@ -451,7 +451,7 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     # Move the failed task to complete without the status side effects.
     failed_task = projects.fetch('DEMO10001').tasks.joins(:task_definition)
                           .find_by!(task_definitions: { abbreviation: 'FAILED' })
-    failed_task.update_columns(task_status_id: TaskStatus.complete.id) # rubocop:disable Rails/SkipsModelValidations
+    failed_task.update_columns(task_status_id: TaskStatus.complete.id)
 
     contract = with_demo_safety { @scenario.contract_for(user: demo_student) }
 
@@ -482,7 +482,7 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     # A status outside the fixture set.
     work_task = projects.fetch('DEMO10001').tasks.joins(:task_definition)
                         .find_by!(task_definitions: { abbreviation: 'WORK' })
-    work_task.update_columns(task_status_id: TaskStatus.need_help.id) # rubocop:disable Rails/SkipsModelValidations
+    work_task.update_columns(task_status_id: TaskStatus.need_help.id)
 
     contract = with_demo_safety { @scenario.contract_for(user: demo_student) }
 
