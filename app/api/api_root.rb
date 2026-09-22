@@ -57,6 +57,7 @@ class ApiRoot < Grape::API
   mount Admin::OverseerAdminApi
   mount ActivityTypesAuthenticatedApi
   mount ActivityTypesPublicApi
+  mount CourseflowApi
   mount TaskStatusesApi
   mount AuthenticationApi
   mount AdditionalNotificationEmailVerificationApi
@@ -129,6 +130,7 @@ class ApiRoot < Grape::API
   AuthenticationHelpers.add_auth_to Admin::OverseerAdminApi
 
   AuthenticationHelpers.add_auth_to ActivityTypesAuthenticatedApi
+  AuthenticationHelpers.add_auth_to CourseflowApi
   AuthenticationHelpers.add_auth_to BreaksApi
   AuthenticationHelpers.add_auth_to DiscussionCommentApi
   AuthenticationHelpers.add_auth_to EngagementsApi
