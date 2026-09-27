@@ -1,3 +1,4 @@
+<% content_for :icon do %>announcement<% end %>
 <% announcement = @notification.notifiable %>
 <% heading = announcement&.pinned ? 'Pinned announcement' : 'New announcement' %>
 <% content_for :preheader do %><%= @notification.message.to_s.truncate(90) %><% end %>

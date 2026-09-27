@@ -1,3 +1,4 @@
+<% content_for :icon do %>change<% end %>
 <% session = @notification.notifiable %>
 <% cancelled = session&.cancelled %>
 <% content_for :preheader do %><%= @notification.message.to_s.truncate(90) %><% end %>
