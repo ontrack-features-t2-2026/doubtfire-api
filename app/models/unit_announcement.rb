@@ -20,7 +20,19 @@ class UnitAnnouncement < ApplicationRecord
   }
   scope :recent_first, -> { order(pinned: :desc, published_at: :desc, id: :desc) }
 
+  # After commit, so the job that fans out never runs before the row it reads
+  # is visible, and a rolled back save tells nobody anything.
+  after_commit(on: :create) { queue_hub_notifications(created: true) }
+  after_commit(on: :update) { queue_hub_notifications(created: false) }
+
   private
+
+  # A notification must never stop an announcement being saved.
+  def queue_hub_notifications(created:)
+    UnitHub::Notifications.announcement_committed(self, created: created)
+  rescue StandardError => e
+    Rails.logger.error("Failed to queue Unit Hub notifications for UnitAnnouncement #{id}: #{e.class}")
+  end
 
   def expiry_follows_publication
     return unless published_at && expires_at && expires_at <= published_at
