@@ -177,6 +177,19 @@ class UsersApi < Grape::API
       # field instead of rejecting the rest of an otherwise valid update.
       user_parameters.delete(:theme_preference) unless change_self
 
+      # The Unit Hub opt-ins and the digest decide what lands in the user's own
+      # inbox, so only the user can turn them on or off. Staff with update_user
+      # can still edit the rest of the profile.
+      unless change_self
+        %i[
+          receive_unit_hub_notifications
+          receive_unit_hub_email_notifications
+          receive_unit_hub_push_notifications
+          receive_unit_hub_session_reminders
+          digest_frequency
+        ].each { |pref| user_parameters.delete(pref) }
+      end
+
       user.role = Role.student if user.role.nil?
       old_role = user.role
 

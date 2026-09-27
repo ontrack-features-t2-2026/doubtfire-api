@@ -467,6 +467,27 @@ class UnitsTest < ActiveSupport::TestCase
     assert_not last_response_body.key?('theme_preference_updated_at')
   end
 
+  def test_non_self_update_ignores_unit_hub_and_digest_preferences
+    current_user = User.first
+    other_user = User.second
+    other_user.update!(digest_frequency: 'off', receive_unit_hub_email_notifications: false)
+    add_auth_header_for(user: current_user)
+
+    put_json "/api/users/#{other_user.id}", {
+      user: {
+        nickname: 'Updated by staff',
+        digest_frequency: 'daily',
+        receive_unit_hub_email_notifications: true
+      }
+    }
+
+    assert_equal 200, last_response.status
+    other_user.reload
+    assert_equal 'Updated by staff', other_user.nickname
+    assert_equal 'off', other_user.digest_frequency
+    assert_not other_user.receive_unit_hub_email_notifications
+  end
+
   def test_put_invalid_theme_preference_keeps_the_existing_choice_and_timestamp
     user = User.first
     chosen_at = Time.zone.parse('2026-08-30 10:00:00 UTC')
