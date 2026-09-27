@@ -193,7 +193,8 @@ class Group < ApplicationRecord
       type: 'general',
       event: 'group_membership_changed',
       message: "You have been #{change} group #{name} in #{unit.code}.",
-      link: "/projects/#{project.id}/groups"
+      link: "/projects/#{project.id}/groups",
+      notifiable: self
     )
   rescue StandardError => e
     logger.error(

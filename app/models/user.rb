@@ -173,6 +173,10 @@ class User < ApplicationRecord
   has_many    :additional_notification_email_audits, dependent: :destroy, inverse_of: :user
 
   # Model validations/constraints
+  # How often the unit summary email goes out. 'off' stops it without touching
+  # feedback notifications, which used to be the only switch it had.
+  DIGEST_FREQUENCIES = %w[off daily weekly monthly].freeze
+
   validates :first_name,  presence: true
   validates :last_name,   presence: true
   validates :role_id,     presence: true
@@ -180,6 +184,13 @@ class User < ApplicationRecord
   validates :email,       presence: true, uniqueness: { case_sensitive: false }, format: { with: /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i }
   validates :student_id,  uniqueness: true, allow_nil: true
   validates :theme_preference, inclusion: { in: %w[light dark system] }, allow_nil: true
+  validates :digest_frequency, inclusion: { in: User::DIGEST_FREQUENCIES }
+
+  # True when a run at this cadence should mail this user. A run with no cadence
+  # is the existing weekly job, which predates the preference.
+  def wants_digest_on?(cadence)
+    (cadence.presence || 'weekly').to_s == digest_frequency
+  end
   validate :can_change_to_role?, if: :will_save_change_to_role_id?
 
   # Queries
