@@ -214,40 +214,13 @@ class NotificationsMailer < ApplicationMailer
 
     # Work the tutor has already handed back. It is not the same as a task never
     # opened, and it is the pile most worth clearing, so it gets counted apart.
-    returned_statuses = [
-      TaskStatus.fix_and_resubmit, TaskStatus.redo, TaskStatus.discuss,
-      TaskStatus.rediscuss, TaskStatus.demonstrate, TaskStatus.feedback_exceeded,
-      TaskStatus.attention_required
-    ]
-    @needs_your_response = returned_statuses.sum { |status| status_counts.fetch(status.id, 0) }
+    @needs_your_response = weekly_returned_count(status_counts)
 
     # Every status the student's own tasks are in, in the order they matter,
     # dropping the ones nobody is sitting on. A task definition with no task row
     # has never been opened, so it joins the not started pile rather than
     # vanishing from the total.
-    ordered_statuses = [
-      [TaskStatus.complete, 'complete'],
-      [TaskStatus.ready_for_feedback, 'with your tutor to mark'],
-      [TaskStatus.fix_and_resubmit, 'to fix and resubmit'],
-      [TaskStatus.redo, 'to redo'],
-      [TaskStatus.discuss, 'to talk through with your tutor'],
-      [TaskStatus.rediscuss, 'to talk through again'],
-      [TaskStatus.demonstrate, 'to demonstrate'],
-      [TaskStatus.feedback_exceeded, 'out of feedback attempts'],
-      [TaskStatus.attention_required, 'needing attention'],
-      [TaskStatus.time_exceeded, 'past the deadline'],
-      [TaskStatus.assess_in_portfolio, 'to carry into your portfolio'],
-      [TaskStatus.fail, 'marked fail'],
-      [TaskStatus.need_help, 'where you asked for help'],
-      [TaskStatus.working_on_it, 'you are working on']
-    ]
-    @status_summary = ordered_statuses.filter_map do |status, label|
-      count = status_counts.fetch(status.id, 0)
-      [status.status_key, label, count] if count.positive?
-    end
-    never_opened = @grade_task_total - status_counts.values.sum
-    not_started = status_counts.fetch(TaskStatus.not_started.id, 0) + [never_opened, 0].max
-    @status_summary << [:not_started, 'not opened yet', not_started] if not_started.positive?
+    @status_summary = digest_status_summary(status_counts, @grade_task_total)
 
     # Pace, against the target schedule rather than against the hard deadline.
     # The date on a task is its target date, adjusted for any extension, which is
@@ -257,15 +230,7 @@ class NotificationsMailer < ApplicationMailer
     #
     # The comparison is strictly before today, matching top_tasks, so a task
     # whose target date is today is not counted as having slipped.
-    complete_id = TaskStatus.complete.id
-    passed, behind = 0, 0
-    assigned_defs.each do |definition|
-      target = @task_due_dates[definition.id] || definition.target_date
-      next if target.blank? || target.to_date >= Time.zone.today
-
-      passed += 1
-      behind += 1 unless status_by_definition[definition.id] == complete_id
-    end
+    passed, behind = weekly_target_pace(assigned_defs, status_by_definition)
     @targets_passed = passed
 
     # Tasks past their target date and still not complete. This is the honest
@@ -291,16 +256,7 @@ class NotificationsMailer < ApplicationMailer
     # quiet weeks lost the week they fell behind along with them. The subject now
     # leads on whatever is worst, and only says "Weekly summary" when there is
     # genuinely nothing outstanding.
-    subject =
-      if @behind_target.positive?
-        "#{project.unit.name}: #{@behind_target} task#{'s' unless @behind_target == 1} behind target"
-      elsif @needs_your_response.positive?
-        "#{project.unit.name}: #{@needs_your_response} task#{'s' unless @needs_your_response == 1} waiting on you"
-      elsif @soon_top.present?
-        "#{project.unit.name}: #{@soon_top.first[:task_definition].abbreviation} due this week"
-      else
-        "#{project.unit.name}: Weekly summary"
-      end
+    subject = weekly_summary_subject(project.unit.name)
 
     mail(
       { to: email_with_name, subject: subject }.merge(bulk_list_headers).merge(
@@ -503,6 +459,44 @@ class NotificationsMailer < ApplicationMailer
     }
   end
 
+  # How many target dates have passed, and how many of those tasks are still not
+  # complete. Reads @task_due_dates, so it runs after weekly_student_summary fills it.
+  def weekly_target_pace(assigned_defs, status_by_definition)
+    complete_id = TaskStatus.complete.id
+    passed = 0
+    behind = 0
+    assigned_defs.each do |definition|
+      target = @task_due_dates[definition.id] || definition.target_date
+      next if target.blank? || target.to_date >= Time.zone.today
+
+      passed += 1
+      behind += 1 unless status_by_definition[definition.id] == complete_id
+    end
+    [passed, behind]
+  end
+
+  def weekly_returned_count(status_counts)
+    returned_statuses = [
+      TaskStatus.fix_and_resubmit, TaskStatus.redo, TaskStatus.discuss,
+      TaskStatus.rediscuss, TaskStatus.demonstrate, TaskStatus.feedback_exceeded,
+      TaskStatus.attention_required
+    ]
+    returned_statuses.sum { |status| status_counts.fetch(status.id, 0) }
+  end
+
+  def weekly_summary_subject(unit_name)
+    if @behind_target.positive?
+      "#{unit_name}: #{@behind_target} task#{'s' unless @behind_target == 1} behind target"
+    elsif @needs_your_response.positive?
+      "#{unit_name}: #{@needs_your_response} task#{'s' unless @needs_your_response == 1} waiting on you"
+    elsif @soon_top.present?
+      "#{unit_name}: #{@soon_top.first[:task_definition].abbreviation} due this week"
+    else
+      "#{unit_name}: Weekly summary"
+    end
+  end
+
+  # Shared by the per-unit weekly and the digest, so both list the same statuses.
   def digest_status_summary(status_counts, grade_task_total)
     ordered = [
       [TaskStatus.complete, 'complete'],

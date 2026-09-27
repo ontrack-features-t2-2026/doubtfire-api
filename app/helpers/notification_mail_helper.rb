@@ -134,7 +134,7 @@ module NotificationMailHelper
     hex = accent.to_s.delete_prefix('#')
     return nil unless hex.length == 6
 
-    mixed = hex.scan(/../).map { |pair| (pair.to_i(16) * weight + towards * (1 - weight)).round.clamp(0, 255) }
+    mixed = hex.scan(/../).map { |pair| ((pair.to_i(16) * weight) + (towards * (1 - weight))).round.clamp(0, 255) }
     format('#%02x%02x%02x', *mixed)
   end
 

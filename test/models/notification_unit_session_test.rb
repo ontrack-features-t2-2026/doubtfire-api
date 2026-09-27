@@ -106,7 +106,7 @@ class NotificationUnitSessionTest < ActiveSupport::TestCase
   end
 
   def test_a_weekly_cancellation_says_every_session_is_off
-    @session.update_columns(recurrence: 'weekly', recurrence_until: (@start + 4.weeks).to_date)
+    @session.update_columns(recurrence: 'weekly', recurrence_until: (@start + 4.weeks).to_date) # rubocop:disable Rails/SkipsModelValidations
     travel_to(@start - 3.days) do
       @session.reload.update!(cancelled: true)
       run_jobs
@@ -232,7 +232,7 @@ class NotificationUnitSessionTest < ActiveSupport::TestCase
 
   def test_each_weekly_occurrence_gets_its_own_reminder
     @student.update!(receive_unit_hub_session_reminders: true)
-    @session.update_columns(recurrence: 'weekly', recurrence_until: (@start + 4.weeks).to_date)
+    @session.update_columns(recurrence: 'weekly', recurrence_until: (@start + 4.weeks).to_date) # rubocop:disable Rails/SkipsModelValidations
 
     travel_to(@start - 10.minutes) { SendUnitSessionRemindersJob.new.perform }
     travel_to(@start + 1.week - 10.minutes) { SendUnitSessionRemindersJob.new.perform }
@@ -242,7 +242,7 @@ class NotificationUnitSessionTest < ActiveSupport::TestCase
 
   def test_cancelled_and_unpublished_sessions_are_not_reminded
     @student.update!(receive_unit_hub_session_reminders: true)
-    @session.update_columns(cancelled: true)
+    @session.update_columns(cancelled: true) # rubocop:disable Rails/SkipsModelValidations
     @unit.unit_learning_sessions.create!(title: 'Draft', start_at: @start, end_at: @start + 1.hour)
 
     travel_to(@start - 10.minutes) { SendUnitSessionRemindersJob.new.perform }

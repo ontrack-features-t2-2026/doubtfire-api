@@ -359,7 +359,7 @@ class NotificationUnitAnnouncementTest < ActiveSupport::TestCase
 
     body = JSON.parse(last_response.body)
     assert_equal false, body['receive_unit_hub_notifications']
-    assert_equal true, body['receive_unit_hub_session_reminders']
+    assert body['receive_unit_hub_session_reminders']
 
     put_json "/api/users/#{@student.id}", user: { receive_unit_hub_notifications: nil, receive_unit_hub_email_notifications: nil }
     @student.reload
