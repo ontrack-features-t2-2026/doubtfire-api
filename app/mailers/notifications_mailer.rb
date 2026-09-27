@@ -75,7 +75,13 @@ class NotificationsMailer < ApplicationMailer
     'group_membership_changed' => 'Group membership changed',
     'discussion_request_created' => 'New discussion request',
     'portfolio_received' => 'Portfolio received',
-    'tutorial_changed' => 'Tutorial changed'
+    'tutorial_changed' => 'Tutorial changed',
+    'portfolio_submitted' => 'Portfolio submitted',
+    'task_automated_comment_created' => 'New note on a task',
+    'unit_announcement_published' => 'New announcement',
+    'unit_announcement_updated' => 'Announcement updated',
+    'unit_session_changed' => 'Session changed',
+    'unit_session_starting_soon' => 'Session starting soon'
   }.freeze
 
   # The page the email's button opens: the same page the bell would open for
