@@ -21,7 +21,8 @@ class AdditionalNotificationEmailDeliveryJob
     return if additional.email.casecmp?(notification.user.email)
     return unless NotificationService.deliver_to?(
       notification.user,
-      notification.notification_type
+      notification.notification_type,
+      channel: :email
     )
 
     NotificationsMailer.additional_notification_copy(notification, additional.email).deliver_now

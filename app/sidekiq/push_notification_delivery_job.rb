@@ -21,7 +21,7 @@ class PushNotificationDeliveryJob
     # switched off in the meantime stays off, exactly as NotificationEmailJob
     # does for the email channel. Without this a queued or retried push still
     # fires after the user has opted the category out.
-    return unless NotificationService.deliver_to?(notification.user, notification.notification_type)
+    return unless NotificationService.deliver_to?(notification.user, notification.notification_type, channel: :push)
 
     PushNotificationService.deliver(notification)
   end

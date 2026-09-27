@@ -93,6 +93,33 @@ class NotificationsMailerTest < ActionMailer::TestCase
     end
   end
 
+  # Events that came after the subject map. The Unit Hub templates render
+  # without their announcement or session, so a bare notification is enough.
+  LATER_EVENTS = {
+    'portfolio_submitted' => 'portfolio',
+    'task_automated_comment_created' => 'feedback',
+    'unit_announcement_published' => 'unit_hub',
+    'unit_announcement_updated' => 'unit_hub',
+    'unit_session_changed' => 'unit_hub',
+    'unit_session_starting_soon' => 'unit_hub'
+  }.freeze
+
+  LATER_EVENTS.each do |event, notification_type|
+    define_method("test_#{event}_subject_is_event_specific") do
+      notification = FactoryBot.create(
+        :notification,
+        notification_type: notification_type,
+        event: event
+      )
+
+      mail = NotificationsMailer.single_notification(notification)
+      product_name = Doubtfire::Application.config.institution[:product_name]
+
+      assert_equal "#{product_name}: #{NotificationsMailer::SUBJECTS.fetch(event)}", mail.subject
+      assert mail.html_part.body.to_s.present?, "#{event}: HTML part did not render"
+    end
+  end
+
   def test_unknown_event_uses_generic_subject_fallback
     notification = FactoryBot.create(
       :notification,

@@ -1,15 +1,10 @@
-<p>Hi <%= @user.name %>,</p>
+<% content_for :icon do %>change<% end %>
+<% content_for :preheader do %>Please use the new tutorial day and time for your next class.<% end %>
+<% content_for :heading do %>Your tutorial has changed<% end %>
 
-<p>Your tutorial has changed.</p>
-
-<p><%= @notification.message %></p>
-
-<p>Please use the new tutorial day and time for your next class.</p>
-
+<p style="margin:0 0 20px 0;">Hi <%= @user.name %>,</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message, category: 'change', label: 'Your new tutorial' %>
 <% if @notification.link.present? %>
-  <p>
-    <a href="<%= @doubtfire_host %><%= @notification.link %>">
-      Open your unit in <%= @doubtfire_product_name %>
-    </a>
-  </p>
+  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: "Open your unit in #{@doubtfire_product_name}" %>
 <% end %>
+<%= render 'layouts/notification_mail/note', body: "Please use the new tutorial day and time for your next class." %>

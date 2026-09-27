@@ -1,4 +1,6 @@
 class PortfolioEvidenceMailer < ApplicationMailer
+  layout "notification_mail"
+
   def add_general
     @doubtfire_host = Doubtfire::Application.config.institution[:host]
     @doubtfire_product_name = Doubtfire::Application.config.institution[:product_name]
@@ -15,8 +17,8 @@ class PortfolioEvidenceMailer < ApplicationMailer
     @tutor = project.main_convenor_user
     @convenor = project.main_convenor_user
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
+    email_with_name = address_with_name(@student)
+    tutor_email = address_with_name(@tutor)
     subject = "#{project.unit.code} #{project.unit.name}: Task submission processing failed"
     mail(
       { to: email_with_name, subject: subject }.merge(
@@ -35,8 +37,8 @@ class PortfolioEvidenceMailer < ApplicationMailer
     @tutor = project.main_convenor_user
     @convenor = project.main_convenor_user
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
+    email_with_name = address_with_name(@student)
+    tutor_email = address_with_name(@tutor)
     subject = "#{project.unit.name}: Task PDFs ready to view"
     mail(
       { to: email_with_name, subject: subject }.merge(
@@ -56,8 +58,8 @@ class PortfolioEvidenceMailer < ApplicationMailer
     @has_comments = !@tasks.select { |t| t.is_last_comment_by?(@tutor) }.empty?
     return nil if @tutor.nil? || @student.nil?
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
+    email_with_name = address_with_name(@student)
+    tutor_email = address_with_name(@tutor)
     subject = "#{project.unit.name}: Feedback ready to review"
     mail(
       { to: email_with_name, subject: subject }.merge(
@@ -76,8 +78,8 @@ class PortfolioEvidenceMailer < ApplicationMailer
     @tutor = project.main_convenor_user
     return nil if @tutor.nil? || @student.nil?
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    tutor_email = %("#{@tutor.name}" <#{@tutor.email}>)
+    email_with_name = address_with_name(@student)
+    tutor_email = address_with_name(@tutor)
     subject = "#{project.unit.code} #{project.unit.name}: Automated feedback needs your attention"
     mail(
       { to: email_with_name, subject: subject }.merge(
@@ -95,8 +97,8 @@ class PortfolioEvidenceMailer < ApplicationMailer
     @project = project
     @convenor = project.main_convenor_user
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    convenor_email = %("#{@convenor.name}" <#{@convenor.email}>)
+    email_with_name = address_with_name(@student)
+    convenor_email = address_with_name(@convenor)
     subject = "#{project.unit.name}: Portfolio ready to review"
     mail(
       { to: email_with_name, subject: subject }.merge(
@@ -114,8 +116,8 @@ class PortfolioEvidenceMailer < ApplicationMailer
     @project = project
     @convenor = project.main_convenor_user
 
-    email_with_name = %("#{@student.name}" <#{@student.email}>)
-    convenor_email = %("#{@convenor.name}" <#{@convenor.email}>)
+    email_with_name = address_with_name(@student)
+    convenor_email = address_with_name(@convenor)
     subject = "#{project.unit.name}: Portfolio failed to compile"
     mail(
       { to: email_with_name, subject: subject }.merge(
