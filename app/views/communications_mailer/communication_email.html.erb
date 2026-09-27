@@ -1,9 +1,18 @@
+<% content_for :icon do %>announcement<% end %>
 <% content_for :preheader do %><%= @body_paragraphs.first.to_s.truncate(90) %><% end %>
-<% content_for :heading do %><%= @doubtfire_product_name %> Notification<% end %>
+<% content_for :heading do %>A message from <%= @sender&.name.presence || @doubtfire_product_name %><% end %>
+<% if @unit&.name.present? %><% content_for :subheading do %><%= @unit.name %><% end %><% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @recipient&.nickname.presence || @recipient&.first_name %>,</p>
+<p style="margin:0 0 20px 0;">Hi <%= @recipient&.nickname.presence || @recipient&.first_name %>,</p>
 
-<% @body_paragraphs.each do |paragraph| %>
+<%# The convenor wrote this body. Lead with the first paragraph in the callout
+    so the point of the message survives a glance, and leave the rest as prose
+    because it is theirs to shape, not this template's. %>
+<% if @body_paragraphs.any? %>
+  <%= render 'layouts/notification_mail/details', body: @body_paragraphs.first, category: 'announcement' %>
+<% end %>
+
+<% @body_paragraphs.drop(1).each do |paragraph| %>
   <p style="margin:0 0 16px 0;"><%= paragraph %></p>
 <% end %>
 

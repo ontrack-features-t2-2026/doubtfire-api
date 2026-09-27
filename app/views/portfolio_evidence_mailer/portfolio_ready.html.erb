@@ -1,17 +1,15 @@
+<% content_for :icon do %>portfolio<% end %>
 <% content_for :preheader do %>Your portfolio has been compiled and is ready to view.<% end %>
 <% content_for :heading do %>Your portfolio is ready<% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @student.first_name %>,</p>
-<% if @project.portfolio_auto_generated %>
-  <p style="margin:0 0 16px 0;">
-    Profile generation has been automatically triggered. You can customise your portfolio and recreate up until the due date indicated by the teaching staff.
-  </p>
-<% end %>
-<p style="margin:0 0 16px 0;">
-  Your portfolio has been compiled and can now be viewed and downloaded from <a href="<%= @doubtfire_host %>/projects/<%= @project.id%>/portfolio" class="ot-link" style="color:#3939ff; text-decoration:underline;"><%= @doubtfire_product_name %></a>.
-</p>
+<p style="margin:0 0 20px 0;">Hi <%= @student.first_name %>,</p>
+<%= render 'layouts/notification_mail/details', body: "Your portfolio has been compiled. You can view it and download it now.", category: 'portfolio', label: 'Ready' %>
 
 <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}/projects/#{@project.id}/portfolio", label: 'Open your portfolio' %>
+
+<% if @project.portfolio_auto_generated %>
+  <%= render 'layouts/notification_mail/note', body: "This portfolio was generated for you automatically. You can customise it and recreate it up until the due date your teaching staff set." %>
+<% end %>
 
 <p style="margin:24px 0 0 0;">
   Cheers, <br />

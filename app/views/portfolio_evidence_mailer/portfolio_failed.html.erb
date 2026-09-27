@@ -1,17 +1,15 @@
+<% content_for :icon do %>alert<% end %>
 <% content_for :preheader do %>There was an error compiling your portfolio.<% end %>
 <% content_for :heading do %>Your portfolio could not be compiled<% end %>
 
-<p style="margin:0 0 16px 0;">Hi <%= @student.first_name %>,</p>
-<% if @project.portfolio_auto_generated %>
-  <p style="margin:0 0 16px 0;">
-    Profile generation has been automatically triggered. You can customise your portfolio and recreate up until the due date indicated by the teaching staff.
-  </p>
-<% end %>
-<p style="margin:0 0 16px 0;">
-  There was an error compiling your portfolio. This usually means that one of your task PDFs is corrupt. Login to <a href="<%= @doubtfire_host %>/projects/<%= @project.id%>/portfolio" class="ot-link" style="color:#3939ff; text-decoration:underline;"><%= @doubtfire_product_name %></a> and check each of your task PDFs. Once you have checked that all of the PDFs are valid you can schedule your portfolio to compile again.
-</p>
+<p style="margin:0 0 20px 0;">Hi <%= @student.first_name %>,</p>
+<%= render 'layouts/notification_mail/details', body: "One of your task PDFs is usually the cause. Open each task PDF and check it, then schedule your portfolio to compile again.", category: 'alert', label: 'What to do' %>
 
 <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}/projects/#{@project.id}/portfolio", label: 'Open your portfolio' %>
+
+<% if @project.portfolio_auto_generated %>
+  <%= render 'layouts/notification_mail/note', body: "This portfolio was generated for you automatically. You can customise it and recreate it up until the due date your teaching staff set." %>
+<% end %>
 
 <p style="margin:24px 0 0 0;">
   Cheers, <br />
