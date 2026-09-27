@@ -41,7 +41,7 @@ class NotificationEmailJob
       # Recheck the preference and terminal state under the same lock, so a
       # concurrent opted-out worker cannot overwrite a completed delivery.
       unless NotificationsMailer.perform_deliveries &&
-             NotificationService.deliver_to?(notification.user, notification.notification_type)
+             NotificationService.deliver_to?(notification.user, notification.notification_type, channel: :email)
         notification.update!(email_delivery_state: 'suppressed')
         return
       end

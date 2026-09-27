@@ -1,18 +1,17 @@
-<p>Hi <%= @user.first_name %>,</p>
+<% content_for :preheader do %><%= @notification.message.to_s.truncate(90) %><% end %>
+<% content_for :heading do %>A student asked for help<% end %>
 
-<p><%= @notification.message %></p>
+<p style="margin:0 0 16px 0;">Hi <%= @user.first_name %>,</p>
+<p style="margin:0 0 16px 0;">A student moved a task to Need Help and is waiting to hear from you.</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message %>
 
-<% if @notification.link.present? %>
-  <p>
-    <a href="<%= @doubtfire_host %><%= @notification.link %>">
-      Open the task in <%= @doubtfire_product_name %>
-    </a>
+<p style="margin:0 0 16px 0;">The student's work and comments are not included in this email.</p>
+<% if @notification_url.present? %>
+  <%= render 'layouts/notification_mail/button', url: @notification_url, label: "Open the task in #{@doubtfire_product_name}" %>
+<% end %>
+<% content_for :footer do %>
+  <p style="margin:0;">
+    You can manage your notification preferences in
+    <a href="<%= @unsubscribe_url %>" style="color:#6b7280; text-decoration:underline;">your profile</a>.
   </p>
 <% end %>
-
-<p>The student's work and comments are not included in this email.</p>
-
-<p>
-  You can manage your notification preferences in
-  <a href="<%= @unsubscribe_url %>">your profile</a>.
-</p>

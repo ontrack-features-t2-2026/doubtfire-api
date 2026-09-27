@@ -1,125 +1,70 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <style type="text/css">
-    .main {
-      font-family: "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      color: #333;
-      font-size: 14px;
-      width: 100%;
-      max-width: 900px;
-      margin: 100px auto 0px auto;
-      background-image: url('<%= @doubtfire_host %>/assets/images/logo.png');
-      background-size: 3.5em;
-      background-repeat: no-repeat;
-      background-position: top 40px right 45px;
-      padding: 30px 40px;
-      border: solid 1px rgb(240, 240, 240);
-      line-height: 200%;
-      text-align: justify;
-    }
-    footer, .footer {
-      font-family: "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      text-align: center;
-      margin-top: 10px;
-      color: #aaa;
-      font-size: 0.7em;
-    }
-    .subtext {
-        color: #aaa;
-        font-size: 0.7em;
-        margin-bottom: 10px;
-        margin-top: -10px;
-    }
-    table {
-        overflow: scroll;
-    }
-    a, a:visited {
-      color: #6a97d2;
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-    h1 {
-      font-size: 1.1em;
-    }
-    .overdue {
-      background: red;
-    }
-  </style>
-</head>
-<body>
-  <div class="main">
-    <h1><%= @summary_stats[:unit].name %> - Weekly Summary</h1>
-    <p class="subtext"><%= "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")}" %> to <%= "#{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}" %></p>
+<% content_for :preheader do %><%= "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")}" %> to <%= "#{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}" %><% end %>
+<% content_for :heading do %><%= @summary_stats[:unit].name %> - Weekly Summary<% end %>
 
-    <p>Hi <%= @staff.first_name %>,</p>
-    <p>
+<p style="margin:-8px 0 20px 0; font-size:14px; color:#6b7280;" class="ot-muted"><%= "#{@summary_stats[:week_start].day.ordinalize} #{@summary_stats[:week_start].strftime("%B %Y")}" %> to <%= "#{@summary_stats[:week_end].day.ordinalize} #{@summary_stats[:week_end].strftime("%B %Y")}" %></p>
+
+    <p style="margin:0 0 16px 0;">Hi <%= @staff.first_name %>,</p>
+    <p style="margin:0 0 16px 0;">
         Hope you had a good week! Here's a summary of what has happened in this unit over the last week.
     </p>
 <% if @unit_role.has_students? %>
-    <p>
-        <ul>
-            <li>In total, there <%= were_was(@summary_stats[:unit_week_comments]) %> <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made this unit.</li>
-            <li>You received <%= @data[:received_comments] %> comment<%= "s" if @data[:received_comments] != 1 %> and posted a total of <%= @data[:sent_comments] %> comment<%= "s" if @data[:sent_comments] != 1 %>.</li>
-            <li>Tasks changed state <%= @summary_stats[:unit_week_engagements] %> time<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> in this unit.</li>
-            <li>Your student's tasks changed state <%= @data[:weekly_engagements_count] %> time<%= "s" unless @data[:weekly_engagements_count] == 1 %>.</li>
-            <li>You assigned a new status to <%= @data[:staff_engagements] %> task<%= "s" unless @data[:staff_engagements] == 1 %>.</li>
-            <li>You have discussed <%= @data[:weekly_total_tasks_discussed] %> task<%= "s" unless @data[:weekly_total_tasks_discussed] == 1 %>.</li>
-            <li>You have <%= @data[:tasks_awaiting_feedback_count] %> task<%= "s" unless @data[:tasks_awaiting_feedback_count] == 1 %> waiting for feedback.</li>
+    <ul style="margin:0 0 16px 0; padding:0 0 0 20px;">
+            <li style="margin:0 0 6px 0;">In total, there <%= were_was(@summary_stats[:unit_week_comments]) %> <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made this unit.</li>
+            <li style="margin:0 0 6px 0;">You received <%= @data[:received_comments] %> comment<%= "s" if @data[:received_comments] != 1 %> and posted a total of <%= @data[:sent_comments] %> comment<%= "s" if @data[:sent_comments] != 1 %>.</li>
+            <li style="margin:0 0 6px 0;">Tasks changed state <%= @summary_stats[:unit_week_engagements] %> time<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> in this unit.</li>
+            <li style="margin:0 0 6px 0;">Your student's tasks changed state <%= @data[:weekly_engagements_count] %> time<%= "s" unless @data[:weekly_engagements_count] == 1 %>.</li>
+            <li style="margin:0 0 6px 0;">You assigned a new status to <%= @data[:staff_engagements] %> task<%= "s" unless @data[:staff_engagements] == 1 %>.</li>
+            <li style="margin:0 0 6px 0;">You have discussed <%= @data[:weekly_total_tasks_discussed] %> task<%= "s" unless @data[:weekly_total_tasks_discussed] == 1 %>.</li>
+            <li style="margin:0 0 6px 0;">You have <%= @data[:tasks_awaiting_feedback_count] %> task<%= "s" unless @data[:tasks_awaiting_feedback_count] == 1 %> waiting for feedback.</li>
 <%  if @data[:tasks_awaiting_feedback_count] > 0 %>
-            <li>The oldest of these tasks was submitted <%= @data[:oldest_task_days] %> day<%= "s" unless @data[:oldest_task_days] == 1 %> ago.</li>
+            <li style="margin:0 0 6px 0;">The oldest of these tasks was submitted <%= @data[:oldest_task_days] %> day<%= "s" unless @data[:oldest_task_days] == 1 %> ago.</li>
 <%  end %>
         </ul>
-    </p>
 <%  if @summary_stats[:revert][@staff].count > 0 %>
-    <p>
+    <p style="margin:0 0 8px 0;">
         The following students in your tutorials have been advised to revert their grade to Pass as they are falling behind with their pass tasks:
-        <ul>
+    </p>
+        <ul style="margin:0 0 16px 0; padding:0 0 0 20px;">
 <%      @summary_stats[:revert][@staff].each do |p|%>
-            <li><%= p.student.name %></li>
+            <li style="margin:0 0 6px 0;"><%= p.student.name %></li>
 <%      end %>
         </ul>
-    </p>
 <%  end %>
 <%# Else if unit role has no students %>
 <% else %>
-    <p>
-        <ul>
-            <li>In total, there <%= were_was(@summary_stats[:unit_week_comments]) %> <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made in this unit.</li>
-            <li>Tasks changed state <%= @summary_stats[:unit_week_engagements] %> time<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> in this unit.</li>
+    <ul style="margin:0 0 16px 0; padding:0 0 0 20px;">
+            <li style="margin:0 0 6px 0;">In total, there <%= were_was(@summary_stats[:unit_week_comments]) %> <%= @summary_stats[:unit_week_comments] %> comment<%= "s" if @summary_stats[:unit_week_comments] != 1 %> made in this unit.</li>
+            <li style="margin:0 0 6px 0;">Tasks changed state <%= @summary_stats[:unit_week_engagements] %> time<%= "s" unless @summary_stats[:unit_week_engagements] == 1 %> in this unit.</li>
         </ul>
-    </p>
 <% end %>
 
 <% if @unit_role.is_convenor? && !@summary_stats[:tutorial_streams].nil? && !@summary_stats[:tutorial_streams].empty?%>
   <%# Create a table for each tutorial stream %>
   <% @summary_stats[:tutorial_streams].each do |tutorial_stream, tutorial_stream_data | %>
   <% next unless tutorial_stream_data[:stream_linked_to_task_definition] %>
-  <p>
+  <p style="margin:0 0 16px 0;">
     Tutorial Stream: <%= tutorial_stream.name %>
   </p>
   <%# Skip table if no tutorials%>
   <% unless tutorial_stream_data.nil? || tutorial_stream_data[:tutorials].nil?%>
-      <table>
+      <div style="overflow-x:auto;"><table role="table" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; margin:0 0 16px 0; font-size:13px; line-height:1.4;">
           <thead>
               <tr>
-                  <th rowspan="2" style="width:15%">Name</th>
-                  <th rowspan="2" style="width:10%">Students</th>
-                  <th colspan="2" style="width:20%">Assessments</th>
-                  <th colspan="2" style="width:20%">Comments</th>
-                  <th rowspan="2" style="width:15%">Awaiting Feedback</th>
-                  <th rowspan="2" style="width:15%">Oldest Task</th>
-                  <th colspan="2" style="width:15%">Discussions</th>
+                  <th rowspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Name</th>
+                  <th rowspan="2" style="width:10%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Students</th>
+                  <th colspan="2" style="width:20%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Assessments</th>
+                  <th colspan="2" style="width:20%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Comments</th>
+                  <th rowspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Awaiting Feedback</th>
+                  <th rowspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Oldest Task</th>
+                  <th colspan="2" style="width:15%; padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Discussions</th>
               </tr>
               <tr>
-                  <th>Total</th>
-                  <th>Week</th>
-                  <th>Total</th>
-                  <th>Week</th>
-                  <th>Total</th>
-                  <th>Week</th>
+                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
+                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
+                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
+                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
+                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Total</th>
+                  <th style="padding:6px; border-bottom:1px solid #e5e7eb; text-align:left; background-color:#f5f5ff; color:#111827;">Week</th>
               </tr>
           </thead>
           <tbody>
@@ -129,35 +74,35 @@
   <%   sorted_data.each do | unit_role, data | %>
   <%    next unless data[:number_of_students] > 0%>
         <tr>
-          <td><%= '%-12s' % unit_role.user.name.truncate(14)  %></td>
-          <td><%= '%8i'   % data[:number_of_students] %></td>
-          <td><%= '%7i'   % data[:total_staff_engagements] %></td>
-          <td><%= '%6i'   % data[:staff_engagements] %></td>
-          <td><%= '%5i'   % data[:total_comments].uniq.count %></td>
-          <td><%= '%5i'   % data[:sent_comments].uniq.count %></td>
-          <td><%= '%8i'   % data[:tasks_awaiting_feedback_count] %></td>
-          <td class="<%= 'overdue' unless data[:oldest_task_days] < 7 %>"><%= '%6i'   % data[:oldest_task_days] %> days</td>
-          <td><%= '%5i'   % data[:total_tasks_discussed] %></td>
-          <td><%= '%5i'   % data[:weekly_tasks_discussed] %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%-12s' % unit_role.user.name.truncate(14)  %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%8i'   % data[:number_of_students] %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%7i'   % data[:total_staff_engagements] %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%6i'   % data[:staff_engagements] %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%5i'   % data[:total_comments].uniq.count %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%5i'   % data[:sent_comments].uniq.count %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%8i'   % data[:tasks_awaiting_feedback_count] %></td>
+          <td class="<%= 'overdue' unless data[:oldest_task_days] < 7 %>" style="padding:6px; border-bottom:1px solid #f0f0f0;<%= ' background-color:#fde2e1; color:#b42318; font-weight:600;' unless data[:oldest_task_days] < 7 %>"><%= '%6i'   % data[:oldest_task_days] %> days</td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%5i'   % data[:total_tasks_discussed] %></td>
+          <td style="padding:6px; border-bottom:1px solid #f0f0f0;"><%= '%5i'   % data[:weekly_tasks_discussed] %></td>
         </tr>
   <%   end %>
           </tbody>
-      </table>
+      </table></div>
   <%   end %>
     <% if tutorial_stream_data[:num_students_without_tutors] > 0 %>
-        <p>
+        <p style="margin:0 0 16px 0;">
             Please note that <%=tutorial_stream_data[:num_students_without_tutors]%> student<%= "s" unless tutorial_stream_data[:num_students_without_tutors] == 1 %> <%= are_is(tutorial_stream_data[:num_students_without_tutors]) %> not allocated to a tutorial in this stream. Work submitted by <%= this_these(tutorial_stream_data[:num_students_without_tutors]) %> student<%= "s" unless tutorial_stream_data[:num_students_without_tutors] == 1 %> will not appear in any of the tutor inboxes!
         </p>
     <% end %>
   <% end %>
 <% end %>
-    <p>
+    <p style="margin:24px 0 0 0;">
         Cheers, <br />
         The <%= @doubtfire_product_name %> Team on behalf of <%= @convenor.name %>
     </p>
-  </div>
-  <footer class="footer">
-    <a href="<%= @unsubscribe_url %>">Unsubscribe</a> | Generated with <%= @doubtfire_product_name %>
-  </footer>
-</body>
-</html>
+
+<% content_for :footer do %>
+  <p style="margin:0;">
+    <a href="<%= @unsubscribe_url %>" style="color:#6b7280; text-decoration:underline;">Unsubscribe</a> | Generated with <%= @doubtfire_product_name %>
+  </p>
+<% end %>

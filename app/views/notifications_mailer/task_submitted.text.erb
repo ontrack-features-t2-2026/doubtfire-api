@@ -3,8 +3,8 @@ Hi <%= @user.first_name %>,
 <%= @notification.message %>
 
 Open the task to review the submission:
-<% if @notification.link.present? -%>
-<%= @doubtfire_host %><%= @notification.link %>
+<% if @notification_url.present? -%>
+<%= @notification_url %>
 <% end -%>
 
 The submission and any assessment content are not included in this email.

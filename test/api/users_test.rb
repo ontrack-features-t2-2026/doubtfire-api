@@ -591,6 +591,83 @@ class UnitsTest < ActiveSupport::TestCase
     end
   end
 
+  def test_sso_controlled_name_rejects_self_and_admin_forgery
+    with_auth_method(:saml) do
+      user = FactoryBot.create(:user, first_name: 'Institutional', last_name: 'Record')
+      add_auth_header_for(user: user)
+
+      put_json "/api/users/#{user.id}", { user: { first_name: 'Forged' } }
+      assert_equal 422, last_response.status
+      assert_equal 'Your name is managed by your institution and cannot be changed here.', last_response_body['error']
+      assert_equal 'Institutional', user.reload.first_name
+
+      put_json "/api/users/#{user.id}", { user: { last_name: 'Forged' } }
+      assert_equal 422, last_response.status
+      assert_equal 'Record', user.reload.last_name
+
+      admin = FactoryBot.create(:user, :admin)
+      add_auth_header_for(user: admin)
+      put_json "/api/users/#{user.id}", { user: { first_name: 'Admin forged' } }
+      assert_equal 422, last_response.status
+      assert_equal 'Institutional', user.reload.first_name
+    end
+  end
+
+  def test_sso_update_that_resends_the_same_name_is_accepted
+    with_auth_method(:saml) do
+      user = FactoryBot.create(:user, first_name: 'Institutional', last_name: 'Record')
+      add_auth_header_for(user: user)
+
+      put_json "/api/users/#{user.id}", {
+        user: {
+          first_name: 'Institutional',
+          last_name: 'Record',
+          nickname: 'Preferred'
+        }
+      }
+
+      assert_equal 200, last_response.status
+      assert_equal 'Preferred', user.reload.nickname
+      assert_equal 'Institutional', user.first_name
+      assert_equal 'Record', user.last_name
+    end
+  end
+
+  def test_sso_user_can_always_change_their_preferred_name
+    with_auth_method(:saml) do
+      user = FactoryBot.create(:user, first_name: 'Institutional', nickname: 'Old')
+      add_auth_header_for(user: user)
+
+      put_json "/api/users/#{user.id}", { user: { nickname: 'New preferred' } }
+
+      assert_equal 200, last_response.status
+      assert_equal 'New preferred', user.reload.nickname
+      assert_equal 'Institutional', user.first_name
+    end
+  end
+
+  def test_local_accounts_can_still_change_their_name
+    with_auth_method(:database) do
+      local_user = FactoryBot.create(:user, first_name: 'Local', last_name: 'Account')
+      add_auth_header_for(user: local_user)
+
+      put_json "/api/users/#{local_user.id}", {
+        user: { first_name: 'Changed', last_name: 'Name' }
+      }
+
+      assert_equal 200, last_response.status
+      assert_equal 'Changed', local_user.reload.first_name
+      assert_equal 'Name', local_user.last_name
+
+      admin = FactoryBot.create(:user, :admin)
+      add_auth_header_for(user: admin)
+      put_json "/api/users/#{local_user.id}", { user: { first_name: 'Admin maintained' } }
+
+      assert_equal 200, last_response.status
+      assert_equal 'Admin maintained', local_user.reload.first_name
+    end
+  end
+
   def test_sso_user_can_still_save_preferred_name_and_preferences
     with_auth_method(:saml) do
       user = FactoryBot.create(:user, email: 'institutional@example.edu')

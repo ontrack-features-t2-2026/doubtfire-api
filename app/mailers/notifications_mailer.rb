@@ -1,4 +1,6 @@
 class NotificationsMailer < ApplicationMailer
+  layout "notification_mail"
+
   def add_general
     @doubtfire_host = Doubtfire::Application.config.institution[:host]
     @doubtfire_product_name = Doubtfire::Application.config.institution[:product_name]
@@ -13,6 +15,7 @@ class NotificationsMailer < ApplicationMailer
 
     @notification = notification
     @user = notification.user
+    @notification_url = notification_url_for(notification)
 
     # Use the deployment's SMTP-authorised sender, with a development-safe
     # fallback for older installations that have not configured one yet.
@@ -44,6 +47,7 @@ class NotificationsMailer < ApplicationMailer
 
     @notification = notification
     @user = notification.user
+    @notification_url = notification_url_for(notification)
 
     from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
     subject = "#{@doubtfire_product_name}: #{SUBJECTS.fetch(notification.event, 'New notification')}"
@@ -68,6 +72,13 @@ class NotificationsMailer < ApplicationMailer
     'portfolio_received' => 'Portfolio received',
     'tutorial_changed' => 'Tutorial changed'
   }.freeze
+
+  # The page the email's button opens: the same page the bell would open for
+  # this recipient, or nothing when the notification has nowhere to go.
+  def notification_url_for(notification)
+    path = notification.web_path
+    path.present? ? "#{@doubtfire_host}#{path}" : nil
+  end
 
   # The event's own template if it exists, otherwise the generic one.
   def event_template_name(event)

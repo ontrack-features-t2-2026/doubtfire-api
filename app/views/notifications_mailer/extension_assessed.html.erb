@@ -1,20 +1,18 @@
-<p>Hi <%= @user.name %>,</p>
+<% content_for :preheader do %>Your extension request has been assessed.<% end %>
+<% content_for :heading do %>Extension request assessed<% end %>
 
-<p><%= @notification.message %></p>
+<p style="margin:0 0 16px 0;">Hi <%= @user.name %>,</p>
+<%= render 'layouts/notification_mail/details', body: @notification.message %>
 
-<p>
+<p style="margin:0 0 16px 0;">
   Your extension request has been assessed.
   Open the task in <%= @doubtfire_product_name %> to review the current task details.
 </p>
-
 <% if @notification.link.present? %>
-  <p>
-    <a href="<%= @doubtfire_host %><%= @notification.link %>">
-      Open the task
-    </a>
+  <%= render 'layouts/notification_mail/button', url: "#{@doubtfire_host}#{@notification.link}", label: 'Open the task' %>
+<% end %>
+<% content_for :footer do %>
+  <p style="margin:0;">
+    This notification is sent when an extension request is assessed.
   </p>
 <% end %>
-
-<p>
-  This notification is sent when an extension request is assessed.
-</p>

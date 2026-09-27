@@ -15,6 +15,12 @@ module Entities
         data.new_for?(options[:current_user])
       end
     end
+    # Written by OnTrack rather than by the author named below. Clients show
+    # these differently so a person is not credited with something they did not
+    # write.
+    expose :automated do |data, _options|
+      data.respond_to?(:automated?) && data.automated?
+    end
     expose :reply_to_id
     expose :attachment_file_name, if: ->(data, _) { data.attachment? }
     expose :attachment_mime_type, if: ->(data, _) { data.attachment? }

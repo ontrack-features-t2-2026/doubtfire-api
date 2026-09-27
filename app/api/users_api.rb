@@ -77,6 +77,11 @@ class UsersApi < Grape::API
       optional :receive_task_notifications, type: Boolean, desc: 'Allow user to be sent task notifications'
       optional :receive_portfolio_notifications, type: Boolean, desc: 'Allow user to be sent portfolio notifications'
       optional :receive_feedback_notifications, type: Boolean, desc: 'Allow user to be sent feedback notifications'
+      optional :receive_unit_hub_notifications, type: Boolean, desc: 'Show Unit Hub announcement and session updates in the app'
+      optional :receive_unit_hub_email_notifications, type: Boolean, desc: 'Also email Unit Hub updates'
+      optional :receive_unit_hub_push_notifications, type: Boolean, desc: 'Also push Unit Hub updates to subscribed browsers'
+      optional :receive_unit_hub_session_reminders, type: Boolean, desc: 'Remind the user shortly before Unit Hub sessions start'
+      optional :digest_frequency, type: String, values: User::DIGEST_FREQUENCIES, desc: 'How often to send the unit summary email [off, daily, weekly, monthly]'
       optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
       optional :has_run_first_time_setup, type: Boolean, desc: 'Whether or not user has run first-time setup'
@@ -92,10 +97,23 @@ class UsersApi < Grape::API
     %i[receive_task_notifications receive_portfolio_notifications receive_feedback_notifications].each do |pref|
       params[:user][pref] = true if params[:user].key?(pref) && params[:user][pref].nil?
     end
+    # The Unit Hub columns are NOT NULL, so a null goes back to each one's own
+    # default: on for the in-app bell, off for the three opt-ins.
+    {
+      receive_unit_hub_notifications: true,
+      receive_unit_hub_email_notifications: false,
+      receive_unit_hub_push_notifications: false,
+      receive_unit_hub_session_reminders: false
+    }.each do |pref, default|
+      params[:user][pref] = default if params[:user].key?(pref) && params[:user][pref].nil?
+    end
     if params[:user].key?(:display_peer_progress) &&
        params[:user][:display_peer_progress].nil?
       params[:user][:display_peer_progress] = true
     end
+    # NOT NULL with a default, so a null means "put it back to the default"
+    # rather than "clear it", matching the Unit Hub preferences above.
+    params[:user][:digest_frequency] = 'weekly' if params[:user].key?(:digest_frequency) && params[:user][:digest_frequency].nil?
 
     # can only modify if current_user.id is same as :id provided
     # (i.e., user wants to update their own data) or if update_user token
@@ -112,6 +130,18 @@ class UsersApi < Grape::API
          params[:user][:email].to_s != user.email.to_s &&
          !AuthenticationHelpers.db_auth?
         error!({ error: 'Sign-in email is managed by your institution and cannot be changed here.' }, 422)
+      end
+
+      # Names come from the same asserted identity as the sign-in email. Without
+      # this a student could rename themselves permanently, because SAML/AAF only
+      # writes first/last name when the account is first created, so a later
+      # sign-in never restores what the institution holds.
+      name_changed =
+        (params[:user].key?(:first_name) && params[:user][:first_name].to_s != user.first_name.to_s) ||
+        (params[:user].key?(:last_name) && params[:user][:last_name].to_s != user.last_name.to_s)
+
+      if name_changed && !AuthenticationHelpers.db_auth?
+        error!({ error: 'Your name is managed by your institution and cannot be changed here.' }, 422)
       end
 
       if params[:user].key?(:student_id) &&
@@ -131,6 +161,11 @@ class UsersApi < Grape::API
                                                       :receive_task_notifications,
                                                       :receive_portfolio_notifications,
                                                       :receive_feedback_notifications,
+                                                      :receive_unit_hub_notifications,
+                                                      :receive_unit_hub_email_notifications,
+                                                      :receive_unit_hub_push_notifications,
+                                                      :receive_unit_hub_session_reminders,
+                                                      :digest_frequency,
                                                       :display_peer_progress,
                                                       :opt_in_to_research,
                                                       :has_run_first_time_setup,
