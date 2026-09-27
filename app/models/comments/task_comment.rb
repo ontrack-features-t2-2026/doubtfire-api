@@ -8,6 +8,34 @@ class TaskComment < ApplicationRecord
   include FileHelper
   include AuthorisationHelpers
 
+  # OnTrack writes some comments itself: the automatic extension when a task is
+  # set to Fix and Resubmit near its deadline, and the notice when a submission
+  # fails to process. They are stored against the tutor for that task, because a
+  # comment needs an author and a recipient, but they are not something a person
+  # wrote. The marker is the text prefix, which several queries here already
+  # match on; this keeps the four copies of that literal in one place.
+  AUTOMATED_PREFIXES = ['**Automated Message:', '**Automated Comment**:'].freeze
+
+  # True when OnTrack wrote this comment rather than a person.
+  def automated?
+    text = comment.to_s
+    AUTOMATED_PREFIXES.any? { |prefix| text.start_with?(prefix) }
+  end
+
+  # The whole marker, including the bold that closes it. AUTOMATED_PREFIXES is
+  # deliberately shorter than this: it matches the same literal the existing
+  # `LIKE '**Automated Message:%'` queries use, which stops before the closing
+  # asterisks. Stripping needs the rest or it leaves them behind.
+  AUTOMATED_PREFIX_PATTERN = /\A\*\*Automated (?:Message:\*\*|Comment\*\*:)\s*/
+
+  # The comment without its marker, for a client that says "automated" some
+  # other way and would otherwise show the label twice.
+  def comment_without_automated_prefix
+    return comment unless automated?
+
+    comment.to_s.sub(AUTOMATED_PREFIX_PATTERN, '').strip
+  end
+
   belongs_to :task, optional: false # Foreign key
   belongs_to :user, optional: false
   has_one :unit, through: :task
