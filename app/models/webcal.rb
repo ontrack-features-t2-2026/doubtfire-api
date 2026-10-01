@@ -199,7 +199,11 @@ class Webcal < ApplicationRecord
   def self.end_date_for_task_definition(task_def, task = nil, project = nil)
     return task.effective_deadline_date if task.present?
 
-    flexible_grade_date_for_task_definition(task_def, project, :target_date) || task_def.target_date
+    value = flexible_grade_date_for_task_definition(task_def, project, :target_date) || task_def.target_date
+    return value if value.nil? || value.instance_of?(Date)
+
+    zone = ActiveSupport::TimeZone[project&.campus&.timezone.to_s] || Time.zone
+    value.in_time_zone(zone).to_date
   end
 
   #

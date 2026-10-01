@@ -99,6 +99,17 @@ class NotificationsMailer < ApplicationMailer
     event
   end
 
+  def staff_attention_summary(user, summary)
+    add_general
+    @staff_attention = summary
+    from_address = Doubtfire::Application.config.institution[:email_sender].presence || 'noreply@doubtfire.local'
+    mail(
+      { to: address_with_name(user), subject: 'OnTrack teaching: work waiting for your response' }
+        .merge(bulk_list_headers)
+        .merge(outbound_sender_headers(development_from: from_address))
+    ).tap { |message| message.raise_delivery_errors = true }
+  end
+
   def weekly_staff_summary(unit_role, summary_stats)
     return nil if unit_role.nil?
 
@@ -183,12 +194,14 @@ class NotificationsMailer < ApplicationMailer
     # target date of each task the student already has, and how those tasks are
     # spread across the statuses. top_tasks drops the date it sorted on, so the
     # dates are looked up here and matched back by task definition.
-    assigned_defs = project.assigned_task_defs.select(:id, :target_date).to_a
+    assigned_defs = project.assigned_task_defs.includes(:grade_due_dates).to_a
     @grade_task_total = assigned_defs.count
-    @task_due_dates = {}
+    @task_due_dates = assigned_defs.to_h do |definition|
+      [definition.id, Webcal.end_date_for_task_definition(definition, nil, project)]
+    end
     status_by_definition = {}
     project.tasks.each do |task|
-      @task_due_dates[task.task_definition_id] = task.due_date
+      @task_due_dates[task.task_definition_id] = Webcal.end_date_for_task_definition(task.task_definition, task, project)
       status_by_definition[task.task_definition_id] = task.task_status_id
     end
     status_counts = project.assigned_tasks.group(:task_status_id).count
@@ -198,7 +211,7 @@ class NotificationsMailer < ApplicationMailer
     # An email that says "your oldest" has to sort by date itself, and the list,
     # the lead and the subject all have to read the same order.
     target_date_for = lambda do |entry|
-      @task_due_dates[entry[:task_definition].id] || entry[:task_definition].target_date
+      @task_due_dates[entry[:task_definition].id]
     end
     by_date = ->(entries) { entries.sort_by { |entry| target_date_for.call(entry) || Date.new(9999, 1, 1) } }
 
@@ -364,7 +377,7 @@ class NotificationsMailer < ApplicationMailer
       { to: address_with_name(user), subject: digest_subject }.merge(bulk_list_headers).merge(
         outbound_sender_headers(development_from: from_address)
       )
-    )
+    ).tap { |message| message.raise_delivery_errors = true }
   end
 
   helper_method :top_task_desc
@@ -390,13 +403,13 @@ class NotificationsMailer < ApplicationMailer
     unit = project.unit
     return nil if unit.nil?
 
-    assigned_defs = project.assigned_task_defs.select(:id, :target_date).to_a
+    assigned_defs = project.assigned_task_defs.includes(:grade_due_dates).to_a
     return nil if assigned_defs.empty?
 
     due_dates = {}
     status_by_definition = {}
     project.tasks.each do |task|
-      due_dates[task.task_definition_id] = task.due_date
+      due_dates[task.task_definition_id] = Webcal.end_date_for_task_definition(task.task_definition, task, project)
       status_by_definition[task.task_definition_id] = task.task_status_id
     end
     status_counts = project.assigned_tasks.group(:task_status_id).count
@@ -405,7 +418,7 @@ class NotificationsMailer < ApplicationMailer
     targets_passed = 0
     behind_target = 0
     assigned_defs.each do |definition|
-      target = due_dates[definition.id] || definition.target_date
+      target = due_dates[definition.id] || Webcal.end_date_for_task_definition(definition, nil, project)
       next if target.blank? || target.to_date >= Time.zone.today
 
       targets_passed += 1
@@ -426,7 +439,7 @@ class NotificationsMailer < ApplicationMailer
       entry.merge(
         project: project,
         unit: unit,
-        target_date: due_dates[definition.id] || definition.target_date
+        target_date: due_dates[definition.id] || Webcal.end_date_for_task_definition(definition, nil, project)
       )
     end
     by_date = ->(list) { list.sort_by { |entry| entry[:target_date] || Date.new(9999, 1, 1) } }
@@ -466,7 +479,7 @@ class NotificationsMailer < ApplicationMailer
     passed = 0
     behind = 0
     assigned_defs.each do |definition|
-      target = @task_due_dates[definition.id] || definition.target_date
+      target = @task_due_dates[definition.id]
       next if target.blank? || target.to_date >= Time.zone.today
 
       passed += 1

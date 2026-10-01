@@ -415,7 +415,7 @@ class Project < ApplicationRecord
   def top_tasks
     result = []
 
-    to_target = lambda { |ts| ts[:task].nil? ? ts[:task_definition].target_date : ts[:task].due_date }
+    to_target = lambda { |ts| Webcal.end_date_for_task_definition(ts[:task_definition], ts[:task], self) }
 
     #
     # Get list of tasks that could be top tasks...
@@ -741,7 +741,6 @@ class Project < ApplicationRecord
     #   summary_stats[:revert][main_convenor_user] << self
     # end
 
-    return unless student.receive_feedback_notifications
     return unless student.wants_digest_on?(summary_stats[:cadence])
     return if portfolio_exists? && !middle_of_unit
 

@@ -47,6 +47,13 @@ class TaskPrioritizationApiTest < ActiveSupport::TestCase
         project_id
         unit_id
         priority_score
+        task_abbreviation
+        unit_code
+        status
+        effective_deadline_date
+        effective_deadline_reason
+        next_action
+        reason
       ], body['data'].first.keys
       assert_equal(
         {

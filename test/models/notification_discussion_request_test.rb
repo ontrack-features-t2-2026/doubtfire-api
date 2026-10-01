@@ -92,10 +92,10 @@ class NotificationDiscussionRequestTest < ActiveSupport::TestCase
     assert_equal [@student.email], ActionMailer::Base.deliveries.last.to
   end
 
-  def test_feedback_preference_suppresses_every_channel
+  def test_feedback_preference_suppresses_external_channels
     @student.update!(receive_feedback_notifications: false)
 
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       @task.send(:notify_discussion_request_recipient, notification_target)
     end
 

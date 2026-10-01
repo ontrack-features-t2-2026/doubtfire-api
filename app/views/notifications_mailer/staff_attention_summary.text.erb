@@ -1,0 +1,9 @@
+Your OnTrack teaching summary
+
+<% @staff_attention[:units].each do |unit| %>
+<%= unit[:unit_code] %>: <%= unit[:awaiting_feedback_count] %> submissions waiting; <%= unit[:help_requested_count] %> help requests; <%= unit[:extension_requested_count] %> tasks with pending extension requests.
+Oldest wait: <%= unit[:oldest_wait_days] %> teaching days. <%= unit[:overdue_feedback_count] %> submissions have reached the unit's feedback warning threshold.
+<% end %>
+Open OnTrack to review your teaching inbox: <%= @doubtfire_host %>
+
+Change your teaching summary frequency in your OnTrack profile.

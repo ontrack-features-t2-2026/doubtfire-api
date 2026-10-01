@@ -81,6 +81,13 @@ class UsersApi < Grape::API
       optional :receive_unit_hub_email_notifications, type: Boolean, desc: 'Also email Unit Hub updates'
       optional :receive_unit_hub_push_notifications, type: Boolean, desc: 'Also push Unit Hub updates to subscribed browsers'
       optional :receive_unit_hub_session_reminders, type: Boolean, desc: 'Remind the user shortly before Unit Hub sessions start'
+      optional :receive_task_email_notifications, type: Boolean, allow_blank: false, desc: 'External notification channel choice'
+      optional :receive_task_push_notifications, type: Boolean, allow_blank: false, desc: 'External notification channel choice'
+      optional :receive_feedback_email_notifications, type: Boolean, allow_blank: false, desc: 'External notification channel choice'
+      optional :receive_feedback_push_notifications, type: Boolean, allow_blank: false, desc: 'External notification channel choice'
+      optional :receive_portfolio_email_notifications, type: Boolean, allow_blank: false, desc: 'External notification channel choice'
+      optional :receive_portfolio_push_notifications, type: Boolean, allow_blank: false, desc: 'External notification channel choice'
+      optional :staff_digest_frequency, type: String, values: User::STAFF_DIGEST_FREQUENCIES, allow_blank: false, desc: 'Teaching attention summary email cadence'
       optional :digest_frequency, type: String, values: User::DIGEST_FREQUENCIES, desc: 'How often to send the unit summary email [off, daily, weekly, monthly]'
       optional :display_peer_progress, type: Boolean, desc: 'Display anonymous peer progress information'
       optional :opt_in_to_research, type: Boolean, desc: 'Allow user to opt in to research conducted by Doubtfire'
@@ -90,12 +97,27 @@ class UsersApi < Grape::API
   end
   put '/users/:id' do
     change_self = (params[:id] == current_user.id)
+    # New channel controls are authoritative when an old client-shaped payload
+    # also carries a stale category flag.
+    User::NOTIFICATION_CHANNEL_CATEGORIES.each do |category|
+      if %w[email push].any? { |channel| params[:user].key?("receive_#{category}_#{channel}_notifications") }
+        params[:user].delete("receive_#{category}_notifications")
+      end
+    end
 
     # Default notification preferences to true when explicitly sent as null.
     # (Previously this wrote the portfolio key three times and read the
     # top-level params instead of the nested :user hash, so it never applied.)
     %i[receive_task_notifications receive_portfolio_notifications receive_feedback_notifications].each do |pref|
       params[:user][pref] = true if params[:user].key?(pref) && params[:user][pref].nil?
+    end
+    User::NOTIFICATION_CHANNEL_CATEGORIES.each do |category|
+      legacy = "receive_#{category}_notifications"
+      next unless params[:user].key?(legacy)
+
+      %w[email push].each do |channel|
+        params[:user]["receive_#{category}_#{channel}_notifications"] = params[:user][legacy]
+      end
     end
     # The Unit Hub columns are NOT NULL, so a null goes back to each one's own
     # default: on for the in-app bell, off for the three opt-ins.
@@ -165,6 +187,13 @@ class UsersApi < Grape::API
                                                       :receive_unit_hub_email_notifications,
                                                       :receive_unit_hub_push_notifications,
                                                       :receive_unit_hub_session_reminders,
+                                                      :receive_task_email_notifications,
+                                                      :receive_task_push_notifications,
+                                                      :receive_feedback_email_notifications,
+                                                      :receive_feedback_push_notifications,
+                                                      :receive_portfolio_email_notifications,
+                                                      :receive_portfolio_push_notifications,
+                                                      :staff_digest_frequency,
                                                       :digest_frequency,
                                                       :display_peer_progress,
                                                       :opt_in_to_research,
@@ -186,6 +215,16 @@ class UsersApi < Grape::API
           receive_unit_hub_email_notifications
           receive_unit_hub_push_notifications
           receive_unit_hub_session_reminders
+          receive_task_email_notifications
+          receive_task_push_notifications
+          receive_feedback_email_notifications
+          receive_feedback_push_notifications
+          receive_portfolio_email_notifications
+          receive_portfolio_push_notifications
+          receive_task_notifications
+          receive_feedback_notifications
+          receive_portfolio_notifications
+          staff_digest_frequency
           digest_frequency
         ].each { |pref| user_parameters.delete(pref) }
       end

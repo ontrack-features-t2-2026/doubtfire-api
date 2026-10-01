@@ -72,7 +72,7 @@ class PortfolioEvidence
 
     errors.each do |project, tasks|
       logger.debug "checking email for project #{project.id}"
-      next unless project.student.receive_task_notifications
+      next unless project.student.receive_task_email_notifications
 
       logger.info "emailing task notification to #{project.student.name}"
       begin

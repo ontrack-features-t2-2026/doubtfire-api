@@ -53,26 +53,19 @@ class SendDigestEmailsJob
 
     period = DigestDeliveryGuard.period_for(cadence)
 
+    failed_ids = []
     recipients(cadence).find_each(batch_size: BATCH_SIZE) do |user|
-      deliver(user, cadence, period)
+      failed_ids << user.id if deliver(user, cadence, period) == false
     end
+    raise "Student digests failed for users: #{failed_ids.join(', ')}" if failed_ids.any?
   end
 
   private
 
-  # Who this run mails.
-  #
-  # digest_frequency picks the cadence, which is User#wants_digest_on? written
-  # as a query, and receive_feedback_notifications is still the master switch.
-  # Both, because the new column defaults to weekly for everyone, so checking
-  # only the cadence would start mailing students who turned summaries off
-  # before the preference existed.
-  #
-  # Joined to projects so a run renders nothing for staff, for graduates and for
-  # anyone between trimesters. The mailer returns nil for them, but only after
-  # building a summary for every unit first.
+  # Cadence is independent of event-notification channels. The migration retained
+  # historical feedback opt-outs as digest_frequency=off before this changed.
   def recipients(cadence)
-    User.where(digest_frequency: cadence, receive_feedback_notifications: true)
+    User.where(digest_frequency: cadence)
         .where(id: Project.where(enrolled: true).joins(:unit).where(units: { active: true }).select(:user_id))
   end
 
@@ -80,15 +73,17 @@ class SendDigestEmailsJob
   # a delivery that failed is still retryable and one that worked is not
   # repeatable.
   def deliver(user, cadence, period)
+    user.reload
+    return unless user.wants_digest_on?(cadence)
     return unless DigestDeliveryGuard.claim(user, period)
 
     NotificationsMailer.student_digest(user, cadence).deliver_now
   rescue StandardError => e
     DigestDeliveryGuard.release(user, period)
 
-    # Logged and swallowed per student, the same as the per-unit send does. One
-    # student with unrenderable data must not stop the rest of the cohort, and
-    # a raise here would have Sidekiq retry the whole sweep.
-    Rails.logger.error "Failed #{cadence} digest for user #{user.id}: #{e.class} - #{e.message}"
+    # Continue this cohort, then retry only failed recipients: successful
+    # recipients retain their period claim and will not receive another copy.
+    Rails.logger.error "Failed #{cadence} digest for user #{user.id}: #{e.class}"
+    false
   end
 end

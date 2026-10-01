@@ -96,6 +96,7 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert second_summary.dig(:peer_progress, :distribution_available)
     assert_equal DemoData::AllFeaturesScenario::NOTIFICATION_COUNT,
                  demo_student.notifications.count
+    assert_notifications_are_curated
 
     assert_contract_follows_changed_demo_data
 
@@ -307,6 +308,13 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert_equal 0, PushSubscription.joins(:user).where(
       users: { username: DemoData::AllFeaturesScenario::USERNAMES }
     ).count
+    peer_reminders = Notification.joins(:user).where(
+      users: { username: DemoData::AllFeaturesScenario::PEER_USERNAMES }
+    )
+    assert_equal DemoData::AllFeaturesScenario::PEER_USERNAMES.length, peer_reminders.count
+    assert(peer_reminders.all? { |notice| notice.event == SendDueSoonRemindersJob::EVENT })
+    assert(peer_reminders.all?(&:delivered_at?))
+    assert(peer_reminders.all? { |notice| notice.email_delivery_state == 'suppressed' })
 
     travel_to REFERENCE_TIME do
       active_demo_units = Unit.where(
@@ -316,7 +324,7 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
 
       Unit.stub(:where, active_demo_units) do
         assert_no_difference('Notification.count') do
-          SendDueSoonRemindersJob.new.perform
+          2.times { SendDueSoonRemindersJob.new.perform }
         end
       end
     end
@@ -395,6 +403,12 @@ class AllFeaturesScenarioTest < ActiveSupport::TestCase
     assert(peers.all? { |peer| !peer.receive_task_notifications? })
     assert(peers.all? { |peer| !peer.receive_feedback_notifications? })
     assert(peers.all? { |peer| !peer.receive_portfolio_notifications? })
+    User::NOTIFICATION_CHANNEL_CATEGORIES.each do |category|
+      %w[email push].each do |channel|
+        assert(users.none? { |user| user.public_send("receive_#{category}_#{channel}_notifications?") })
+      end
+    end
+    assert(users.all? { |user| user.digest_frequency == 'off' && user.staff_digest_frequency == 'off' })
     assert users.all?(&:display_peer_progress?)
   end
 

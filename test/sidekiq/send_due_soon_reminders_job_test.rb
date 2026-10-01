@@ -32,6 +32,18 @@ class SendDueSoonRemindersJobTest < ActiveSupport::TestCase
     ActionMailer::Base.deliveries.clear
   end
 
+  def test_changed_deadline_rearms_once_and_repeat_sweeps_do_not_duplicate
+    run_job
+    original = Notification.where(event: EVENT).count
+    @task_def.update!(target_date: Time.zone.now + 3.days)
+
+    run_job
+    assert_equal original * 2, Notification.where(event: EVENT).count
+    run_job
+    assert_equal original * 2, Notification.where(event: EVENT).count
+    assert(Notification.where(event: EVENT).all? { |notice| notice.dedupe_key.present? })
+  end
+
   # The students who most need a reminder are the ones who have not opened the
   # task, and OnTrack has no Task row for them until somebody touches it. A
   # sweep that read Task rows would miss exactly those people, and one that
@@ -121,7 +133,8 @@ class SendDueSoonRemindersJobTest < ActiveSupport::TestCase
 
     run_job
 
-    assert_not Notification.exists?(user: project.student, event: EVENT)
+    notice = Notification.find_by!(user: project.student, event: EVENT)
+    assert_equal 'suppressed', notice.email_delivery_state
   end
 
   def test_does_not_remind_a_student_the_task_is_not_assigned_to

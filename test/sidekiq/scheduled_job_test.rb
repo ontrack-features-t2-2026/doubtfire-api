@@ -16,9 +16,14 @@ class TiiCheckProgressJobTest < ActiveSupport::TestCase
     peer_progress_job =
       jobs.find { |job| job.name == 'aggregate_peer_progress' }
 
-    assert_equal 15, jobs.count, jobs.map(&:name)
+    assert_equal 17, jobs.count, jobs.map(&:name)
     assert_not_nil peer_progress_job
     assert_equal 'AggregatePeerProgressJob', peer_progress_job.klass
+    %w[send_daily_staff_attention send_weekly_staff_attention].each do |name|
+      staff_job = jobs.find { |job| job.name == name }
+      assert_not_nil staff_job, "Missing opted-in teaching summary schedule: #{name}"
+      assert_equal 'SendStaffAttentionSummariesJob', staff_job.klass
+    end
 
     # Sidekiq::Cron::Job.all returns an Array, not an ActiveRecord relation.
     jobs.each(&:enqueue!)
@@ -37,6 +42,8 @@ class TiiCheckProgressJobTest < ActiveSupport::TestCase
     assert_equal 1, SendUnitSessionRemindersJob.jobs.count
     # One student digest run per cadence a student can choose.
     assert_equal %w[daily monthly weekly], SendDigestEmailsJob.jobs.map { |job| job['args'].first }.sort
+    # Teaching summaries have their own explicit opt-in and cadence choices.
+    assert_equal %w[daily weekly], SendStaffAttentionSummariesJob.jobs.map { |job| job['args'].first }.sort
     # assert_equal 1, ArchiveOldUnitsJob.jobs.count
   end
 end

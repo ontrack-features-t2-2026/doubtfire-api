@@ -136,10 +136,10 @@ class NotificationNewTaskTest < ActiveSupport::TestCase
     assert_equal 2, ActionMailer::Base.deliveries.count
   end
 
-  def test_student_with_task_notifications_disabled_is_not_notified
+  def test_student_with_task_notifications_disabled_retains_in_app_notification
     @student.update!(receive_task_notifications: false)
 
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       run_job
     end
 

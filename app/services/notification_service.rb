@@ -1,12 +1,8 @@
 # Central entry point for raising a notification.
 #
-# Creates the in-app record and fans out to the enabled delivery channels
-# (email and push through Sidekiq). A single category toggle (the user's
-# receive_*_notifications preference) gates every channel: if the category is
-# off, the notification is suppressed entirely. A category listed in
-# Notification::CHANNEL_PREFERENCES_FOR_TYPE (so far only unit_hub) also has
-# its own email and push opt-ins, checked when those channels are queued and
-# again when their jobs run.
+# Creates the in-app record and fans out through separately selected email and
+# push channels. Task/feedback/portfolio opt-outs retain in-app history. Unit Hub
+# keeps its existing whole-category switch plus independent external opt-ins.
 #
 # Usage:
 #   NotificationService.notify(

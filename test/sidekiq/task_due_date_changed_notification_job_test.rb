@@ -81,10 +81,8 @@ class TaskDueDateChangedNotificationJobTest < ActiveSupport::TestCase
 
     run_job
 
-    assert_not Notification.exists?(
-      user: project.student,
-      event: EVENT
-    )
+    notice = Notification.find_by!(user: project.student, event: EVENT)
+    assert_equal 'suppressed', notice.email_delivery_state
   end
 
   def test_does_not_notify_for_inactive_unit

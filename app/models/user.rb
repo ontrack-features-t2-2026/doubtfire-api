@@ -176,6 +176,32 @@ class User < ApplicationRecord
   # How often the unit summary email goes out. 'off' stops it without touching
   # feedback notifications, which used to be the only switch it had.
   DIGEST_FREQUENCIES = %w[off daily weekly monthly].freeze
+  STAFF_DIGEST_FREQUENCIES = %w[off daily weekly].freeze
+  NOTIFICATION_CHANNEL_CATEGORIES = %w[task feedback portfolio].freeze
+
+  before_validation :preserve_legacy_notification_choices
+
+  # Older clients still send a category switch. A changed legacy switch updates
+  # both external channels, unless this request explicitly changes a channel.
+  # New clients can choose each channel independently. In-app history remains.
+  def preserve_legacy_notification_choices
+    NOTIFICATION_CHANNEL_CATEGORIES.each do |category|
+      legacy = "receive_#{category}_notifications"
+      channels = %w[email push].map { |channel| "receive_#{category}_#{channel}_notifications" }
+      if channels.any? { |column| will_save_change_to_attribute?(column) }
+        # Old application versions have a single outgoing switch. Keep it
+        # conservatively off if either channel is off, including on rollback.
+        self[legacy] = channels.all? { |column| self[column] == true }
+        next
+      end
+      next unless will_save_change_to_attribute?(legacy)
+
+      %w[email push].each do |channel|
+        column = "receive_#{category}_#{channel}_notifications"
+        self[column] = self[legacy] == true unless will_save_change_to_attribute?(column)
+      end
+    end
+  end
 
   validates :first_name,  presence: true
   validates :last_name,   presence: true
@@ -185,6 +211,7 @@ class User < ApplicationRecord
   validates :student_id,  uniqueness: true, allow_nil: true
   validates :theme_preference, inclusion: { in: %w[light dark system] }, allow_nil: true
   validates :digest_frequency, inclusion: { in: User::DIGEST_FREQUENCIES }
+  validates :staff_digest_frequency, inclusion: { in: User::STAFF_DIGEST_FREQUENCIES }
 
   # True when a run at this cadence should mail this user. A run with no cadence
   # is the existing weekly job, which predates the preference.

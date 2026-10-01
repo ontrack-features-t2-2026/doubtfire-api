@@ -5,6 +5,8 @@ class UnitMailTest < ActionMailer::TestCase
   def test_send_summary_email
     unit = FactoryBot.create :unit
 
+    unit.staff.each { |staff| staff.user.update!(staff_digest_frequency: 'weekly') }
+
     summary_stats = {}
 
     summary_stats[:week_end] = Time.zone.now

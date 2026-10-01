@@ -135,7 +135,7 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
     end
   end
 
-  def test_a_type_without_a_preference_is_still_delivered
+  def test_general_email_respects_task_channel_opt_out
     user = FactoryBot.create(
       :user,
       receive_task_notifications: false,
@@ -146,12 +146,12 @@ class NotificationEmailJobTest < ActiveSupport::TestCase
       :notification,
       user: user,
       event: 'general',
-      message: 'General notices ignore the category toggles.'
+      message: 'General update available.'
     )
 
     assert_difference(
       -> { ActionMailer::Base.deliveries.count },
-      1
+      0
     ) do
       NotificationEmailJob.new.perform(notification.id)
     end

@@ -56,12 +56,14 @@ class PushNotificationDeliveryJobTest < ActiveSupport::TestCase
     # retry: 3 means the job can run well after it was queued.
     user.update!(receive_feedback_notifications: false)
 
-    PushNotificationService.stub(:deliver, ->(_record) { flunk 'push must not be delivered after the category is off' }) do
+    delivered = false
+    PushNotificationService.stub(:deliver, ->(_record) { delivered = true }) do
       PushNotificationDeliveryJob.new.perform(notification.id)
     end
+    assert_not delivered, 'push must not be delivered after the category is off'
   end
 
-  def test_a_type_without_a_preference_is_still_delivered
+  def test_general_push_respects_task_channel_opt_out
     user = FactoryBot.create(
       :user,
       receive_task_notifications: false,
@@ -72,7 +74,7 @@ class PushNotificationDeliveryJobTest < ActiveSupport::TestCase
       :notification,
       user: user,
       event: 'general',
-      message: 'General notices ignore the category toggles.'
+      message: 'General update available.'
     )
     delivered = nil
 
@@ -80,7 +82,7 @@ class PushNotificationDeliveryJobTest < ActiveSupport::TestCase
       PushNotificationDeliveryJob.new.perform(notification.id)
     end
 
-    assert_equal notification, delivered
+    assert_nil delivered
   end
 
   def test_real_provider_failure_reaches_the_sidekiq_retry_boundary
