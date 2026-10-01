@@ -19,7 +19,7 @@ module LatexHelper
     raise ArgumentError, 'LaTeX source asset does not exist' unless File.file?(source)
 
     @latex_staged_assets ||= {}
-    @latex_staged_assets[source] ||= begin
+    @latex_staged_assets[[work_id, source]] ||= begin
       extension = File.extname(source).downcase.gsub(/[^.a-z0-9]/, '_')
 
       relative = "assets/#{Digest::SHA256.hexdigest(source)}#{extension}"

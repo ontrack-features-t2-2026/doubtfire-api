@@ -41,6 +41,18 @@ class LatexHelperTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { @helper.latex_asset_path(File.join(@directory, 'missing.pdf')) }
   end
 
+  test 'stages the same source again when a controller starts a new render job' do
+    source = write_asset('report.pdf', '%PDF-first')
+    first_relative = @helper.latex_asset_path(source)
+    File.binwrite(source, '%PDF-updated')
+    @helper.instance_variable_set(:@work_id, 'next-job')
+    next_relative = @helper.latex_asset_path(source)
+
+    assert_equal first_relative, next_relative
+    assert_equal '%PDF-first', File.binread(File.join(LatexToPdf.config[:basedir], 'test-job', first_relative))
+    assert_equal '%PDF-updated', File.binread(File.join(LatexToPdf.config[:basedir], 'next-job', next_relative))
+  end
+
   test 'stages code with punctuation in its extension or no extension' do
     source = write_asset('source.c++', 'int main() {}')
     relative = @helper.latex_asset_path(source)
