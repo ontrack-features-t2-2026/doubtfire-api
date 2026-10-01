@@ -37,14 +37,14 @@ document_list = Array.new
 <% if @learning_summary_report
     # add learning summary report to the document list for annotation extraction
     document_list.append(@learning_summary_report) unless @is_retry %>
-\includepdf[addtotoc={\thepage,section,1,Learning Summary Report,chap:learningsummary},pages={1-1},fitpaper]{<%= @learning_summary_report %>}
+\includepdf[addtotoc={\thepage,section,1,Learning Summary Report,chap:learningsummary},pages={1-1},fitpaper]{<%= latex_asset_path(@learning_summary_report) %>}
 <%
     if FileHelper.pages_in_pdf(@learning_summary_report) > 30
 %>
-\includepdf[pages={2-},fitpaper]{<%= @learning_summary_report %>}
+\includepdf[pages={2-},fitpaper]{<%= latex_asset_path(@learning_summary_report) %>}
 <%  else
       for page_idx in 2..FileHelper.pages_in_pdf(@learning_summary_report) do %>
-\includepdf[pages={<%= page_idx %>-<%= page_idx %>},fitpaper]{<%= @learning_summary_report %>}
+\includepdf[pages={<%= page_idx %>-<%= page_idx %>},fitpaper]{<%= latex_asset_path(@learning_summary_report) %>}
 <%    end # end for
     end # if long LSR
   end # if there is a learning summary
@@ -107,7 +107,7 @@ No Tutor
 % LOGO SECTION
 %----------------------------------------------------------------------------------------
 
-\includegraphics[width=1cm]{apple-touch-icon-180x180.png}
+\includegraphics[width=1cm]{<%= latex_asset_path(File.join(@image_path, 'apple-touch-icon-180x180.png')) %>}
 
 \vfill
 
@@ -292,7 +292,7 @@ end # if there are linked outcomes
     end
 
     for page_idx in 1..max_pages do %>
-\includepdf[pages={<%= page_idx %>-<%= page_idx %>},fitpaper]{<%= task.final_pdf_path %>}
+\includepdf[pages={<%= page_idx %>-<%= page_idx %>},fitpaper]{<%= latex_asset_path(task.final_pdf_path) %>}
 <%  end # end for pages
   end # end if file exists
 end # portfolio tasks do
@@ -301,7 +301,8 @@ end # portfolio tasks do
 content_for :preamble_newpax do %>
   \directlua
   {
-  <% document_list.each do |path| %>
+  <% document_list.each do |path|
+       path = latex_asset_path(path) %>
     % newpax does not allow the .pdf file extension, file paths must be supplied without extension
     newpax.writenewpax("<%= File.join(File.dirname(path), File.basename(path, File.extname(path))) %>")
   <% end %>

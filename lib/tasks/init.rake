@@ -52,11 +52,14 @@ namespace :db do
     puts "!"
   end
 
-  desc 'Initialise the app with an empty database and only minimal users (the superuser)'
-  task init: [:environment] do
+  desc 'Initialise reference roles and task states without creating an account'
+  task init_reference_data: [:environment] do
     generate_user_roles
     generate_task_statuses
+  end
 
+  desc 'Initialise the app with an empty database and only minimal users (the superuser)'
+  task init: [:environment, :init_reference_data] do
     if User.count == 0
       puts "Creating admin user"
       username = :aadmin

@@ -104,4 +104,38 @@ class ProductionRuntimeTest < Minitest::Test
       assert status.success?, "#{script}: #{stderr}"
     end
   end
+
+  def test_worker_image_restores_executable_permissions_after_copying_windows_archives
+    dockerfile = File.read(File.join(REPOSITORY_ROOT, 'deployAppSvr.Dockerfile'))
+    copy_position = dockerfile.index('COPY . ./')
+    permission_position = dockerfile.index('chmod 0755 /doubtfire/lib/shell/*.sh')
+
+    refute_nil copy_position
+    refute_nil permission_position
+    assert_operator permission_position, :>, copy_position
+  end
+
+  def test_tex_helper_stages_assets_into_its_isolated_compilation_directory
+    Dir.mktmpdir do |directory|
+      job = File.join(directory, 'sample-job')
+      FileUtils.mkdir_p(File.join(job, 'assets'))
+      File.write(File.join(job, 'input.tex'), 'Synthetic input')
+      File.write(File.join(job, 'jupynotex.py'), '# synthetic helper')
+      File.write(File.join(job, 'assets/source.pdf'), '%PDF-source')
+      engine = File.join(directory, 'lualatex')
+      File.write(engine, <<~SH)
+        #!/bin/sh
+        test "$(cat assets/source.pdf)" = '%PDF-source' || exit 4
+        printf 'staged' > input.log
+        printf '%%PDF-result' > input.pdf
+      SH
+      File.chmod(0o755, engine)
+      environment = { 'TEXLIVE_WORK_ROOT' => directory, 'PATH' => "#{directory}:#{ENV.fetch('PATH')}" }
+      _stdout, stderr, status = Open3.capture3(environment, '/bin/sh',
+                                               File.join(REPOSITORY_ROOT, 'lib/shell/latex_build.sh'), 'sample-job')
+      assert status.success?, stderr
+      assert_equal '%PDF-result', File.read(File.join(job, 'input.pdf'))
+      assert_equal false, File.exist?(File.join(job, 'work'))
+    end
+  end
 end

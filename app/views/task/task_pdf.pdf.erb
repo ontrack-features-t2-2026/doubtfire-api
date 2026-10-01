@@ -87,7 +87,7 @@ No Tutor % Supervisor's Name
 % LOGO SECTION
 %----------------------------------------------------------------------------------------
 
-\includegraphics[width=1cm]{apple-touch-icon-180x180.png}
+\includegraphics[width=1cm]{<%= latex_asset_path(File.join(@image_path, 'apple-touch-icon-180x180.png')) %>}
 
 \vfill
 
@@ -107,8 +107,7 @@ No Tutor % Supervisor's Name
 \fancyhead[R]{ <%= lesc @task.upload_requirements[idx]['name'] %>  }
 
   <% if file[:type] == 'image' %>
-\graphicspath{ {<%= @base_path %>} }
-\includegraphics[width=\textwidth]{<%= File.basename(file[:path]) %>}
+\includegraphics[width=\textwidth]{<%= latex_asset_path(file[:path]) %>}
   <% end %>
 
   <%
@@ -121,9 +120,9 @@ No Tutor % Supervisor's Name
   This file has additional line breaks applied by <%= @doubtfire_product_name %> because they contain lines longer than the configured limit. Lines over 1000 characters long have been truncated to limit PDF page count. The orginal submission can be retrieved via the "Download Uploaded Files" function.
 \end{tcolorbox}
 <%      end # if truncated %>
-\inputminted[breaklines,linenos,breakanywhere,tabsize=4]{<%= pygments_lang %>}{<%= file[:path] %>}
+\inputminted[breaklines,linenos,breakanywhere,tabsize=4]{<%= pygments_lang %>}{<%= latex_asset_path(file[:path]) %>}
 <%    else # is ipynb %>
-\jupynotex{<%= file[:path] %>}
+\jupynotex{<%= latex_asset_path(file[:path]) %>}
 <%
       end
     end
@@ -133,7 +132,7 @@ No Tutor % Supervisor's Name
     <% document_list.append(file[:path]) unless !@include_pax %>
     <%
     for page_idx in 1..FileHelper.pages_in_pdf(file[:path]) do %>
-\includepdf[pages={<%= page_idx %>-<%= page_idx %>},fitpaper]{<%= file[:path] %>}
+\includepdf[pages={<%= page_idx %>-<%= page_idx %>},fitpaper]{<%= latex_asset_path(file[:path]) %>}
     <% end # end for  %>
   <% end # end if  %>
   <% if file[:type] == 'csv' %>
@@ -190,7 +189,8 @@ No readable file entries were found in this zip.
     content_for :preamble_newpax do %>
   \directlua
   {
-  <%  document_list.each do |path| %>
+  <%  document_list.each do |path|
+        path = latex_asset_path(path) %>
     % newpax does not allow the .pdf file extension, file paths must be supplied without extension
     newpax.writenewpax("<%= File.join(File.dirname(path), File.basename(path, File.extname(path))) %>")
   <%

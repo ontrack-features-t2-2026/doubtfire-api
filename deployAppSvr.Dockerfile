@@ -41,7 +41,10 @@ RUN bundle config set deployment true \
 COPY . ./
 COPY .ci-setup/crontab /etc/cron.d/container_cronjob
 
-RUN touch /var/log/cron.log \
+# ZIP checkouts on Windows do not retain Unix executable bits. Set permissions
+# inside the Linux image for both entry points and the cron helper scripts.
+RUN chmod 0755 /doubtfire/lib/shell/*.sh \
+  && touch /var/log/cron.log \
   && chmod 0644 /etc/cron.d/container_cronjob
 
 CMD ["/doubtfire/lib/shell/pdfgen_entry_point.sh"]

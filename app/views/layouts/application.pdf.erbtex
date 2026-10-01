@@ -75,7 +75,7 @@ end
 
 \newcommand{\HRule}{\rule{\linewidth}{0.5mm}} % Defines a new command for the horizontal lines, change thickness here
 
-\graphicspath{ {<%= @image_path %>/} }
+\graphicspath{ {assets/} }
 
 \newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
 
