@@ -104,4 +104,14 @@ class ProductionRuntimeTest < Minitest::Test
       assert status.success?, "#{script}: #{stderr}"
     end
   end
+
+  def test_worker_image_restores_executable_permissions_after_copying_windows_archives
+    dockerfile = File.read(File.join(REPOSITORY_ROOT, 'deployAppSvr.Dockerfile'))
+    copy_position = dockerfile.index('COPY . ./')
+    permission_position = dockerfile.index('chmod 0755 /doubtfire/lib/shell/*.sh')
+
+    refute_nil copy_position
+    refute_nil permission_position
+    assert_operator permission_position, :>, copy_position
+  end
 end
