@@ -395,15 +395,24 @@ module DemoData
       (count * 100.0 / total).round(1)
     end
 
-    # Resolve each hook through the dedupe key it was seeded with. Other
-    # notifications can share an event, for example a tutor comment made
-    # while walking through the demo.
+    # The due-soon fixture shares the scheduler's immutable event identity.
+    # Resolve it through its task so a later deadline edit does not lose the
+    # original walkthrough hook. Other hooks retain their fixture keys.
     def notification_contract(user)
       records = user.notifications
                     .where(dedupe_key: MobileFeedbackScenario::NOTIFICATIONS.map { |fixture| notification_dedupe_key(fixture) })
                     .index_by(&:dedupe_key)
       MobileFeedbackScenario::NOTIFICATIONS.map do |fixture|
-        notification = records.fetch(notification_dedupe_key(fixture))
+        notification = if fixture.fetch(:event) == SendDueSoonRemindersJob::EVENT
+                         project = user.projects.joins(:unit).find_by!(units: { code: PPI_UNIT_CODE })
+                         task = project.tasks.joins(:task_definition).find_by!(
+                           task_definitions: { abbreviation: fixture.fetch(:task) }
+                         )
+                         user.notifications.where(event: fixture.fetch(:event), notifiable: task)
+                             .order(:created_at, :id).first!
+                       else
+                         records.fetch(notification_dedupe_key(fixture))
+                       end
         {
           key: fixture.fetch(:key),
           id: notification.id,
@@ -511,6 +520,13 @@ module DemoData
         ).first(2)
       )
       create_notifications!(demo_student)
+      # Peer opt-outs suppress external delivery, while in-app history is
+      # retained. Seed the same due-soon event the scheduler would create so
+      # its first sweep preserves this controlled demonstration snapshot.
+      due_soon = MobileFeedbackScenario::NOTIFICATIONS.select do |fixture|
+        fixture.fetch(:event) == SendDueSoonRemindersJob::EVENT
+      end
+      peers.each { |peer| create_notifications!(peer, blueprints: due_soon) }
     end
 
     def create_peer_users!
@@ -553,7 +569,7 @@ module DemoData
       last_name:,
       role:,
       student_id: nil,
-      notifications_enabled: true
+      notifications_enabled: false
     )
       User.create!(
         username: username,
@@ -569,6 +585,10 @@ module DemoData
         receive_task_notifications: notifications_enabled,
         receive_feedback_notifications: notifications_enabled,
         receive_portfolio_notifications: notifications_enabled,
+        receive_unit_hub_email_notifications: false,
+        receive_unit_hub_push_notifications: false,
+        digest_frequency: 'off',
+        staff_digest_frequency: 'off',
         display_peer_progress: true,
         opt_in_to_research: false,
         has_run_first_time_setup: true
@@ -733,28 +753,38 @@ module DemoData
       end
     end
 
-    def create_notifications!(student)
+    def create_notifications!(student, blueprints: MobileFeedbackScenario::NOTIFICATIONS)
       projects_by_code = student.projects.includes(:unit).index_by do |project|
         project.unit.code
       end
       project = projects_by_code.fetch(PPI_UNIT_CODE)
 
-      MobileFeedbackScenario::NOTIFICATIONS.each do |blueprint|
+      blueprints.each do |blueprint|
         created_at = reference_time - blueprint.fetch(:age)
         link = "/projects/#{project.id}/dashboard/" \
                "#{blueprint.fetch(:task)}#{blueprint.fetch(:suffix, '')}"
+        dedupe_key = notification_dedupe_key(blueprint)
+        task = nil
+        if blueprint.fetch(:event) == SendDueSoonRemindersJob::EVENT
+          definition = project.unit.task_definitions.find_by!(abbreviation: blueprint.fetch(:task))
+          task = project.tasks.find_by(task_definition: definition)
+          due = Webcal.end_date_for_task_definition(definition, task, project).to_date
+          dedupe_key = SendDueSoonRemindersJob.dedupe_key(project, definition, due)
+        end
         notification = NotificationService.reserve(
           user: student,
           type: blueprint.fetch(:type),
           event: blueprint.fetch(:event),
           message: blueprint.fetch(:message),
           link: link,
-          dedupe_key: notification_dedupe_key(blueprint)
+          dedupe_key: dedupe_key,
+          notifiable: task
         )
         notification.update!(
           created_at: created_at,
           updated_at: created_at,
           delivered_at: created_at,
+          email_delivery_state: 'suppressed',
           read_at: blueprint.fetch(:read) ? created_at + 5.minutes : nil
         )
       end

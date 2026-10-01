@@ -31,6 +31,10 @@ class SendDueSoonRemindersJob
   # which is a list rather than a reminder.
   WINDOW_DAYS = 3
 
+  def self.dedupe_key(project, task_definition, due)
+    "due-soon:#{project.id}:#{task_definition.id}:#{due.iso8601}"
+  end
+
   # The statuses that mean the student still owes work.
   #
   # :discuss and :demonstrate are deliberately out. Both mean the student has
@@ -153,7 +157,7 @@ class SendDueSoonRemindersJob
 
     # One reminder for each effective calendar deadline. A changed deadline can
     # earn a new reminder; repeat sweeps and concurrent retries share one key.
-    dedupe_key = "due-soon:#{project.id}:#{task_definition.id}:#{due.iso8601}"
+    dedupe_key = self.class.dedupe_key(project, task_definition, due)
 
     NotificationService.notify(
       user: student,
