@@ -43,7 +43,7 @@ class OverseerAssessment < ApplicationRecord
          AND student_read_receipts.user_id = projects.user_id
       SQL
       .where(status: statuses[:failed], student_notified_at: nil)
-      .where(users: { receive_task_notifications: true })
+      .where(users: { receive_task_email_notifications: true })
       .where('overseer_assessments.updated_at <= ?', notification_cutoff)
       .where('student_read_receipts.id IS NULL')
       .where(<<~SQL.squish)

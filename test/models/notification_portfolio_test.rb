@@ -22,7 +22,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     @student = @project.student
 
     # The same submission also tells the student's tutors. This file is about
-    # the student's receipt, so their staff copy is switched off here and
+    # the student's receipt, so their staff email is switched off here and
     # covered on its own in notification_portfolio_submitted_test.rb.
     staff = @project.tutorial_enrolments.filter_map { |enrolment| enrolment.tutorial&.tutor }
     (staff + [@project.main_convenor_user]).compact.uniq.each do |user|
@@ -60,7 +60,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
 
   def test_a_new_portfolio_submission_sends_one_receipt_to_the_student
     travel_to Time.zone.parse('2026-08-23 12:34:00 UTC') do
-      assert_difference 'Notification.count', 1 do
+      assert_difference -> { Notification.where(user: @student).count }, 1 do
         submit_portfolio
       end
     end
@@ -108,10 +108,10 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     assert_not_includes body, assessment_content
   end
 
-  def test_portfolio_preference_suppresses_every_notification_channel
+  def test_portfolio_preference_keeps_in_app_receipt_without_external_delivery
     @student.update!(receive_portfolio_notifications: false)
 
-    assert_no_difference 'Notification.count' do
+    assert_difference -> { Notification.where(user: @student).count }, 1 do
       submit_portfolio
     end
 
@@ -130,7 +130,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     NotificationEmailJob.clear
 
     travel_to Time.zone.parse('2026-08-23 12:39:00 UTC') do
-      assert_no_difference 'Notification.count' do
+      assert_no_difference -> { Notification.where(user: @student).count } do
         submit_portfolio
       end
     end
@@ -151,7 +151,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
     NotificationEmailJob.clear
 
     travel_to Time.zone.parse('2026-08-24 01:15:00 UTC') do
-      assert_difference 'Notification.count', 1 do
+      assert_difference -> { Notification.where(user: @student).count }, 1 do
         submit_portfolio
       end
     end
@@ -168,7 +168,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
       portfolio_submission_date: nil
     )
 
-    assert_difference 'Notification.count', 1 do
+    assert_difference -> { Notification.where(user: @student).count }, 1 do
       submit_portfolio
     end
     NotificationEmailJob.drain
@@ -179,7 +179,7 @@ class NotificationPortfolioTest < ActiveSupport::TestCase
   end
 
   def test_cancelling_portfolio_generation_does_not_send_a_receipt
-    assert_no_difference 'Notification.count' do
+    assert_no_difference -> { Notification.where(user: @student).count } do
       submit_portfolio(value: false)
     end
 

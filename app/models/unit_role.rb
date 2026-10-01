@@ -201,7 +201,7 @@ class UnitRole < ApplicationRecord
   end
 
   def send_weekly_status_email(summary_stats)
-    return unless user.receive_feedback_notifications
+    return unless user.staff_digest_frequency == (summary_stats[:cadence].presence || 'weekly')
 
     begin
       NotificationsMailer.weekly_staff_summary(self, summary_stats).deliver_now

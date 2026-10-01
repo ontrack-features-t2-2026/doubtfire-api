@@ -15,6 +15,13 @@ module Entities
     expose :receive_unit_hub_email_notifications, unless: :minimal
     expose :receive_unit_hub_push_notifications, unless: :minimal
     expose :receive_unit_hub_session_reminders, unless: :minimal
+    expose :receive_task_email_notifications, unless: :minimal
+    expose :receive_task_push_notifications, unless: :minimal
+    expose :receive_feedback_email_notifications, unless: :minimal
+    expose :receive_feedback_push_notifications, unless: :minimal
+    expose :receive_portfolio_email_notifications, unless: :minimal
+    expose :receive_portfolio_push_notifications, unless: :minimal
+    expose :staff_digest_frequency, unless: :minimal
     expose :digest_frequency, unless: :minimal
     expose :display_peer_progress, unless: :minimal
     expose :opt_in_to_research, unless: :minimal

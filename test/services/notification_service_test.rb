@@ -132,13 +132,13 @@ class NotificationServiceTest < ActiveSupport::TestCase
     assert_equal 500, notification.reload.message.length
   end
 
-  def test_notification_is_suppressed_when_the_category_preference_is_off
+  def test_external_opt_out_keeps_feedback_in_app
     user = FactoryBot.create(:user, receive_feedback_notifications: false)
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       result = NotificationService.notify(
-        user: user, type: 'feedback', event: 'task_comment_created', message: 'Suppressed.'
+        user: user, type: 'feedback', event: 'task_comment_created', message: 'Available in app.'
       )
-      assert_nil result
+      assert result.persisted?
     end
 
     assert_empty NotificationEmailJob.jobs
@@ -171,10 +171,10 @@ class NotificationServiceTest < ActiveSupport::TestCase
     user = FactoryBot.create(:user, receive_feedback_notifications: true)
     User.find(user.id).update!(receive_feedback_notifications: false)
 
-    assert_no_difference 'Notification.count' do
-      assert_nil NotificationService.notify(
-        user: user, type: 'feedback', event: 'task_comment_created', message: 'Suppressed.'
-      )
+    assert_difference 'Notification.count', 1 do
+      assert NotificationService.notify(
+        user: user, type: 'feedback', event: 'task_comment_created', message: 'Available in app.'
+      ).persisted?
     end
     assert_empty NotificationEmailJob.jobs
     assert_empty PushNotificationDeliveryJob.jobs
@@ -202,12 +202,12 @@ class NotificationServiceTest < ActiveSupport::TestCase
 
     assert_no_difference -> { NotificationEmailJob.jobs.size } do
       assert_no_difference -> { PushNotificationDeliveryJob.jobs.size } do
-        assert_no_difference 'Notification.count' do
+        assert_difference 'Notification.count', 1 do
           result = NotificationService.notify(
             user: user, type: 'task', event: 'task_due_date_changed', message: 'Suppressed task change.'
           )
 
-          assert_nil result
+          assert result.persisted?
         end
       end
     end
@@ -236,65 +236,30 @@ class NotificationServiceTest < ActiveSupport::TestCase
 
     assert_no_difference -> { NotificationEmailJob.jobs.size } do
       assert_no_difference -> { PushNotificationDeliveryJob.jobs.size } do
-        assert_no_difference 'Notification.count' do
+        assert_difference 'Notification.count', 1 do
           result = NotificationService.notify(
             user: user, type: 'portfolio', event: 'portfolio_received', message: 'Suppressed portfolio receipt.'
           )
 
-          assert_nil result
+          assert result.persisted?
         end
       end
     end
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
-  def test_types_without_a_preference_are_always_queued
-    user = FactoryBot.create(
-      :user,
-      receive_task_notifications: false,
-      receive_feedback_notifications: false,
-      receive_portfolio_notifications: false
-    )
-    notification = nil
-
-    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
-      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
-        notification = NotificationService.notify(
-          user: user, type: 'general', event: 'always_sent', message: 'General notice.'
-        )
-      end
+  def test_extension_and_general_updates_follow_task_channels_and_keep_history
+    user = FactoryBot.create(:user, receive_task_notifications: false)
+    %w[extension general].each do |type|
+      notification = NotificationService.notify(
+        user: user, type: type, event: 'extension_assessed', message: 'Update available.'
+      )
+      assert notification.persisted?
+      assert_equal 'suppressed', notification.reload.email_delivery_state
     end
-
-    assert notification.persisted?
-    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
-    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
-    assert_equal 0, ActionMailer::Base.deliveries.count
-  end
-
-  # 'extension' has no entry in Notification::PREFERENCE_FOR_TYPE, so
-  # deliver_to? returns true regardless of the three category toggles. The
-  # event name is the one ExtensionComment actually raises.
-  def test_extension_notifications_are_always_queued
-    user = FactoryBot.create(
-      :user,
-      receive_task_notifications: false,
-      receive_feedback_notifications: false,
-      receive_portfolio_notifications: false
-    )
-    notification = nil
-
-    assert_difference(-> { NotificationEmailJob.jobs.size }, 1) do
-      assert_difference(-> { PushNotificationDeliveryJob.jobs.size }, 1) do
-        notification = NotificationService.notify(
-          user: user, type: 'extension', event: 'extension_assessed', message: 'Extension decision available.'
-        )
-      end
-    end
-
-    assert notification.persisted?
-    assert_equal [notification.id], NotificationEmailJob.jobs.last['args']
-    assert_equal [notification.id], PushNotificationDeliveryJob.jobs.last['args']
-    assert_equal 0, ActionMailer::Base.deliveries.count
+    assert_empty NotificationEmailJob.jobs
+    assert_empty PushNotificationDeliveryJob.jobs
+    assert_empty ActionMailer::Base.deliveries
   end
 
   def test_a_queue_failure_does_not_block_the_in_app_notification

@@ -50,22 +50,16 @@ be many events inside one type.
 
 ## Types and preferences
 
-Each user already has three on/off settings in their profile:
+Task, feedback and portfolio activity is retained in-app. Users choose email and
+push separately with `receive_{task|feedback|portfolio}_{email|push}_notifications`.
+The older category fields remain accepted for older clients; existing opt-outs
+are preserved by migration. Unit Hub retains its category switch plus separate
+email/push opt-ins. Extension decisions and general group/tutorial updates follow task channel choices.
 
-- receive_task_notifications
-- receive_feedback_notifications
-- receive_portfolio_notifications
-
-The type you pass maps to one of these settings.
-
-- task uses receive_task_notifications
-- feedback uses receive_feedback_notifications
-- portfolio uses receive_portfolio_notifications
-- extension and general are always sent
-
-If the matching setting is off, nothing is sent. Not the bell, not the email,
-not the push. One switch controls all channels. This keeps it simple. We can add
-per-channel switches later if we want.
+Student digest cadence is independent of event preferences. Teaching summaries
+are separately opted in and default off. See
+[choices, migration and attention](docs/notifications/channel-choices-and-attention.md)
+for the exact API and rollback contract.
 
 ## The pieces
 

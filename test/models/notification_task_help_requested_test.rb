@@ -139,10 +139,10 @@ class NotificationTaskHelpRequestedTest < ActiveSupport::TestCase
     end
   end
 
-  def test_the_tutor_task_preference_suppresses_it
+  def test_the_tutor_task_preference_retains_in_app_notification
     @tutor.update!(receive_task_notifications: false)
 
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       assert ask_for_help
     end
   end

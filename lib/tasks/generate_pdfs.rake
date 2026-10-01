@@ -148,7 +148,7 @@ namespace :submission do
             end
           end
 
-          next unless project.student.receive_portfolio_notifications
+          next unless project.student.receive_portfolio_email_notifications
 
           logger.info "emailing portfolio notification to #{project.student.name}"
 

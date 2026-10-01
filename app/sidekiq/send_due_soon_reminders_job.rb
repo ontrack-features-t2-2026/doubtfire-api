@@ -118,7 +118,7 @@ class SendDueSoonRemindersJob
       due = due.to_date
       next if due < today || due > horizon
 
-      notify(project, unit, task_definition)
+      notify(project, unit, task_definition, due)
     end
   end
 
@@ -147,29 +147,21 @@ class SendDueSoonRemindersJob
     Webcal.end_date_for_task_definition(task_definition, task, project)
   end
 
-  def notify(project, unit, task_definition)
+  def notify(project, unit, task_definition, due)
     student = project.student
     link = "/projects/#{project.id}/dashboard/#{ERB::Util.url_encode(task_definition.abbreviation)}"
 
-    # One reminder per student per task, ever.
-    #
-    # This job runs again tomorrow and the task is still due soon tomorrow, so
-    # without this the same student is reminded every morning until the deadline
-    # passes. The index on (user_id, event) is what makes asking cheap enough to
-    # do once per candidate task.
-    return if Notification.exists?(
-      user_id: student.id,
-      notification_type: TYPE,
-      event: EVENT,
-      link: link
-    )
+    # One reminder for each effective calendar deadline. A changed deadline can
+    # earn a new reminder; repeat sweeps and concurrent retries share one key.
+    dedupe_key = "due-soon:#{project.id}:#{task_definition.id}:#{due.iso8601}"
 
     NotificationService.notify(
       user: student,
       type: TYPE,
       event: EVENT,
       message: "#{task_definition.abbreviation} in #{unit.code} is due soon.",
-      link: link
+      link: link,
+      dedupe_key: dedupe_key
     )
   end
 end

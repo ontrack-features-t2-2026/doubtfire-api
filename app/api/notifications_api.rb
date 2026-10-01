@@ -11,12 +11,24 @@ class NotificationsApi < Grape::API
   desc 'Get the current user notifications'
   params do
     optional :unread_only, type: Boolean, default: false, desc: 'Only return unread notifications'
+    optional :paginated, type: Boolean, default: false, desc: 'Return a bounded inbox page with filter choices'
+    optional :page, type: Integer, default: 1, values: 1..1_000_000
+    optional :per_page, type: Integer, default: 20, values: 1..100
+    optional :notification_type, type: String, values: Notification::TYPES
+    optional :event, type: String, values: ->(value) { value.length.between?(1, 255) }
+    optional :unit_id, type: Integer, values: ->(value) { value.positive? }
   end
   get '/notifications' do
-    notifications = current_user.notifications.recent_first
-    notifications = notifications.unread if params[:unread_only]
-
-    present notifications, with: Entities::NotificationEntity
+    if params[:paginated]
+      inbox = NotificationInbox.new(current_user, declared(params, include_missing: false)).page
+      present :notifications, inbox.delete(:notifications), with: Entities::NotificationEntity
+      inbox.each { |key, value| present key, value }
+    else
+      # Preserve the array contract used by older clients and the header bell.
+      notifications = current_user.notifications.recent_first
+      notifications = notifications.unread if params[:unread_only]
+      present notifications, with: Entities::NotificationEntity
+    end
   end
 
   desc 'Get the current user unread notification count'

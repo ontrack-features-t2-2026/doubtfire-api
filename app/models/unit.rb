@@ -2998,7 +2998,7 @@ class Unit < ApplicationRecord
     begin
       done.each do |project, tasks|
         logger.info "Checking feedback email for project #{project.id}"
-        if project.student.receive_feedback_notifications
+        if project.student.receive_feedback_email_notifications
           logger.info "Emailing feedback notification to #{project.student.name}"
           PortfolioEvidenceMailer.task_feedback_ready(project, tasks).deliver
         end

@@ -62,7 +62,7 @@ class AcceptSubmissionJob
       logger.error e
 
       # Send email to student if task pdf failed
-      if task.project.student.receive_task_notifications
+      if task.project.student.receive_task_email_notifications
         begin
           PortfolioEvidenceMailer.task_pdf_failed(task.project, [task]).deliver
         rescue StandardError => e

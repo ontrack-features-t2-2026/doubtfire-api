@@ -12,10 +12,9 @@ class Notification < ApplicationRecord
   # a task.
   belongs_to :notifiable, polymorphic: true, optional: true
 
-  # Notification categories. task, feedback, portfolio and unit_hub map onto the
-  # user preference columns in PREFERENCE_FOR_TYPE, so one category toggle gates
-  # every delivery channel (in-app, email, push). unit_hub also has email and
-  # push opt-ins of its own, see CHANNEL_PREFERENCES_FOR_TYPE.
+  # Task, feedback and portfolio history is always retained in-app. External
+  # email and push channels have separate user preferences. Unit Hub retains
+  # its existing whole-category opt-in.
   TYPES = %w[task feedback portfolio extension general unit_hub].freeze
 
   # `notification_type` is the category the user's preferences switch on.
@@ -27,17 +26,17 @@ class Notification < ApplicationRecord
   # Maps a notification type to the user preference column that gates it.
   # Types without an entry here are always delivered.
   PREFERENCE_FOR_TYPE = {
-    'task' => :receive_task_notifications,
-    'feedback' => :receive_feedback_notifications,
-    'portfolio' => :receive_portfolio_notifications,
     'unit_hub' => :receive_unit_hub_notifications
   }.freeze
 
-  # Categories whose email and push channels are separate opt-ins. The column in
-  # PREFERENCE_FOR_TYPE still switches the whole category off, so these only
-  # narrow a category that is on. A type without an entry sends on every
-  # channel, which is how the older categories have always behaved.
+  # External channel choices are independent. Unit Hub also retains its category
+  # opt-in above. Extension, group and tutorial updates follow task channels.
   CHANNEL_PREFERENCES_FOR_TYPE = {
+    'task' => { email: :receive_task_email_notifications, push: :receive_task_push_notifications },
+    'extension' => { email: :receive_task_email_notifications, push: :receive_task_push_notifications },
+    'general' => { email: :receive_task_email_notifications, push: :receive_task_push_notifications },
+    'feedback' => { email: :receive_feedback_email_notifications, push: :receive_feedback_push_notifications },
+    'portfolio' => { email: :receive_portfolio_email_notifications, push: :receive_portfolio_push_notifications },
     'unit_hub' => {
       email: :receive_unit_hub_email_notifications,
       push: :receive_unit_hub_push_notifications

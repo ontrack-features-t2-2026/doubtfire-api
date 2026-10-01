@@ -121,6 +121,7 @@ class ApiRoot < Grape::API
 
   # Notifications feature
   mount UnitHubApi
+  mount AttentionApi
   mount NotificationsApi
   mount PushSubscriptionsApi
 

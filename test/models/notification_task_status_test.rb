@@ -76,10 +76,10 @@ class NotificationTaskStatusTest < ActiveSupport::TestCase
     assert_equal 0, ActionMailer::Base.deliveries.count
   end
 
-  def test_no_notification_when_the_task_preference_is_off
+  def test_in_app_notification_when_the_task_preference_is_off
     @student.update!(receive_task_notifications: false)
 
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       @task.trigger_transition(trigger: 'discuss', by_user: @tutor)
     end
 

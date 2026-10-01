@@ -71,7 +71,8 @@ class TaskPrioritizationService
     Project
       .for_user(user, false)
       .includes(
-        { tasks: [:task_status, { task_definition: :grade_due_dates }] },
+        { tasks: [:task_status, :granted_extension_comments, { task_definition: :grade_due_dates }] },
+        :campus,
         { unit: { task_definitions: [:grade_due_dates, :task_prerequisites] } }
       )
   end
@@ -95,14 +96,7 @@ class TaskPrioritizationService
   end
 
   def effective_due_date(project, task_definition, task)
-    return task.local_due_date if task
-
-    if project.unit.allow_flexible_dates
-      grade_target_date = task_definition.grade_target_date(project.target_grade.to_i)
-      return grade_target_date if grade_target_date
-    end
-
-    task_definition.target_date
+    Webcal.end_date_for_task_definition(task_definition, task, project)
   end
 
   def blocked_by_prerequisite?(task_definition, tasks_by_definition)
@@ -196,7 +190,41 @@ class TaskPrioritizationService
       task_name: candidate.task_definition.name,
       project_id: candidate.project.id,
       unit_id: candidate.project.unit_id,
-      priority_score: priority_score.round(2)
+      priority_score: priority_score.round(2),
+      task_abbreviation: candidate.task_definition.abbreviation,
+      unit_code: candidate.project.unit.code,
+      status: candidate.task&.status || :not_started,
+      effective_deadline_date: candidate.due_date&.iso8601,
+      effective_deadline_reason: candidate.task&.effective_deadline_reason ||
+        (candidate.project.unit.allow_flexible_dates ? 'flexible_date' : 'standard_due_date'),
+      next_action: next_action(candidate),
+      reason: recommendation_reason(candidate)
     }
   end
+
+  def next_action(candidate)
+    case candidate.task&.status
+    when :fix_and_resubmit, :redo then 'Read the feedback and resubmit'
+    when :discuss, :rediscuss then 'Arrange a discussion with your tutor'
+    when :demonstrate then 'Arrange a demonstration with your tutor'
+    when :need_help then 'Check your help request'
+    when :working_on_it then 'Continue this task'
+    else 'Start this task'
+    end
+  end
+
+  def recommendation_reason(candidate)
+    return 'Ranked by task size and workload; no target date is set.' unless candidate.due_date
+
+    days = (candidate.due_date - today).to_i
+    timing = if days.negative?
+               'The target date has passed.'
+             elsif days.zero?
+               'The target date is today.'
+             else
+               "The target date is in #{days} #{'day'.pluralize(days)}."
+             end
+    "#{timing} Priority also considers task size and your other work."
+  end
+
 end

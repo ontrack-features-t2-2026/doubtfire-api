@@ -79,10 +79,10 @@ class NotificationTaskCommentTest < ActiveSupport::TestCase
     assert_equal [@tutor.email], ActionMailer::Base.deliveries.last.to
   end
 
-  def test_no_notification_when_the_feedback_preference_is_off
+  def test_in_app_notification_when_the_feedback_preference_is_off
     @student.update!(receive_feedback_notifications: false)
 
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       @task.add_text_comment(@tutor, 'You will not be told about this.')
     end
 

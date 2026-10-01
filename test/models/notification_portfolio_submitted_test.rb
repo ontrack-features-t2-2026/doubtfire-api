@@ -74,12 +74,14 @@ class NotificationPortfolioSubmittedTest < ActiveSupport::TestCase
     assert_equal [@unit.main_convenor_user], staff_notifications.map(&:user)
   end
 
-  def test_the_tutors_portfolio_preference_switches_it_off
+  def test_the_tutors_portfolio_preference_retains_in_app_but_suppresses_external_delivery
     @tutor.update!(receive_portfolio_notifications: false)
 
-    assert_no_difference -> { staff_notifications.count } do
+    assert_difference -> { staff_notifications.count }, 1 do
       submit_portfolio
     end
+    notice = staff_notifications.find_by!(user: @tutor)
+    assert_equal 'suppressed', notice.email_delivery_state
   end
 
   def test_repeating_the_same_submission_does_not_tell_the_tutor_again

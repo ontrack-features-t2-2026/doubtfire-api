@@ -113,13 +113,13 @@ class NotificationExtensionRequestTest < ActiveSupport::TestCase
   end
 
   # The request is a task notification so the tutor's "Task notifications"
-  # switch governs it. Turned off, nothing is created, emailed or pushed.
+  # switch governs outgoing channels. Turned off, in-app history remains.
   def test_a_tutor_with_task_notifications_off_gets_no_email_or_push
     tutor = give_the_student_a_tutor
     tutor.update!(receive_task_notifications: false)
     PushNotificationDeliveryJob.clear
 
-    assert_no_difference 'Notification.count' do
+    assert_difference 'Notification.count', 1 do
       request_extension
     end
     NotificationEmailJob.drain

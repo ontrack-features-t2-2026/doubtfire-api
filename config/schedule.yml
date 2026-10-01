@@ -128,3 +128,14 @@ send_monthly_digest_emails:
   cron: "every month on the 1st at 7:10am"
   class: "SendDigestEmailsJob"
   args: ["monthly"]
+
+# Explicitly opted-in staff only, independently of student/event preferences.
+send_daily_staff_attention:
+  cron: "every day at 7:15am"
+  class: "SendStaffAttentionSummariesJob"
+  args: ["daily"]
+
+send_weekly_staff_attention:
+  cron: "every monday at 7:20am"
+  class: "SendStaffAttentionSummariesJob"
+  args: ["weekly"]
